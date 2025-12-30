@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer
+import webbrowser
 from PyQt6.QtGui import QColor, QFont
 import sys
 sys.path.insert(0, '..')
@@ -349,6 +350,23 @@ class StatsWidget(QWidget):
         tables_layout.addWidget(price_group, 1)
         
         layout.addLayout(tables_layout)
+        
+        # Connect signals
+        self.recent_table.cellDoubleClicked.connect(self.on_table_double_clicked)
+        self.price_table.cellDoubleClicked.connect(self.on_table_double_clicked)
+    
+    def on_table_double_clicked(self, row, col):
+        """Open URL in browser when table item is double clicked"""
+        table = self.sender()
+        if not table:
+            return
+            
+        # Get URL from the first column's user data
+        item = table.item(row, 0)
+        if item:
+            url = item.data(Qt.ItemDataRole.UserRole)
+            if url:
+                webbrowser.open(url)
     
     def set_engine(self, engine):
         self.engine = engine
@@ -377,7 +395,10 @@ class StatsWidget(QWidget):
             recent = stats.get('recent_listings', [])
             self.recent_table.setRowCount(min(len(recent), 10))
             for i, item in enumerate(recent[:10]):
-                self.recent_table.setItem(i, 0, QTableWidgetItem(item.get('platform', '')[:8]))
+                platform_item = QTableWidgetItem(item.get('platform', '')[:8])
+                platform_item.setData(Qt.ItemDataRole.UserRole, item.get('url'))
+                self.recent_table.setItem(i, 0, platform_item)
+                
                 self.recent_table.setItem(i, 1, QTableWidgetItem(item.get('title', '')[:40]))
                 self.recent_table.setItem(i, 2, QTableWidgetItem(item.get('price', '')))
                 self.recent_table.setItem(i, 3, QTableWidgetItem(item.get('keyword', '')[:15]))
@@ -387,7 +408,10 @@ class StatsWidget(QWidget):
             changes = stats.get('price_changes', [])
             self.price_table.setRowCount(min(len(changes), 5))
             for i, change in enumerate(changes[:5]):
-                self.price_table.setItem(i, 0, QTableWidgetItem(change.get('title', '')[:30]))
+                title_item = QTableWidgetItem(change.get('title', '')[:30])
+                title_item.setData(Qt.ItemDataRole.UserRole, change.get('url'))
+                self.price_table.setItem(i, 0, title_item)
+                
                 self.price_table.setItem(i, 1, QTableWidgetItem(change.get('old_price', '')))
                 self.price_table.setItem(i, 2, QTableWidgetItem(change.get('new_price', '')))
                 self.price_table.setItem(i, 3, QTableWidgetItem(change.get('changed_at', '')[11:16]))

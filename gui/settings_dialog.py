@@ -7,10 +7,12 @@ from PyQt6.QtWidgets import (
     QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
     QScrollArea
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 import sys
 sys.path.insert(0, '..')
 from models import NotificationType, NotificationSchedule
+from notifiers import TelegramNotifier, DiscordNotifier, SlackNotifier
+import asyncio
 
 
 class SettingsDialog(QDialog):
@@ -478,11 +480,108 @@ class SettingsDialog(QDialog):
         QMessageBox.information(self, "저장 완료", "설정이 저장되었습니다.")
         self.accept()
     
+class NotificationTestThread(QThread):
+    """Thread for testing notifications asynchronously"""
+    finished = pyqtSignal(bool, str)
+    
+    def __init__(self, notifier_type, **kwargs):
+        super().__init__()
+        self.notifier_type = notifier_type
+        self.kwargs = kwargs
+        
+    def run(self):
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            if self.notifier_type == NotificationType.TELEGRAM:
+                notifier = TelegramNotifier(
+                    self.kwargs.get('token'), 
+                    self.kwargs.get('chat_id')
+                )
+                success = loop.run_until_complete(
+                    notifier.send_message("🔔 [테스트] 중고거래 알리미 알림 테스트입니다.")
+                )
+                if success:
+                    self.finished.emit(True, "텔레그램 알림 전송 성공!")
+                else:
+                    self.finished.emit(False, "알림 전송 실패. 설정(토큰/ID)을 확인하세요.")
+                    
+            elif self.notifier_type == NotificationType.DISCORD:
+                notifier = DiscordNotifier(self.kwargs.get('url'))
+                success = loop.run_until_complete(
+                    notifier.send_message("🔔 [테스트] 중고거래 알리미 알림 테스트입니다.")
+                )
+                if success:
+                    self.finished.emit(True, "디스코드 알림 전송 성공!")
+                else:
+                    self.finished.emit(False, "알림 전송 실패. Webhook URL을 확인하세요.")
+            
+            elif self.notifier_type == NotificationType.SLACK:
+                notifier = SlackNotifier(self.kwargs.get('url'))
+                success = loop.run_until_complete(
+                    notifier.send_message("🔔 [테스트] 중고거래 알리미 알림 테스트입니다.")
+                )
+                if success:
+                    self.finished.emit(True, "슬랙 알림 전송 성공!")
+                else:
+                    self.finished.emit(False, "알림 전송 실패. Webhook URL을 확인하세요.")
+            
+            loop.close()
+            
+        except Exception as e:
+            self.finished.emit(False, f"오류 발생: {str(e)}")
+
+
     def test_telegram(self):
-        QMessageBox.information(self, "테스트", "텔레그램 테스트 알림 전송 기능은 추후 지원 예정입니다.")
+        token = self.telegram_token.text().strip()
+        chat_id = self.telegram_chat_id.text().strip()
+        
+        if not token or not chat_id:
+            QMessageBox.warning(self, "오류", "토큰과 Chat ID를 모두 입력해주세요.")
+            return
+            
+        self._start_test_thread(
+            NotificationType.TELEGRAM, 
+            token=token, 
+            chat_id=chat_id
+        )
     
     def test_discord(self):
-        QMessageBox.information(self, "테스트", "디스코드 테스트 알림 전송 기능은 추후 지원 예정입니다.")
+        url = self.discord_webhook.text().strip()
+        
+        if not url:
+            QMessageBox.warning(self, "오류", "Webhook URL을 입력해주세요.")
+            return
+            
+        self._start_test_thread(
+            NotificationType.DISCORD, 
+            url=url
+        )
     
     def test_slack(self):
-        QMessageBox.information(self, "테스트", "슬랙 테스트 알림 전송 기능은 추후 지원 예정입니다.")
+        url = self.slack_webhook.text().strip()
+        
+        if not url:
+            QMessageBox.warning(self, "오류", "Webhook URL을 입력해주세요.")
+            return
+            
+        self._start_test_thread(
+            NotificationType.SLACK, 
+            url=url
+        )
+    
+    def _start_test_thread(self, n_type, **kwargs):
+        # Disable buttons during test (simplified)
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        
+        self.test_thread = NotificationTestThread(n_type, **kwargs)
+        self.test_thread.finished.connect(self._on_test_finished)
+        self.test_thread.start()
+    
+    def _on_test_finished(self, success, message):
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        if success:
+            QMessageBox.information(self, "성공", message)
+        else:
+            QMessageBox.warning(self, "실패", message)
