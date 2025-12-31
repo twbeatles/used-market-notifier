@@ -8,16 +8,19 @@ from PyQt6.QtWidgets import (
     QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QCloseEvent
+from PyQt6.QtGui import QCloseEvent, QShortcut, QKeySequence
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from gui.styles import DARK_STYLE
+from gui.styles import DARK_STYLE, LIGHT_STYLE
+from models import ThemeMode
 from gui.keyword_manager import KeywordManagerWidget
 from gui.settings_dialog import SettingsDialog
 from gui.stats_widget import StatsWidget
+from gui.favorites_widget import FavoritesWidget
+from gui.notification_history import NotificationHistoryWidget
 from gui.system_tray import SystemTrayIcon
 from gui.log_widget import LogWidget
 from settings_manager import SettingsManager
@@ -71,6 +74,7 @@ class MainWindow(QMainWindow):
         
         self.setup_ui()
         self.setup_tray()
+        self.setup_shortcuts()
         
         if self.settings_manager.settings.start_minimized:
             self.hide()
@@ -85,7 +89,8 @@ class MainWindow(QMainWindow):
         self.resize(1050, 750)
         
         # Apply stylesheet
-        self.setStyleSheet(DARK_STYLE)
+        # Apply stylesheet
+        self.apply_theme()
         
         central = QWidget()
         central.setStyleSheet("background-color: #1e1e2e;")
@@ -114,6 +119,12 @@ class MainWindow(QMainWindow):
         
         self.stats_widget = StatsWidget(self.engine)
         self.tabs.addTab(self.stats_widget, "📊 통계")
+        
+        self.favorites_widget = FavoritesWidget(self.engine)
+        self.tabs.addTab(self.favorites_widget, "⭐ 즐겨찾기")
+        
+        self.history_widget = NotificationHistoryWidget(self.engine)
+        self.tabs.addTab(self.history_widget, "📢 알림 내역")
         
         self.log_widget = LogWidget()
         self.log_widget.setup_logging()
@@ -165,6 +176,11 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(title_widget)
         layout.addStretch()
+        
+        # Last search time indicator
+        self.last_search_label = QLabel("마지막 검색: -")
+        self.last_search_label.setStyleSheet("color: #6c7086; font-size: 9pt; background: transparent;")
+        layout.addWidget(self.last_search_label)
         
         # Status indicator
         self.status_frame = QFrame()
@@ -239,6 +255,30 @@ class MainWindow(QMainWindow):
         self.tray_icon.stop_monitoring_requested.connect(self.stop_monitoring)
         self.tray_icon.quit_requested.connect(self.quit_app)
         self.tray_icon.show()
+    
+    def setup_shortcuts(self):
+        """Setup keyboard shortcuts for common actions"""
+        # Ctrl+S: Toggle monitoring
+        shortcut_toggle = QShortcut(QKeySequence("Ctrl+S"), self)
+        shortcut_toggle.activated.connect(self.toggle_monitoring)
+        
+        # Ctrl+, : Open settings (common convention)
+        shortcut_settings = QShortcut(QKeySequence("Ctrl+,"), self)
+        shortcut_settings.activated.connect(self.open_settings)
+        
+        # Ctrl+Q: Quit application
+        shortcut_quit = QShortcut(QKeySequence("Ctrl+Q"), self)
+        shortcut_quit.activated.connect(self.quit_app)
+        
+        # Ctrl+1/2/3: Switch tabs
+        shortcut_tab1 = QShortcut(QKeySequence("Ctrl+1"), self)
+        shortcut_tab1.activated.connect(lambda: self.tabs.setCurrentIndex(0))
+        
+        shortcut_tab2 = QShortcut(QKeySequence("Ctrl+2"), self)
+        shortcut_tab2.activated.connect(lambda: self.tabs.setCurrentIndex(1))
+        
+        shortcut_tab3 = QShortcut(QKeySequence("Ctrl+3"), self)
+        shortcut_tab3.activated.connect(lambda: self.tabs.setCurrentIndex(2))
     
     def toggle_monitoring(self):
         if self.monitor_thread and self.monitor_thread.isRunning():
@@ -322,6 +362,10 @@ class MainWindow(QMainWindow):
     
     def on_status_update(self, status: str):
         self.status_bar.showMessage(status)
+        # Update last search time when a search cycle completes
+        if "다음 검색까지" in status or "검색 중" in status:
+            from datetime import datetime
+            self.last_search_label.setText(f"마지막 검색: {datetime.now().strftime('%H:%M:%S')}")
     
     def on_new_item(self, item):
         self.tray_icon.show_notification(
@@ -343,9 +387,47 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         dialog = SettingsDialog(self.settings_manager, self)
         if dialog.exec():
+            self.settings_manager.save_settings()
+            
+            # Apply theme
+            self.apply_theme()
+            
+            # Update keywords
+            self.keyword_widget.load_keywords()
+            
+            # Restart if running
             if self.monitor_thread and self.monitor_thread.isRunning():
                 self.stop_monitoring()
                 self.start_monitoring()
+
+    def apply_theme(self):
+        """Apply current theme"""
+        mode = self.settings_manager.settings.theme_mode
+        is_dark = mode == ThemeMode.DARK or (mode == ThemeMode.SYSTEM)
+        
+        style = DARK_STYLE if is_dark else LIGHT_STYLE
+        self.setStyleSheet(style)
+        
+        # Update specific elements
+        header_bg = "#181825" if is_dark else "#ffffff"
+        header_border = "#313244" if is_dark else "#d1d1d6"
+        
+        header = self.findChild(QFrame, "header")
+        if header:
+             header.setStyleSheet(f"""
+                QFrame#header {{
+                    background-color: {header_bg};
+                    border-bottom: 1px solid {header_border};
+                }}
+             """)
+        
+        central = self.centralWidget()
+        if central:
+             central.setStyleSheet(f"background-color: {'#1e1e2e' if is_dark else '#f2f2f7'};")
+             
+        # Optional: Update StatsWidget if method exists
+        if hasattr(self, 'stats_widget') and hasattr(self.stats_widget, 'update_theme'):
+            self.stats_widget.update_theme(is_dark)
     
     def show_window(self):
         self.show()

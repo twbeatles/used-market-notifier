@@ -5,7 +5,9 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta
 from typing import Optional
-from scrapers.base import Item
+from models import Item, FavoriteItem, NotificationLog, SellerFilter
+import difflib
+
 
 
 class DatabaseManager:
@@ -61,7 +63,7 @@ class DatabaseManager:
                 )
             ''')
             
-            # Statistics table for aggregated data
+            # Search Statistics table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS search_stats (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +74,53 @@ class DatabaseManager:
                     checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Favorites table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS favorites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL UNIQUE,
+                    notes TEXT,
+                    target_price INTEGER,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (listing_id) REFERENCES listings(id)
+                )
+            ''')
+
+            # Notification Log table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notification_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL,
+                    notification_type TEXT NOT NULL,
+                    message_preview TEXT,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_read BOOLEAN DEFAULT 0,
+                    FOREIGN KEY (listing_id) REFERENCES listings(id)
+                )
+            ''')
+
+            # Seller Filter table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS seller_filters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    seller_name TEXT NOT NULL,
+                    platform TEXT,
+                    is_blocked BOOLEAN DEFAULT 1,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(seller_name, platform)
+                )
+            ''')
+            
+            # Create indexes for better query performance
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_platform ON listings(platform)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_keyword ON listings(keyword)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_created ON listings(created_at)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_price_history_listing ON price_history(listing_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_search_stats_date ON search_stats(checked_at)')
+            # Composite index for duplicate checking (most frequent query)
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_platform_article ON listings(platform, article_id)')
             
             self.conn.commit()
     
@@ -101,9 +150,10 @@ class DatabaseManager:
         Add or update a listing.
         
         Returns:
-            (is_new, price_change_info)
+            (is_new, price_change_info, listing_id)
             - is_new: True if this is a new listing
             - price_change_info: Dict with old/new price if price changed, else None
+            - listing_id: ID of the listing in database
         """
         # Internal lock usage to ensure atomicity of check-then-act
         with self.lock:
@@ -146,9 +196,9 @@ class DatabaseManager:
                         'new_price': item.price,
                         'old_numeric': old_price_numeric,
                         'new_numeric': price_numeric
-                    }
+                    }, existing['id']
                 
-                return False, None
+                return False, None, existing['id']
             
             # New listing
             try:
@@ -161,10 +211,11 @@ class DatabaseManager:
                     item.price, price_numeric, item.link, item.thumbnail,
                     item.seller, item.location
                 ))
+                new_id = cursor.lastrowid
                 self.conn.commit()
-                return True, None
+                return True, None, new_id
             except sqlite3.IntegrityError:
-                return False, None
+                return False, None, None
     
     def record_search_stats(self, keyword: str, platform: str, items_found: int, new_items: int):
         """Record search statistics"""
@@ -207,6 +258,47 @@ class DatabaseManager:
             ''')
             return {row['keyword']: row['count'] for row in cursor.fetchall()}
     
+    def get_last_search_time(self, keyword: str) -> Optional[datetime]:
+        """Get last search time for a keyword"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT MAX(checked_at) FROM search_stats WHERE keyword = ?
+            ''', (keyword,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                return datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+            return None
+
+    def is_fuzzy_duplicate(self, item: Item, threshold: float = 0.9) -> bool:
+        """Check if item is a fuzzy duplicate of recent items"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            # Check last 3 days, same platform
+            cursor.execute('''
+                SELECT title, price, seller 
+                FROM listings 
+                WHERE platform = ? 
+                AND created_at >= datetime('now', '-3 days')
+            ''', (item.platform,))
+            
+            candidates = cursor.fetchall()
+            
+            for row in candidates:
+                # Check price string exact match (simplest heuristics)
+                # Or price_numeric if available? 'price' field is string in DB? 
+                # DB schema has price (str) and price_numeric (int).
+                # Selecting price (str).
+                if row['price'] != item.price:
+                    continue
+                
+                # Check similarity
+                ratio = difflib.SequenceMatcher(None, item.title, row['title']).ratio()
+                if ratio >= threshold:
+                    return True
+            
+            return False
+
     def get_daily_stats(self, days: int = 7) -> list:
         """Get daily statistics for the past N days"""
         with self.lock:
@@ -248,6 +340,155 @@ class DatabaseManager:
                 ORDER BY created_at DESC
                 LIMIT ?
             ''', (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    # Favorites Management
+    def get_listing_id(self, platform: str, article_id: str) -> Optional[int]:
+        """Get listing ID by platform and article_id"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                'SELECT id FROM listings WHERE platform = ? AND article_id = ?', 
+                (platform, article_id)
+            )
+            row = cursor.fetchone()
+            return row['id'] if row else None
+
+    def add_favorite(self, listing_id: int, notes: str = "", target_price: int = None) -> bool:
+        """Add a listing to favorites"""
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('''
+                    INSERT INTO favorites (listing_id, notes, target_price)
+                    VALUES (?, ?, ?)
+                ''', (listing_id, notes, target_price))
+                self.conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def update_favorite(self, listing_id: int, notes: str = None, target_price: int = None):
+        """Update favorite details"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            updates = []
+            params = []
+            if notes is not None:
+                updates.append("notes = ?")
+                params.append(notes)
+            if target_price is not None:
+                updates.append("target_price = ?")
+                params.append(target_price)
+            
+            if not updates:
+                return
+
+            params.append(listing_id)
+            cursor.execute(f'''
+                UPDATE favorites SET {", ".join(updates)} WHERE listing_id = ?
+            ''', tuple(params))
+            self.conn.commit()
+
+    def remove_favorite(self, listing_id: int):
+        """Remove a listing from favorites"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('DELETE FROM favorites WHERE listing_id = ?', (listing_id,))
+            self.conn.commit()
+    
+    def is_favorite(self, listing_id: int) -> bool:
+        """Check if a listing is in favorites"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT 1 FROM favorites WHERE listing_id = ?', (listing_id,))
+            return cursor.fetchone() is not None
+
+    def get_favorite_details(self, listing_id: int) -> Optional[dict]:
+        """Get favorite details (notes, target_price)"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT notes, target_price FROM favorites WHERE listing_id = ?', (listing_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_favorites(self) -> list:
+        """Get all favorite listings with details"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT l.*, f.notes, f.target_price, f.added_at as fav_added_at
+                FROM favorites f
+                JOIN listings l ON f.listing_id = l.id
+                ORDER BY f.added_at DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    # Notification Logging
+    def log_notification(self, listing_id: int, notification_type: str, message: str):
+        """Log a sent notification"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                INSERT INTO notification_log (listing_id, notification_type, message_preview)
+                VALUES (?, ?, ?)
+            ''', (listing_id, notification_type, message[:200]))  # store preview
+            self.conn.commit()
+
+    def get_notification_logs(self, limit: int = 50, offset: int = 0) -> list:
+        """Get notification logs"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT nl.*, l.title, l.platform, l.price, l.url
+                FROM notification_log nl
+                JOIN listings l ON nl.listing_id = l.id
+                ORDER BY nl.sent_at DESC
+                LIMIT ? OFFSET ?
+            ''', (limit, offset))
+            return [dict(row) for row in cursor.fetchall()]
+
+    # Seller Management
+    def add_seller_filter(self, seller_name: str, platform: str, is_blocked: bool = True, notes: str = ""):
+        """Add or update a seller filter"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                INSERT INTO seller_filters (seller_name, platform, is_blocked, notes)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(seller_name, platform) DO UPDATE SET
+                is_blocked=excluded.is_blocked,
+                notes=excluded.notes,
+                created_at=CURRENT_TIMESTAMP
+            ''', (seller_name, platform, is_blocked, notes))
+            self.conn.commit()
+
+    def remove_seller_filter(self, seller_name: str, platform: str):
+        """Remove a seller filter"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                DELETE FROM seller_filters 
+                WHERE seller_name = ? AND platform = ?
+            ''', (seller_name, platform))
+            self.conn.commit()
+
+    def get_blocked_sellers(self) -> list:
+        """Get list of blocked sellers"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT seller_name, platform 
+                FROM seller_filters 
+                WHERE is_blocked = 1
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_seller_filters(self) -> list:
+        """Get all seller filters"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM seller_filters ORDER BY created_at DESC')
             return [dict(row) for row in cursor.fetchall()]
     
     def close(self):

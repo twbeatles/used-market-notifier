@@ -1,34 +1,18 @@
 import time
 import re
 from urllib.parse import quote
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from .base import BaseScraper, Item
+from .selenium_base import SeleniumScraper
+from .base import Item
 
 
-class DanggeunScraper(BaseScraper):
+class DanggeunScraper(SeleniumScraper):
     """Danggeun Market (당근마켓) scraper with location filter support"""
     
-    def __init__(self, headless: bool = True):
-        super().__init__()
-        self.options = Options()
-        if headless:
-            self.options.add_argument('--headless')
-        self.options.add_argument('--no-sandbox')
-        self.options.add_argument('--disable-dev-shm-usage')
-        self.options.add_argument('--disable-gpu')
-        self.options.add_argument('--window-size=1920,1080')
-        self.options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), 
-            options=self.options
-        )
+    def __init__(self, headless: bool = True, disable_images: bool = True):
+        super().__init__(headless, disable_images)
 
     def search(self, keyword: str, location: str = None) -> list[Item]:
         """
@@ -129,10 +113,3 @@ class DanggeunScraper(BaseScraper):
 
         self.logger.info(f"Found {len(items)} items on Danggeun for '{keyword}'")
         return items
-
-    def close(self):
-        """Close the browser"""
-        try:
-            self.driver.quit()
-        except:
-            pass

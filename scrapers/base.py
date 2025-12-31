@@ -2,32 +2,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 import logging
+import sys
+import os
 
+# Add parent directory to path for models import
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-@dataclass
-class Item:
-    """Represents a listing item from any platform"""
-    platform: str
-    article_id: str
-    title: str
-    price: str
-    link: str
-    keyword: str
-    thumbnail: Optional[str] = None
-    seller: Optional[str] = None
-    location: Optional[str] = None
-    price_numeric: Optional[int] = None
-
-    def parse_price(self) -> int:
-        """Extract numeric price from price string"""
-        if self.price_numeric is not None:
-            return self.price_numeric
-        try:
-            cleaned = ''.join(c for c in self.price if c.isdigit())
-            self.price_numeric = int(cleaned) if cleaned else 0
-        except:
-            self.price_numeric = 0
-        return self.price_numeric
+# Import Item from models - single source of truth
+from models import Item
 
 
 class BaseScraper(ABC):
@@ -49,6 +31,17 @@ class BaseScraper(ABC):
             List of Item objects
         """
         pass
+
+    def safe_search(self, keyword: str, location: str = None) -> list[Item]:
+        """
+        Safe wrapper around search that handles exceptions gracefully.
+        Returns empty list on error instead of raising.
+        """
+        try:
+            return self.search(keyword, location)
+        except Exception as e:
+            self.logger.error(f"Search failed for '{keyword}': {e}")
+            return []
 
     def close(self):
         """Clean up resources (drivers, etc.)"""

@@ -87,7 +87,8 @@ class MonitorEngine:
                 self.logger.error(f"Failed to initialize {config.type.value} notifier: {e}")
     
     async def send_notifications(self, item: Item, is_price_change: bool = False, 
-                                  old_price: str = None, new_price: str = None):
+                                  old_price: str = None, new_price: str = None,
+                                  listing_id: int = None):
         """Send notifications through all enabled channels"""
         # Check schedule
         schedule = self.settings.settings.notification_schedule
@@ -97,10 +98,18 @@ class MonitorEngine:
         
         for notifier in self.notifiers:
             try:
+                success = False
                 if is_price_change:
-                    await notifier.send_price_change(item, old_price, new_price)
+                    success = await notifier.send_price_change(item, old_price, new_price)
                 else:
-                    await notifier.send_item(item, with_image=True)
+                    success = await notifier.send_item(item, with_image=True)
+                
+                if success and listing_id:
+                     # Log notification
+                     noti_type = notifier.__class__.__name__.replace("Notifier", "").lower()
+                     msg_preview = f"{'📉 Price change' if is_price_change else '🆕 New item'}: {item.title}"
+                     self.db.log_notification(listing_id, noti_type, msg_preview)
+                     
             except Exception as e:
                 self.logger.error(f"Notification error: {e}")
     
@@ -113,17 +122,36 @@ class MonitorEngine:
         """
         new_count = 0
         
+        # Fetch blocked sellers once
+        blocked_sellers = self.db.get_blocked_sellers()
+        blocked_set = set()
+        if blocked_sellers:
+            blocked_set = {(row['seller_name'], row['platform']) for row in blocked_sellers}
+            
+        # Setup parallel tasks
+        tasks = []
+        active_platforms = []
+        self._update_status(f"'{keyword_config.keyword}' 검색 중... ({', '.join(keyword_config.platforms)})")
+        
         for platform in keyword_config.platforms:
             scraper = self.scrapers.get(platform)
             if not scraper:
                 continue
+            active_platforms.append(platform)
+            tasks.append(
+                asyncio.to_thread(scraper.safe_search, keyword_config.keyword, keyword_config.location)
+            )
             
+        if not tasks:
+            return 0
+            
+        # Execute searches in parallel
+        results = await asyncio.gather(*tasks)
+        
+        # Process results
+        for platform, items in zip(active_platforms, results):
+            scraper = self.scrapers.get(platform)
             try:
-                self._update_status(f"{platform}에서 '{keyword_config.keyword}' 검색 중...")
-                
-                # Search
-                items = scraper.search(keyword_config.keyword, keyword_config.location)
-                
                 # Apply filters
                 if keyword_config.min_price or keyword_config.max_price:
                     items = scraper.filter_by_price(
@@ -133,12 +161,23 @@ class MonitorEngine:
                 if keyword_config.exclude_keywords:
                     items = scraper.filter_by_keywords(items, keyword_config.exclude_keywords)
                 
+                # Filter blocked sellers
+                if blocked_set:
+                    items = [
+                        item for item in items 
+                        if not item.seller or (item.seller, item.platform) not in blocked_set
+                    ]
+
                 self.logger.info(f"Found {len(items)} items on {platform} for '{keyword_config.keyword}'")
                 
                 # Process items
                 platform_new = 0
                 for item in items:
-                    is_new, price_change = self.db.add_listing(item)
+                    # Check fuzzy duplicate for reposts
+                    if self.db.is_fuzzy_duplicate(item):
+                        continue
+
+                    is_new, price_change, listing_id = self.db.add_listing(item)
                     
                     if is_new:
                         platform_new += 1
@@ -147,11 +186,20 @@ class MonitorEngine:
                         if self.on_new_item:
                             self.on_new_item(item)
                         
-                        await self.send_notifications(item)
-                        await asyncio.sleep(1)  # Rate limiting
+                        await self.send_notifications(item, listing_id=listing_id)
+                        await asyncio.sleep(0.5)  # Slight delay to prevent spam
                     
                     elif price_change:
                         self.logger.info(f"Price change: {item.title} ({price_change['old_price']} → {price_change['new_price']})")
+                        
+                        # Check target price in favorites
+                        fav = self.db.get_favorite_details(listing_id)
+                        new_price_display = price_change['new_price']
+                        
+                        if fav and fav.get('target_price') and price_change['new_numeric']:
+                            if price_change['new_numeric'] <= fav['target_price']:
+                                new_price_display += " (🎯 목표가 도달!)"
+                                self.logger.info(f"Target price hit for {item.title}")
                         
                         if self.on_price_change:
                             self.on_price_change(item, price_change['old_price'], price_change['new_price'])
@@ -159,9 +207,10 @@ class MonitorEngine:
                         await self.send_notifications(
                             item, is_price_change=True,
                             old_price=price_change['old_price'],
-                            new_price=price_change['new_price']
+                            new_price=new_price_display,
+                            listing_id=listing_id
                         )
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(0.5)
                 
                 # Record stats
                 self.db.record_search_stats(
@@ -170,11 +219,9 @@ class MonitorEngine:
                 new_count += platform_new
                 
             except Exception as e:
-                self.logger.error(f"Error searching {platform}: {e}")
+                self.logger.error(f"Error processing {platform}: {e}")
                 if self.on_error:
-                    self.on_error(f"{platform} 검색 오류: {e}")
-            
-            await asyncio.sleep(2)  # Pause between platforms
+                    self.on_error(f"{platform} 처리 오류: {e}")
         
         return new_count
     
@@ -191,6 +238,15 @@ class MonitorEngine:
         for kw in keywords:
             if not kw.enabled:
                 continue
+            
+            # Check custom interval (per-keyword scheduling)
+            if kw.custom_interval:
+                last_time = self.db.get_last_search_time(kw.keyword)
+                if last_time:
+                    elapsed = (datetime.now() - last_time).total_seconds() / 60
+                    if elapsed < kw.custom_interval:
+                        self.logger.info(f"Skipping '{kw.keyword}': interval {kw.custom_interval}m not passed (elapsed: {elapsed:.1f}m)")
+                        continue
             
             try:
                 new_count = await self.search_keyword(kw)

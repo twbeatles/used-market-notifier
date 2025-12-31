@@ -55,6 +55,9 @@ class SearchKeyword:
     exclude_keywords: list[str] = field(default_factory=list)
     platforms: list[str] = field(default_factory=lambda: ["danggeun", "bunjang", "joonggonara"])
     enabled: bool = True
+    group_name: Optional[str] = None
+    custom_interval: Optional[int] = None
+    target_price: Optional[int] = None
 
     def matches_price(self, item: Item) -> bool:
         """Check if item price is within range"""
@@ -89,6 +92,41 @@ class SearchKeyword:
             self.matches_location(item) and
             not self.has_excluded_words(item)
         )
+
+
+@dataclass
+class FavoriteItem:
+    """Represents a favorited item"""
+    listing_id: int
+    added_at: str  # ISO format string
+    notes: str = ""
+    target_price: Optional[int] = None
+
+
+@dataclass
+class NotificationLog:
+    """Log of sent notifications"""
+    id: int
+    listing_id: int
+    notification_type: str
+    sent_at: str
+    is_read: bool = False
+    message_preview: str = ""
+
+
+@dataclass
+class SellerFilter:
+    """Filter for specific sellers"""
+    seller_name: str
+    platform: str
+    is_blocked: bool = True
+    notes: str = ""
+
+
+class ThemeMode(Enum):
+    DARK = "dark"
+    LIGHT = "light"
+    SYSTEM = "system"
 
 
 @dataclass
@@ -134,6 +172,9 @@ class AppSettings:
     minimize_to_tray: bool = True
     start_minimized: bool = False
     auto_start_monitoring: bool = False
+    theme_mode: ThemeMode = ThemeMode.DARK
+    confirm_link_open: bool = True
     notification_schedule: NotificationSchedule = field(default_factory=NotificationSchedule)
     notifiers: list[NotifierConfig] = field(default_factory=list)
     keywords: list[SearchKeyword] = field(default_factory=list)
+    seller_filters: list[SellerFilter] = field(default_factory=list)

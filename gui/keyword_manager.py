@@ -393,6 +393,16 @@ class KeywordManagerWidget(QWidget):
         toggle_btn.clicked.connect(self.toggle_keyword)
         action_layout.addWidget(toggle_btn)
         
+        up_btn = QPushButton("⬆️ 위로")
+        up_btn.setObjectName("secondary")
+        up_btn.clicked.connect(self.move_keyword_up)
+        action_layout.addWidget(up_btn)
+        
+        down_btn = QPushButton("⬇️ 아래로")
+        down_btn.setObjectName("secondary")
+        down_btn.clicked.connect(self.move_keyword_down)
+        action_layout.addWidget(down_btn)
+        
         delete_btn = QPushButton("🗑️ 삭제")
         delete_btn.setObjectName("danger")
         delete_btn.clicked.connect(self.delete_keyword)
@@ -446,8 +456,36 @@ class KeywordManagerWidget(QWidget):
         if 0 <= index < len(self.cards):
             self.cards[index].set_selected(True)
     
+    
     def on_card_double_clicked(self, index: int):
         self.selected_index = index
+        self.edit_keyword()
+
+    def move_keyword_up(self):
+        """Move selected keyword up"""
+        if self.selected_index <= 0:
+            return
+        self.move_keyword(self.selected_index, self.selected_index - 1)
+        
+    def move_keyword_down(self):
+        """Move selected keyword down"""
+        if self.selected_index < 0 or self.selected_index >= len(self.cards) - 1:
+            return
+        self.move_keyword(self.selected_index, self.selected_index + 1)
+        
+    def move_keyword(self, old_idx, new_idx):
+        """Swap keywords and refresh"""
+        keywords = self.settings.settings.keywords
+        if not (0 <= old_idx < len(keywords) and 0 <= new_idx < len(keywords)):
+            return
+            
+        # Swap
+        keywords[old_idx], keywords[new_idx] = keywords[new_idx], keywords[old_idx]
+        self.settings.save()
+        self.refresh_list()
+        
+        # Reselect (refresh_list resets selected_index to -1, so we select new)
+        self.on_card_clicked(new_idx)
         self.edit_keyword()
     
     def add_keyword(self):

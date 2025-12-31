@@ -4,238 +4,17 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox,
     QGridLayout, QScrollArea, QFrame, QPushButton, QTableWidget,
-    QTableWidgetItem, QHeaderView, QSizePolicy
+    QTableWidgetItem, QHeaderView, QSizePolicy, QMenu, QMessageBox,
+    QFileDialog
 )
-from PyQt6.QtCore import Qt, QTimer
-import webbrowser
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QColor, QFont, QAction, QDesktopServices
 import sys
 sys.path.insert(0, '..')
+from export_manager import ExportManager
 
-try:
-    import matplotlib
-    matplotlib.use('Qt5Agg')
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.figure import Figure
-    import matplotlib.pyplot as plt
-    
-    # Configure Korean font
-    plt.rcParams['font.family'] = ['Malgun Gothic', 'DejaVu Sans']
-    plt.rcParams['axes.unicode_minus'] = False
-    
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
-
-
-class StatCard(QFrame):
-    """Modern statistic card with gradient background"""
-    
-    def __init__(self, title: str, value: str, icon: str = "", 
-                 color: str = "#7aa2f7", gradient_end: str = None, parent=None):
-        super().__init__(parent)
-        self.color = color
-        self.gradient_end = gradient_end or self._darken_color(color)
-        self.setup_ui(title, value, icon)
-    
-    def _darken_color(self, hex_color: str) -> str:
-        """Darken a hex color"""
-        c = hex_color.lstrip('#')
-        rgb = tuple(int(c[i:i+2], 16) for i in (0, 2, 4))
-        darkened = tuple(max(0, int(v * 0.7)) for v in rgb)
-        return f"#{darkened[0]:02x}{darkened[1]:02x}{darkened[2]:02x}"
-    
-    def setup_ui(self, title: str, value: str, icon: str):
-        self.setMinimumSize(180, 110)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        
-        self.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-                    stop:0 {self.color}33, stop:1 {self.gradient_end}22);
-                border: 2px solid {self.color}44;
-                border-radius: 16px;
-                padding: 16px;
-            }}
-            QFrame:hover {{
-                border: 2px solid {self.color}88;
-            }}
-        """)
-        
-        layout = QVBoxLayout(self)
-        layout.setSpacing(8)
-        layout.setContentsMargins(16, 16, 16, 16)
-        
-        # Icon and title row
-        header = QHBoxLayout()
-        
-        icon_label = QLabel(icon)
-        icon_label.setStyleSheet(f"font-size: 20pt; background: transparent;")
-        header.addWidget(icon_label)
-        
-        title_label = QLabel(title)
-        title_label.setStyleSheet(f"color: {self.color}; font-size: 11pt; background: transparent;")
-        header.addWidget(title_label)
-        header.addStretch()
-        
-        layout.addLayout(header)
-        
-        # Value
-        self.value_label = QLabel(value)
-        self.value_label.setStyleSheet(f"""
-            font-size: 28pt; 
-            font-weight: bold; 
-            color: #c0caf5;
-            background: transparent;
-        """)
-        layout.addWidget(self.value_label)
-        
-        layout.addStretch()
-    
-    def update_value(self, value: str):
-        self.value_label.setText(value)
-
-
-class PlatformChart(QWidget):
-    """Platform distribution pie chart"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setup_ui()
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        if HAS_MATPLOTLIB:
-            self.figure = Figure(figsize=(4, 3), facecolor='#1f2335')
-            self.canvas = FigureCanvas(self.figure)
-            self.canvas.setStyleSheet("background-color: transparent;")
-            layout.addWidget(self.canvas)
-            self._draw_empty()
-        else:
-            label = QLabel("📊 matplotlib 필요\n\npip install matplotlib")
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet("color: #565f89; font-size: 11pt;")
-            layout.addWidget(label)
-    
-    def _draw_empty(self):
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-        ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
-                color='#565f89', fontsize=12)
-        ax.set_facecolor('#1f2335')
-        ax.axis('off')
-        self.figure.patch.set_facecolor('#1f2335')
-        self.canvas.draw()
-    
-    def update_chart(self, data: dict):
-        if not HAS_MATPLOTLIB:
-            return
-        
-        if not data or all(v == 0 for v in data.values()):
-            self._draw_empty()
-            return
-        
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-        
-        # Filter out zero values
-        filtered = {k: v for k, v in data.items() if v > 0}
-        
-        if not filtered:
-            self._draw_empty()
-            return
-        
-        labels = list(filtered.keys())
-        values = list(filtered.values())
-        colors = ['#ff9e64', '#bb9af7', '#9ece6a'][:len(labels)]
-        
-        wedges, texts, autotexts = ax.pie(
-            values, labels=labels, autopct='%1.1f%%',
-            colors=colors, 
-            textprops={'color': '#c0caf5', 'fontsize': 10},
-            wedgeprops={'linewidth': 2, 'edgecolor': '#1f2335'}
-        )
-        
-        for autotext in autotexts:
-            autotext.set_fontweight('bold')
-        
-        ax.axis('equal')
-        self.figure.patch.set_facecolor('#1f2335')
-        self.figure.tight_layout()
-        
-        self.canvas.draw()
-
-
-class DailyChart(QWidget):
-    """Daily stats line/bar chart"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setup_ui()
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        if HAS_MATPLOTLIB:
-            self.figure = Figure(figsize=(6, 3), facecolor='#1f2335')
-            self.canvas = FigureCanvas(self.figure)
-            self.canvas.setStyleSheet("background-color: transparent;")
-            layout.addWidget(self.canvas)
-            self._draw_empty()
-        else:
-            label = QLabel("📊 matplotlib 필요")
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet("color: #565f89;")
-            layout.addWidget(label)
-    
-    def _draw_empty(self):
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-        ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
-                color='#565f89', fontsize=12)
-        ax.set_facecolor('#1f2335')
-        ax.axis('off')
-        self.figure.patch.set_facecolor('#1f2335')
-        self.canvas.draw()
-    
-    def update_chart(self, data: list):
-        if not HAS_MATPLOTLIB or not data:
-            if HAS_MATPLOTLIB:
-                self._draw_empty()
-            return
-        
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-        
-        dates = [d['date'][-5:] for d in data]  # MM-DD format
-        items_found = [d['items_found'] or 0 for d in data]
-        new_items = [d['new_items'] or 0 for d in data]
-        
-        x = range(len(dates))
-        width = 0.35
-        
-        bars1 = ax.bar([i - width/2 for i in x], items_found, width, 
-                       label='검색됨', color='#7aa2f7', alpha=0.8)
-        bars2 = ax.bar([i + width/2 for i in x], new_items, width, 
-                       label='새 상품', color='#9ece6a', alpha=0.8)
-        
-        ax.set_xticks(x)
-        ax.set_xticklabels(dates, color='#7982a9', fontsize=9)
-        ax.tick_params(axis='y', colors='#7982a9')
-        ax.legend(facecolor='#24283b', labelcolor='#c0caf5', fontsize=9)
-        ax.set_facecolor('#1f2335')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#3b4261')
-        ax.spines['bottom'].set_color('#3b4261')
-        
-        self.figure.patch.set_facecolor('#1f2335')
-        self.figure.tight_layout()
-        
-        self.canvas.draw()
+from .components import StatCard
+from .charts import PlatformChart, DailyChart
 
 
 class StatsWidget(QWidget):
@@ -263,6 +42,11 @@ class StatsWidget(QWidget):
         header_layout.addWidget(title)
         
         header_layout.addStretch()
+        
+        export_btn = QPushButton("💾 내보내기")
+        export_btn.setObjectName("secondary")
+        export_btn.clicked.connect(self.show_export_menu)
+        header_layout.addWidget(export_btn)
         
         refresh_btn = QPushButton("🔄 새로고침")
         refresh_btn.setObjectName("secondary")
@@ -328,6 +112,26 @@ class StatsWidget(QWidget):
         self.recent_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.recent_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.recent_table.verticalHeader().setVisible(False)
+        self.recent_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #1f2335;
+                alternate-background-color: #292e42;
+                gridline-color: #3b4261;
+            }
+            QTableWidget::item {
+                padding: 6px;
+            }
+            QTableWidget::item:hover {
+                background-color: #3b4261;
+            }
+            QTableWidget::item:selected {
+                background-color: #7aa2f7;
+                color: #1e1e2e;
+            }
+        """)
+        self.recent_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.recent_table.customContextMenuRequested.connect(self.show_context_menu)
+        self.recent_table.cellDoubleClicked.connect(self.on_table_double_click)
         recent_layout.addWidget(self.recent_table)
         
         tables_layout.addWidget(recent_group, 2)
@@ -339,82 +143,176 @@ class StatsWidget(QWidget):
         
         self.price_table = QTableWidget()
         self.price_table.setColumnCount(4)
-        self.price_table.setHorizontalHeaderLabels(["제목", "이전", "현재", "시간"])
+        self.price_table.setHorizontalHeaderLabels(["상품", "이전가격", "현재가격", "시간"])
         self.price_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.price_table.setAlternatingRowColors(True)
         self.price_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.price_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.price_table.verticalHeader().setVisible(False)
-        price_layout.addWidget(self.price_table)
+        self.price_table.setStyleSheet(self.recent_table.styleSheet())
+        self.price_table.cellDoubleClicked.connect(self.on_table_double_click)
         
+        price_layout.addWidget(self.price_table)
         tables_layout.addWidget(price_group, 1)
         
         layout.addLayout(tables_layout)
-        
-        # Connect signals
-        self.recent_table.cellDoubleClicked.connect(self.on_table_double_clicked)
-        self.price_table.cellDoubleClicked.connect(self.on_table_double_clicked)
-    
-    def on_table_double_clicked(self, row, col):
-        """Open URL in browser when table item is double clicked"""
-        table = self.sender()
-        if not table:
-            return
-            
-        # Get URL from the first column's user data
-        item = table.item(row, 0)
-        if item:
-            url = item.data(Qt.ItemDataRole.UserRole)
-            if url:
-                webbrowser.open(url)
-    
-    def set_engine(self, engine):
-        self.engine = engine
-        self.refresh_stats()
-    
+
     def refresh_stats(self):
+        """Refresh statistics"""
         if not self.engine:
             return
-        
+            
         try:
             stats = self.engine.get_stats()
             
             # Update cards
-            self.total_card.update_value(f"{stats.get('total_listings', 0):,}")
+            self.total_card.set_value(str(stats['total_listings']))
+            counts = {x['platform']: x['count'] for x in stats.get('by_platform', [])}
+            self.danggeun_card.set_value(str(counts.get('danggeun', 0)))
+            self.bunjang_card.set_value(str(counts.get('bunjang', 0)))
+            self.joonggonara_card.set_value(str(counts.get('joonggonara', 0)))
             
-            by_platform = stats.get('by_platform', {})
-            self.danggeun_card.update_value(f"{by_platform.get('danggeun', 0):,}")
-            self.bunjang_card.update_value(f"{by_platform.get('bunjang', 0):,}")
-            self.joonggonara_card.update_value(f"{by_platform.get('joonggonara', 0):,}")
-            
-            # Update charts
-            self.platform_chart.update_chart(by_platform)
-            self.daily_chart.update_chart(stats.get('daily_stats', []))
-            
-            # Update recent items table
+            # Update recent table
             recent = stats.get('recent_listings', [])
-            self.recent_table.setRowCount(min(len(recent), 10))
-            for i, item in enumerate(recent[:10]):
-                platform_item = QTableWidgetItem(item.get('platform', '')[:8])
+            self.recent_table.setRowCount(len(recent))
+            for i, item in enumerate(recent):
+                platform_item = QTableWidgetItem(item.get('platform', ''))
                 platform_item.setData(Qt.ItemDataRole.UserRole, item.get('url'))
+                platform_item.setData(Qt.ItemDataRole.UserRole + 1, item.get('id'))
+                platform_item.setData(Qt.ItemDataRole.UserRole + 2, item.get('seller'))
+                platform_item.setData(Qt.ItemDataRole.UserRole + 3, item.get('platform'))
                 self.recent_table.setItem(i, 0, platform_item)
                 
-                self.recent_table.setItem(i, 1, QTableWidgetItem(item.get('title', '')[:40]))
+                self.recent_table.setItem(i, 1, QTableWidgetItem(item.get('title', '')))
                 self.recent_table.setItem(i, 2, QTableWidgetItem(item.get('price', '')))
-                self.recent_table.setItem(i, 3, QTableWidgetItem(item.get('keyword', '')[:15]))
+                self.recent_table.setItem(i, 3, QTableWidgetItem(item.get('keyword', '')))
                 self.recent_table.setItem(i, 4, QTableWidgetItem(item.get('created_at', '')[11:16]))
             
             # Update price changes table
             changes = stats.get('price_changes', [])
-            self.price_table.setRowCount(min(len(changes), 5))
-            for i, change in enumerate(changes[:5]):
+            self.price_table.setRowCount(len(changes))
+            for i, change in enumerate(changes):
                 title_item = QTableWidgetItem(change.get('title', '')[:30])
                 title_item.setData(Qt.ItemDataRole.UserRole, change.get('url'))
                 self.price_table.setItem(i, 0, title_item)
                 
-                self.price_table.setItem(i, 1, QTableWidgetItem(change.get('old_price', '')))
-                self.price_table.setItem(i, 2, QTableWidgetItem(change.get('new_price', '')))
+                self.price_table.setItem(i, 1, QTableWidgetItem(str(change.get('old_price', ''))))
+                self.price_table.setItem(i, 2, QTableWidgetItem(str(change.get('new_price', ''))))
                 self.price_table.setItem(i, 3, QTableWidgetItem(change.get('changed_at', '')[11:16]))
+
+            # Update charts
+            self.platform_chart.update_chart(counts)
+            self.daily_chart.update_chart(stats.get('daily_stats', []))
                 
         except Exception as e:
             print(f"Error refreshing stats: {e}")
+
+    def on_table_double_click(self, row, col):
+        sender = self.sender()
+        url = None
+        if sender == self.recent_table:
+             item = self.recent_table.item(row, 0)
+             if item: url = item.data(Qt.ItemDataRole.UserRole)
+        elif sender == self.price_table:
+             item = self.price_table.item(row, 0)
+             if item: url = item.data(Qt.ItemDataRole.UserRole)
+             
+        if url:
+             self.open_url(url)
+
+    def open_url(self, url):
+        if hasattr(self.engine, 'settings') and self.engine.settings.settings.confirm_link_open:
+                confirm = QMessageBox.question(
+                    self, "링크 열기",
+                    f"다음 링크로 이동하시겠습니까?\n{url}",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if confirm != QMessageBox.StandardButton.Yes:
+                    return
+        QDesktopServices.openUrl(QUrl(url))
+
+    def show_context_menu(self, pos):
+        """Show context menu for recent items"""
+        row = self.recent_table.rowAt(pos.y())
+        if row < 0:
+            return
+            
+        menu = QMenu(self)
+        fav_action = menu.addAction("⭐ 즐겨찾기 추가")
+        block_action = menu.addAction("🚫 판매자 차단")
+        
+        action = menu.exec(self.recent_table.viewport().mapToGlobal(pos))
+        
+        if action == fav_action:
+            self.add_to_favorites(row)
+        elif action == block_action:
+            self.block_seller(row)
+
+    def block_seller(self, row):
+        """Block the seller of the selected item"""
+        item = self.recent_table.item(row, 0)
+        seller = item.data(Qt.ItemDataRole.UserRole + 2)
+        platform = item.data(Qt.ItemDataRole.UserRole + 3)
+        
+        if not seller:
+            QMessageBox.warning(self, "실패", "판매자 정보가 없습니다.")
+            return
+            
+        confirm = QMessageBox.question(
+            self, "판매자 차단",
+            f"판매자 '{seller}' ({platform})을(를) 차단하시겠습니까?\n앞으로 이 판매자의 상품은 알림이 오지 않습니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.engine.db.add_seller_filter(seller, platform, is_blocked=True)
+            QMessageBox.information(self, "완료", "판매자가 차단되었습니다.")
+
+    def add_to_favorites(self, row):
+        """Add selected item to favorites"""
+        item = self.recent_table.item(row, 0)
+        if not item:
+            return
+            
+        listing_id = item.data(Qt.ItemDataRole.UserRole + 1)
+        if listing_id:
+            if self.engine.db.add_favorite(listing_id):
+                 QMessageBox.information(self, "성공", "즐겨찾기에 추가되었습니다.")
+            else:
+                 QMessageBox.warning(self, "알림", "이미 즐겨찾기에 등록된 상품입니다.")
+
+    def show_export_menu(self):
+        """Show export options menu"""
+        btn = self.sender()
+        menu = QMenu(self)
+        csv_action = menu.addAction("CSV로 저장 (최근 100개)")
+        excel_action = menu.addAction("Excel로 저장 (최근 100개)")
+        
+        action = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        
+        if action == csv_action:
+            self.export_data("csv")
+        elif action == excel_action:
+            self.export_data("excel")
+
+    def export_data(self, format_type):
+        """Export data to file"""
+        filter_str = "CSV Files (*.csv)" if format_type == "csv" else "Excel Files (*.xlsx)"
+        filename, _ = QFileDialog.getSaveFileName(self, "파일 저장", "", filter_str)
+        
+        if not filename:
+            return
+            
+        data = self.engine.db.get_recent_listings(limit=100)
+        fields = ['platform', 'title', 'price', 'keyword', 'url', 'created_at']
+        
+        success = False
+        if format_type == "csv":
+            success = ExportManager.export_to_csv(data, filename, fields)
+        else:
+            success = ExportManager.export_to_excel(data, filename, fields)
+            
+        if success:
+            QMessageBox.information(self, "완료", "저장되었습니다.")
+        else:
+            QMessageBox.critical(self, "실패", "저장에 실패했습니다. (openpyxl 설치 확인 필요)")

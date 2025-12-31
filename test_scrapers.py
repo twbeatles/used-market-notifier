@@ -2,7 +2,8 @@ import logging
 import sys
 from scrapers.danggeun import DanggeunScraper
 from scrapers.bunjang import BunjangScraper
-from config import KEYWORDS
+
+
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger("Test")

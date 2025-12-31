@@ -12,7 +12,9 @@ webdriver-manager>=4.0.0
 aiohttp>=3.9.0
 
 # Data Visualization (Optional - for charts)
+# Data Visualization (Optional - for charts)
 matplotlib>=3.7.0
+openpyxl>=3.1.0
 
 # Environment Variables
 python-dotenv>=1.0.0

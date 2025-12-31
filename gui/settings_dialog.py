@@ -5,12 +5,12 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QFormLayout, QLineEdit, QSpinBox, QCheckBox, QLabel,
     QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
-    QScrollArea
+    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 import sys
 sys.path.insert(0, '..')
-from models import NotificationType, NotificationSchedule
+from models import NotificationType, NotificationSchedule, ThemeMode
 from notifiers import TelegramNotifier, DiscordNotifier, SlackNotifier
 import asyncio
 
@@ -56,6 +56,9 @@ class SettingsDialog(QDialog):
         
         schedule_widget = self.create_schedule_tab()
         self.tabs.addTab(schedule_widget, "⏰  스케줄")
+        
+        seller_widget = self.create_seller_tab()
+        self.tabs.addTab(seller_widget, "🚫  차단 관리")
         
         layout.addWidget(self.tabs)
         
@@ -109,6 +112,18 @@ class SettingsDialog(QDialog):
         self.headless_check.setStyleSheet("font-size: 10pt;")
         monitor_layout.addRow("", self.headless_check)
         
+        # Theme settings
+        theme_row = QHBoxLayout()
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("다크 모드 (Dark)", ThemeMode.DARK)
+        self.theme_combo.addItem("라이트 모드 (Light)", ThemeMode.LIGHT)
+        self.theme_combo.addItem("시스템 설정 (System)", ThemeMode.SYSTEM)
+        self.theme_combo.setMinimumWidth(200)
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch()
+        
+        monitor_layout.addRow("테마 설정", theme_row)
+        
         layout.addWidget(monitor_group)
         
         # Window settings
@@ -124,6 +139,9 @@ class SettingsDialog(QDialog):
         
         self.auto_start_check = QCheckBox("시작 시 자동으로 모니터링 시작")
         window_layout.addWidget(self.auto_start_check)
+        
+        self.confirm_link_check = QCheckBox("상품 링크 열기 전 확인")
+        window_layout.addWidget(self.confirm_link_check)
         
         layout.addWidget(window_group)
         layout.addStretch()
@@ -424,6 +442,15 @@ class SettingsDialog(QDialog):
         self.minimize_tray_check.setChecked(s.minimize_to_tray)
         self.start_minimized_check.setChecked(s.start_minimized)
         self.auto_start_check.setChecked(s.auto_start_monitoring)
+        self.confirm_link_check.setChecked(s.confirm_link_open)
+        
+        # Load theme
+        idx = self.theme_combo.findData(s.theme_mode)
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
+        
+        # Load blocked sellers
+        self.load_blocked_sellers()
         
         tg_config = self.settings.get_telegram_config()
         if tg_config:
@@ -455,7 +482,12 @@ class SettingsDialog(QDialog):
         s.headless_mode = self.headless_check.isChecked()
         s.minimize_to_tray = self.minimize_tray_check.isChecked()
         s.start_minimized = self.start_minimized_check.isChecked()
+        s.check_interval_seconds = self.interval_spin.value()
+        s.headless_mode = self.headless_check.isChecked()
+        s.minimize_to_tray = self.minimize_tray_check.isChecked()
+        s.start_minimized = self.start_minimized_check.isChecked()
         s.auto_start_monitoring = self.auto_start_check.isChecked()
+        s.theme_mode = self.theme_combo.currentData()
         
         for n in s.notifiers:
             if n.type == NotificationType.TELEGRAM:
@@ -480,6 +512,64 @@ class SettingsDialog(QDialog):
         QMessageBox.information(self, "저장 완료", "설정이 저장되었습니다.")
         self.accept()
     
+    def test_telegram(self):
+        """Test Telegram notification"""
+        token = self.telegram_token.text().strip()
+        chat_id = self.telegram_chat_id.text().strip()
+        
+        if not token or not chat_id:
+            QMessageBox.warning(self, "오류", "토큰과 Chat ID를 모두 입력해주세요.")
+            return
+            
+        self._start_test_thread(
+            NotificationType.TELEGRAM, 
+            token=token, 
+            chat_id=chat_id
+        )
+    
+    def test_discord(self):
+        """Test Discord notification"""
+        url = self.discord_webhook.text().strip()
+        
+        if not url:
+            QMessageBox.warning(self, "오류", "Webhook URL을 입력해주세요.")
+            return
+            
+        self._start_test_thread(
+            NotificationType.DISCORD, 
+            url=url
+        )
+    
+    def test_slack(self):
+        """Test Slack notification"""
+        url = self.slack_webhook.text().strip()
+        
+        if not url:
+            QMessageBox.warning(self, "오류", "Webhook URL을 입력해주세요.")
+            return
+            
+        self._start_test_thread(
+            NotificationType.SLACK, 
+            url=url
+        )
+    
+    def _start_test_thread(self, n_type, **kwargs):
+        """Start notification test thread"""
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        
+        self.test_thread = NotificationTestThread(n_type, **kwargs)
+        self.test_thread.finished.connect(self._on_test_finished)
+        self.test_thread.start()
+    
+    def _on_test_finished(self, success, message):
+        """Handle test thread completion"""
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        if success:
+            QMessageBox.information(self, "성공", message)
+        else:
+            QMessageBox.warning(self, "실패", message)
+
+
 class NotificationTestThread(QThread):
     """Thread for testing notifications asynchronously"""
     finished = pyqtSignal(bool, str)
@@ -532,56 +622,67 @@ class NotificationTestThread(QThread):
         except Exception as e:
             self.finished.emit(False, f"오류 발생: {str(e)}")
 
+    def create_seller_tab(self) -> QWidget:
+        """Create tab for managing blocked sellers"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+        
+        desc = QLabel("🚫 차단된 판매자 목록 (이 판매자들의 상품은 알림이 오지 않습니다)")
+        desc.setStyleSheet("color: #7aa2f7;")
+        layout.addWidget(desc)
+        
+        self.seller_table = QTableWidget()
+        self.seller_table.setColumnCount(3)
+        self.seller_table.setHorizontalHeaderLabels(["플랫폼", "판매자명", "차단일"])
+        self.seller_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.seller_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.seller_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.seller_table)
+        
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        
+        unblock_btn = QPushButton("차단 해제")
+        unblock_btn.clicked.connect(self.unblock_seller)
+        btn_row.addWidget(unblock_btn)
+        
+        layout.addLayout(btn_row)
+        
+        return widget
 
-    def test_telegram(self):
-        token = self.telegram_token.text().strip()
-        chat_id = self.telegram_chat_id.text().strip()
-        
-        if not token or not chat_id:
-            QMessageBox.warning(self, "오류", "토큰과 Chat ID를 모두 입력해주세요.")
+    def load_blocked_sellers(self):
+        """Load blocked sellers from DB"""
+        if not self.parent():
             return
             
-        self._start_test_thread(
-            NotificationType.TELEGRAM, 
-            token=token, 
-            chat_id=chat_id
-        )
-    
-    def test_discord(self):
-        url = self.discord_webhook.text().strip()
-        
-        if not url:
-            QMessageBox.warning(self, "오류", "Webhook URL을 입력해주세요.")
+        try:
+            db = self.parent().engine.db
+            sellers = db.get_blocked_sellers()
+            self.seller_table.setRowCount(len(sellers))
+            for i, seller in enumerate(sellers):
+                self.seller_table.setItem(i, 0, QTableWidgetItem(seller['platform']))
+                self.seller_table.setItem(i, 1, QTableWidgetItem(seller['seller_name']))
+                self.seller_table.setItem(i, 2, QTableWidgetItem(seller['created_at'][:10]))
+        except Exception as e:
+            print(f"Error loading sellers: {e}")
+
+    def unblock_seller(self):
+        """Unblock selected seller"""
+        row = self.seller_table.currentRow()
+        if row < 0:
             return
             
-        self._start_test_thread(
-            NotificationType.DISCORD, 
-            url=url
-        )
-    
-    def test_slack(self):
-        url = self.slack_webhook.text().strip()
+        platform = self.seller_table.item(row, 0).text()
+        seller = self.seller_table.item(row, 1).text()
         
-        if not url:
-            QMessageBox.warning(self, "오류", "Webhook URL을 입력해주세요.")
-            return
-            
-        self._start_test_thread(
-            NotificationType.SLACK, 
-            url=url
-        )
-    
-    def _start_test_thread(self, n_type, **kwargs):
-        # Disable buttons during test (simplified)
-        self.setCursor(Qt.CursorShape.WaitCursor)
-        
-        self.test_thread = NotificationTestThread(n_type, **kwargs)
-        self.test_thread.finished.connect(self._on_test_finished)
-        self.test_thread.start()
-    
-    def _on_test_finished(self, success, message):
-        self.setCursor(Qt.CursorShape.ArrowCursor)
-        if success:
-            QMessageBox.information(self, "성공", message)
-        else:
-            QMessageBox.warning(self, "실패", message)
+        if QMessageBox.question(self, "확인", f"'{seller}' 판매자의 차단을 해제하시겠습니까?") == QMessageBox.StandardButton.Yes:
+            try:
+                db = self.parent().engine.db
+                db.remove_seller_filter(seller, platform)
+                self.load_blocked_sellers()
+                QMessageBox.information(self, "완료", "차단이 해제되었습니다.")
+            except Exception as e:
+                QMessageBox.warning(self, "오류", f"차단 해제 실패: {e}")
+

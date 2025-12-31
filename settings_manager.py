@@ -8,7 +8,7 @@ from dataclasses import asdict
 from typing import Optional
 from models import (
     AppSettings, SearchKeyword, NotifierConfig, 
-    NotificationSchedule, NotificationType
+    NotificationSchedule, NotificationType, ThemeMode, SellerFilter
 )
 
 SETTINGS_FILE = "settings.json"
@@ -69,6 +69,7 @@ class SettingsManager:
             'minimize_to_tray': settings.minimize_to_tray,
             'start_minimized': settings.start_minimized,
             'auto_start_monitoring': settings.auto_start_monitoring,
+            'theme_mode': settings.theme_mode.value,
             'notification_schedule': {
                 'enabled': settings.notification_schedule.enabled,
                 'start_hour': settings.notification_schedule.start_hour,
@@ -94,8 +95,20 @@ class SettingsManager:
                     'exclude_keywords': k.exclude_keywords,
                     'platforms': k.platforms,
                     'enabled': k.enabled,
+                    'group_name': k.group_name,
+                    'custom_interval': k.custom_interval,
+                    'target_price': k.target_price,
                 }
                 for k in settings.keywords
+            ],
+            'seller_filters': [
+                {
+                    'seller_name': s.seller_name,
+                    'platform': s.platform,
+                    'is_blocked': s.is_blocked,
+                    'notes': s.notes,
+                }
+                for s in settings.seller_filters
             ]
         }
         return data
@@ -112,13 +125,16 @@ class SettingsManager:
         
         notifiers = []
         for n in data.get('notifiers', []):
-            notifiers.append(NotifierConfig(
-                type=NotificationType(n.get('type', 'telegram')),
-                enabled=n.get('enabled', False),
-                token=n.get('token', ''),
-                chat_id=n.get('chat_id', ''),
-                webhook_url=n.get('webhook_url', ''),
-            ))
+            try:
+                notifiers.append(NotifierConfig(
+                    type=NotificationType(n.get('type', 'telegram')),
+                    enabled=n.get('enabled', False),
+                    token=n.get('token', ''),
+                    chat_id=n.get('chat_id', ''),
+                    webhook_url=n.get('webhook_url', ''),
+                ))
+            except:
+                pass
         
         keywords = []
         for k in data.get('keywords', []):
@@ -130,6 +146,18 @@ class SettingsManager:
                 exclude_keywords=k.get('exclude_keywords', []),
                 platforms=k.get('platforms', ['danggeun', 'bunjang', 'joonggonara']),
                 enabled=k.get('enabled', True),
+                group_name=k.get('group_name'),
+                custom_interval=k.get('custom_interval'),
+                target_price=k.get('target_price'),
+            ))
+            
+        seller_filters = []
+        for s in data.get('seller_filters', []):
+            seller_filters.append(SellerFilter(
+                seller_name=s.get('seller_name', ''),
+                platform=s.get('platform', ''),
+                is_blocked=s.get('is_blocked', True),
+                notes=s.get('notes', ''),
             ))
         
         return AppSettings(
@@ -139,9 +167,11 @@ class SettingsManager:
             minimize_to_tray=data.get('minimize_to_tray', True),
             start_minimized=data.get('start_minimized', False),
             auto_start_monitoring=data.get('auto_start_monitoring', False),
+            theme_mode=ThemeMode(data.get('theme_mode', 'dark')),
             notification_schedule=schedule,
             notifiers=notifiers,
             keywords=keywords,
+            seller_filters=seller_filters,
         )
     
     # Convenience methods
