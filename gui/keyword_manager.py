@@ -9,8 +9,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QFont
-import sys
-sys.path.insert(0, '..')
 from models import SearchKeyword
 
 
@@ -108,8 +106,7 @@ class KeywordCard(QFrame):
         if self.selected:
             self.setStyleSheet("""
                 QFrame#keywordCard {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                        stop:0 rgba(122, 162, 247, 0.3), stop:1 rgba(187, 154, 247, 0.3));
+                    background-color: #313244;
                     border: 2px solid #7aa2f7;
                     border-radius: 12px;
                 }
@@ -117,13 +114,13 @@ class KeywordCard(QFrame):
         else:
             self.setStyleSheet("""
                 QFrame#keywordCard {
-                    background-color: #1f2335;
+                    background-color: #1e1e2e;
                     border: 2px solid #3b4261;
                     border-radius: 12px;
                 }
                 QFrame#keywordCard:hover {
                     border: 2px solid #565f89;
-                    background-color: #292e42;
+                    background-color: #252535;
                 }
             """)
     
@@ -173,7 +170,7 @@ class KeywordEditDialog(QDialog):
         self.keyword_edit.setMinimumHeight(40)
         keyword_layout.addRow("검색어", self.keyword_edit)
         
-        self.enabled_check = QCheckBox("활성화")
+        self.enabled_check = QCheckBox("🔍 키워드 모니터링 활성화")
         self.enabled_check.setChecked(True)
         keyword_layout.addRow("", self.enabled_check)
         
@@ -354,6 +351,7 @@ class KeywordManagerWidget(QWidget):
         add_btn = QPushButton("+ 새 키워드")
         add_btn.setObjectName("success")
         add_btn.setMinimumWidth(120)
+        add_btn.setToolTip("새로운 검색 키워드를 추가합니다")
         add_btn.clicked.connect(self.add_keyword)
         header_layout.addWidget(add_btn)
         
@@ -385,26 +383,31 @@ class KeywordManagerWidget(QWidget):
         
         edit_btn = QPushButton("✏️ 수정")
         edit_btn.setObjectName("secondary")
+        edit_btn.setToolTip("선택한 키워드 설정을 수정합니다 (더블클릭으로도 가능)")
         edit_btn.clicked.connect(self.edit_keyword)
         action_layout.addWidget(edit_btn)
         
         toggle_btn = QPushButton("⏯️ 활성화 토글")
         toggle_btn.setObjectName("secondary")
+        toggle_btn.setToolTip("키워드 모니터링 활성화/비활성화 전환")
         toggle_btn.clicked.connect(self.toggle_keyword)
         action_layout.addWidget(toggle_btn)
         
         up_btn = QPushButton("⬆️ 위로")
         up_btn.setObjectName("secondary")
+        up_btn.setToolTip("키워드 순서를 위로 이동")
         up_btn.clicked.connect(self.move_keyword_up)
         action_layout.addWidget(up_btn)
         
         down_btn = QPushButton("⬇️ 아래로")
         down_btn.setObjectName("secondary")
+        down_btn.setToolTip("키워드 순서를 아래로 이동")
         down_btn.clicked.connect(self.move_keyword_down)
         action_layout.addWidget(down_btn)
         
         delete_btn = QPushButton("🗑️ 삭제")
         delete_btn.setObjectName("danger")
+        delete_btn.setToolTip("선택한 키워드를 삭제합니다")
         delete_btn.clicked.connect(self.delete_keyword)
         action_layout.addWidget(delete_btn)
         
@@ -434,9 +437,9 @@ class KeywordManagerWidget(QWidget):
         
         # Add empty state if no keywords
         if not keywords:
-            empty_label = QLabel("키워드가 없습니다.\n위의 '새 키워드' 버튼을 눌러 추가하세요.")
+            empty_label = QLabel("🔍 아직 키워드가 없어요\n\n위의 '+ 새 키워드' 버튼을 눌러\n모니터링할 검색어를 추가하세요!")
             empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("color: #565f89; font-size: 12pt; padding: 40px;")
+            empty_label.setStyleSheet("color: #6c7086; font-size: 12pt; padding: 40px; line-height: 1.6;")
             self.cards_layout.addWidget(empty_label)
         
         self.cards_layout.addStretch()
@@ -484,9 +487,8 @@ class KeywordManagerWidget(QWidget):
         self.settings.save()
         self.refresh_list()
         
-        # Reselect (refresh_list resets selected_index to -1, so we select new)
+        # Reselect the moved item
         self.on_card_clicked(new_idx)
-        self.edit_keyword()
     
     def add_keyword(self):
         dialog = KeywordEditDialog(parent=self)
@@ -529,13 +531,15 @@ class KeywordManagerWidget(QWidget):
         
         keyword = self.settings.settings.keywords[self.selected_index]
         
-        reply = QMessageBox.question(
-            self, "삭제 확인",
-            f"'{keyword.keyword}' 키워드를 삭제하시겠습니까?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("삭제 확인")
+        msg_box.setText(f"'{keyword.keyword}' 키워드를 삭제하시겠습니까?")
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        yes_btn = msg_box.addButton("예", QMessageBox.ButtonRole.YesRole)
+        msg_box.addButton("아니오", QMessageBox.ButtonRole.NoRole)
+        msg_box.exec()
         
-        if reply == QMessageBox.StandardButton.Yes:
+        if msg_box.clickedButton() == yes_btn:
             self.settings.remove_keyword(self.selected_index)
             self.refresh_list()
             self.keywords_changed.emit()

@@ -63,9 +63,9 @@ class NotificationHistoryWidget(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: #1f2335;
-                alternate-background-color: #292e42;
-                gridline-color: #3b4261;
+                background-color: #1e1e2e;
+                alternate-background-color: #313244;
+                gridline-color: #45475a;
                 border: none;
                 border-radius: 8px;
             }
@@ -73,18 +73,18 @@ class NotificationHistoryWidget(QWidget):
                 padding: 8px;
             }
             QTableWidget::item:hover {
-                background-color: #3b4261;
+                background-color: #45475a;
             }
             QTableWidget::item:selected {
-                background-color: #7aa2f7;
+                background-color: #89b4fa;
                 color: #1e1e2e;
             }
             QHeaderView::section {
-                background-color: #1e1e2e;
+                background-color: #181825;
                 color: #a6adc8;
                 padding: 8px;
                 border: none;
-                border-bottom: 2px solid #3b4261;
+                border-bottom: 2px solid #45475a;
             }
         """)
         

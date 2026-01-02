@@ -1,6 +1,38 @@
 # gui/styles.py
-"""Stylesheet definitions for the application - Fixed version"""
+"""Stylesheet definitions for the application - Catppuccin Mocha Theme"""
 
+# Catppuccin Mocha Color Palette
+CATPPUCCIN_MOCHA = {
+    # Base colors
+    'base': '#1e1e2e',
+    'mantle': '#181825',
+    'crust': '#11111b',
+    'surface0': '#313244',
+    'surface1': '#45475a',
+    'surface2': '#585b70',
+    'overlay0': '#8087a2',
+    'overlay1': '#7f849c',
+    'overlay2': '#9399b2',
+    # Text colors
+    'text': '#cdd6f4',
+    'subtext0': '#a6adc8',
+    'subtext1': '#bac2de',
+    # Accent colors
+    'blue': '#89b4fa',
+    'lavender': '#b4befe',
+    'sapphire': '#74c7ec',
+    'sky': '#89dceb',
+    'teal': '#94e2d5',
+    'green': '#a6e3a1',
+    'yellow': '#f9e2af',
+    'peach': '#fab387',
+    'maroon': '#eba0ac',
+    'red': '#f38ba8',
+    'mauve': '#cba6f7',
+    'pink': '#f5c2e7',
+    'flamingo': '#f2cdcd',
+    'rosewater': '#f5e0dc',
+}
 DARK_STYLE = """
 /* ===== Main Windows ===== */
 QMainWindow {
@@ -67,7 +99,7 @@ QPushButton:pressed {
 
 QPushButton:disabled {
     background-color: #45475a;
-    color: #6c7086;
+    color: #8087a2;
 }
 
 QPushButton#danger {
@@ -144,7 +176,7 @@ QListWidget, QTableWidget, QTreeWidget {
 }
 
 QListWidget::item, QTableWidget::item {
-    padding: 8px;
+    padding: 12px;
     border-radius: 4px;
 }
 
@@ -265,7 +297,7 @@ QLabel#subtitle {
 }
 
 QLabel#muted {
-    color: #6c7086;
+    color: #8087a2;
 }
 
 /* ===== Tooltips ===== */

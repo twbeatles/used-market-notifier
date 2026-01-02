@@ -10,8 +10,25 @@ from .base import Item
 class BunjangScraper(SeleniumScraper):
     """Bunjang (번개장터) scraper with thumbnail and seller extraction"""
     
-    def __init__(self, headless: bool = True, disable_images: bool = True):
-        super().__init__(headless, disable_images)
+    # Invalid title patterns to filter out
+    INVALID_TITLE_PATTERNS = [
+        "배송비포함", "검수가능", "제목 없음", "No Title", 
+        "판매완료", "예약중", "광고"
+    ]
+    
+    def __init__(self, headless: bool = True, disable_images: bool = True, driver=None):
+        super().__init__(headless, disable_images, driver)
+    
+    def _is_valid_title(self, title: str) -> bool:
+        """Check if title is valid (not sold out or placeholder)"""
+        if not title or len(title.strip()) < 2:
+            return False
+        # Filter out invalid title patterns - use partial matching
+        title_lower = title.strip().lower()
+        for pattern in self.INVALID_TITLE_PATTERNS:
+            if pattern.lower() in title_lower:
+                return False
+        return True
 
     def search(self, keyword: str, location: str = None) -> list[Item]:
         """
@@ -27,83 +44,84 @@ class BunjangScraper(SeleniumScraper):
         self.logger.info(f"Visiting {url}")
         self.driver.get(url)
         
-        # Bunjang is SPA, wait for content
-        try:
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/products/']"))
-            )
-        except Exception as e:
-            self.logger.warning(f"Timeout waiting for Bunjang results: {e}")
-            return []
-
         items = []
         try:
-            elements = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='/products/']")
-            
-            for el in elements:
+            # Wait for items to load (using data-pid selector which targets legitimate product items)
+            try:
+                # Wait up to 10 seconds for items
+                product_links = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[data-pid]"))
+                )
+            except Exception:
+                # If no items found, check if "No results" message exists or just return empty
+                self.logger.info("No items found on Bunjang (Timeout waiting for a[data-pid])")
+                return []
+
+            for link_el in product_links:
                 try:
-                    link = el.get_attribute('href')
-                    if not link or '/products/' not in link or '/products/new' in link:
+                    # 1. Extract ID and Link
+                    pid = link_el.get_attribute("data-pid")
+                    if not pid:
                         continue
-                    
-                    # Extract article ID
-                    article_id = link.split('/products/')[1].split('?')[0]
-                    if not article_id or not article_id.isdigit():
-                        continue
-                    
-                    text_content = [l.strip() for l in el.text.split('\n') if l.strip()]
-                    
-                    title = "No Title"
-                    price = "가격문의"
-                    seller = None
-                    thumbnail = None
-                    
-                    # Get thumbnail from image
+                    link = f"https://m.bunjang.co.kr/products/{pid}"
+
+                    # 2. Extract Title (2nd div -> 1st div)
+                    # Structure: Image(1) - Info(2) - Location(3)
+                    # Info: Title(1) - Price/Time(2)
                     try:
-                        img = el.find_element(By.TAG_NAME, "img")
-                        alt = img.get_attribute("alt")
-                        thumbnail = img.get_attribute("src")
-                        
-                        if alt and alt != "상품 이미지" and alt != "product":
-                            title = alt
-                        
-                        # Filter placeholder thumbnails
-                        if thumbnail and ('placeholder' in thumbnail or 'default' in thumbnail):
-                            thumbnail = None
-                    except:
+                        title_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(2) > div:nth-of-type(1)")
+                        title = title_el.text.strip()
+                    except Exception:
+                        title = "제목 없음"
+
+                    # 3. Extract Price (2nd div -> 2nd div -> 1st div)
+                    try:
+                        price_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)")
+                        price_text = price_el.text.replace(',', '').replace('원', '').strip()
+                        price = int(price_text) if price_text.isdigit() else 0
+                    except Exception:
+                        price = 0
+
+                    # 4. Extract Location (3rd div)
+                    location_text = ""
+                    try:
+                        loc_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(3)")
+                        location_text = loc_el.text.strip()
+                    except Exception:
                         pass
                     
-                    # Parse text content
-                    for line in text_content:
-                        # Price detection
-                        if ('원' in line or line.replace(',', '').isdigit()) and len(line) < 15:
-                            price = line
-                        # Title (if not from alt)
-                        elif title == "No Title" and len(line) > 2:
-                            title = line
-                    
-                    # Ensure full link
-                    if not link.startswith('http'):
-                        link = f"https://m.bunjang.co.kr{link}"
+                    # 5. Extract Image (1st div -> img)
+                    img_url = ""
+                    try:
+                        img_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(1) img")
+                        img_url = img_el.get_attribute("src")
+                    except Exception:
+                        pass
+
+                    # Use the new validation method
+                    if not self._is_valid_title(title):
+                        continue
 
                     item = Item(
-                        platform='bunjang',
-                        article_id=article_id,
+                        platform="bunjang",
+                        article_id=pid,
                         title=title,
-                        price=price,
+                        price=str(price),
                         link=link,
                         keyword=keyword,
-                        thumbnail=thumbnail,
-                        seller=seller
+                        thumbnail=img_url,
+                        seller=None,
+                        location=location_text
                     )
                     items.append(item)
-                    
+
                 except Exception as e:
-                    self.logger.debug(f"Error parsing item: {e}")
+                    # Skip individual item errors
+                    # self.logger.debug(f"Error parsing item: {e}")
                     continue
 
         except Exception as e:
-            self.logger.error(f"Error scraping Bunjang: {e}")
-
+            self.logger.error(f"Error parsing Bunjang items: {e}")
+        
         self.logger.info(f"Found {len(items)} items on Bunjang for '{keyword}'")
         return items

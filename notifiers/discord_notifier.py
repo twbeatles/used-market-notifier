@@ -3,8 +3,6 @@
 
 import aiohttp
 from typing import Optional
-import sys
-sys.path.insert(0, '..')
 from models import Item
 from .base import BaseNotifier
 
@@ -72,7 +70,7 @@ class DiscordNotifier(BaseNotifier):
             new_num = int(''.join(c for c in new_price if c.isdigit()) or '0')
             color = 0x00C853 if new_num < old_num else 0xFF5252  # Green if down, red if up
             emoji = "📉" if new_num < old_num else "📈"
-        except:
+        except (ValueError, TypeError):
             color = 0xFFC107
             emoji = "💱"
         

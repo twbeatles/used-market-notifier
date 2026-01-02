@@ -29,7 +29,7 @@ class PlatformChart(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         if HAS_MATPLOTLIB:
-            self.figure = Figure(figsize=(4, 3), facecolor='#1f2335')
+            self.figure = Figure(figsize=(4, 3), facecolor='#1e1e2e')
             self.canvas = FigureCanvas(self.figure)
             self.canvas.setStyleSheet("background-color: transparent;")
             layout.addWidget(self.canvas)
@@ -45,9 +45,9 @@ class PlatformChart(QWidget):
         ax = self.figure.add_subplot(111)
         ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
                 color='#565f89', fontsize=12)
-        ax.set_facecolor('#1f2335')
+        ax.set_facecolor('#1e1e2e')
         ax.axis('off')
-        self.figure.patch.set_facecolor('#1f2335')
+        self.figure.patch.set_facecolor('#1e1e2e')
         self.canvas.draw()
     
     def update_chart(self, data: dict):
@@ -76,14 +76,14 @@ class PlatformChart(QWidget):
             values, labels=labels, autopct='%1.1f%%',
             colors=colors, 
             textprops={'color': '#c0caf5', 'fontsize': 10},
-            wedgeprops={'linewidth': 2, 'edgecolor': '#1f2335'}
+            wedgeprops={'linewidth': 2, 'edgecolor': '#1e1e2e'}
         )
         
         for autotext in autotexts:
             autotext.set_fontweight('bold')
         
         ax.axis('equal')
-        self.figure.patch.set_facecolor('#1f2335')
+        self.figure.patch.set_facecolor('#1e1e2e')
         self.figure.tight_layout()
         
         self.canvas.draw()
@@ -101,7 +101,7 @@ class DailyChart(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         if HAS_MATPLOTLIB:
-            self.figure = Figure(figsize=(6, 3), facecolor='#1f2335')
+            self.figure = Figure(figsize=(6, 3), facecolor='#1e1e2e')
             self.canvas = FigureCanvas(self.figure)
             self.canvas.setStyleSheet("background-color: transparent;")
             layout.addWidget(self.canvas)
@@ -117,9 +117,9 @@ class DailyChart(QWidget):
         ax = self.figure.add_subplot(111)
         ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
                 color='#565f89', fontsize=12)
-        ax.set_facecolor('#1f2335')
+        ax.set_facecolor('#1e1e2e')
         ax.axis('off')
-        self.figure.patch.set_facecolor('#1f2335')
+        self.figure.patch.set_facecolor('#1e1e2e')
         self.canvas.draw()
     
     def update_chart(self, data: list):
@@ -148,13 +148,13 @@ class DailyChart(QWidget):
         ax.tick_params(axis='y', colors='#7982a9')
         ax.legend(facecolor='#24283b', labelcolor='#c0caf5', fontsize=9)
         
-        ax.set_facecolor('#1f2335')
+        ax.set_facecolor('#1e1e2e')
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#3b4261')
         ax.spines['bottom'].set_color('#3b4261')
         
-        self.figure.patch.set_facecolor('#1f2335')
+        self.figure.patch.set_facecolor('#1e1e2e')
         self.figure.tight_layout()
         
         self.canvas.draw()

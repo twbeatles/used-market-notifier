@@ -5,6 +5,9 @@
   "minimize_to_tray": false,
   "start_minimized": false,
   "auto_start_monitoring": false,
+  "theme_mode": "dark",
+  "confirm_link_open": true,
+  "notifications_enabled": false,
   "notification_schedule": {
     "enabled": true,
     "start_hour": 0,
@@ -44,30 +47,20 @@
   ],
   "keywords": [
     {
-      "keyword": "맥북 에어 M2",
+      "keyword": "맥북 에어 M2 256",
       "min_price": null,
       "max_price": null,
-      "location": null,
+      "location": "동대문구",
       "exclude_keywords": [],
       "platforms": [
         "danggeun",
-        "bunjang",
-        "joonggonara"
+        "bunjang"
       ],
-      "enabled": true
-    },
-    {
-      "keyword": "아이폰 15 프로",
-      "min_price": null,
-      "max_price": null,
-      "location": null,
-      "exclude_keywords": [],
-      "platforms": [
-        "danggeun",
-        "bunjang",
-        "joonggonara"
-      ],
-      "enabled": true
+      "enabled": true,
+      "group_name": null,
+      "custom_interval": null,
+      "target_price": null
     }
-  ]
+  ],
+  "seller_filters": []
 }

@@ -40,7 +40,7 @@ class Item:
             # Remove non-numeric characters except digits
             cleaned = ''.join(c for c in self.price if c.isdigit())
             self.price_numeric = int(cleaned) if cleaned else 0
-        except:
+        except (ValueError, TypeError):
             self.price_numeric = 0
         return self.price_numeric
 
@@ -174,6 +174,7 @@ class AppSettings:
     auto_start_monitoring: bool = False
     theme_mode: ThemeMode = ThemeMode.DARK
     confirm_link_open: bool = True
+    notifications_enabled: bool = False  # Notifications OFF by default
     notification_schedule: NotificationSchedule = field(default_factory=NotificationSchedule)
     notifiers: list[NotifierConfig] = field(default_factory=list)
     keywords: list[SearchKeyword] = field(default_factory=list)

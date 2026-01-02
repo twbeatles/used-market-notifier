@@ -17,12 +17,13 @@ class QTextEditHandler(logging.Handler):
         super().__init__()
         self.text_edit = text_edit
         
+        # Catppuccin Mocha colors for log levels
         self.colors = {
-            logging.DEBUG: "#565f89",
-            logging.INFO: "#9ece6a",
-            logging.WARNING: "#e0af68",
-            logging.ERROR: "#f7768e",
-            logging.CRITICAL: "#f7768e",
+            logging.DEBUG: "#6c7086",    # overlay0
+            logging.INFO: "#a6e3a1",     # green
+            logging.WARNING: "#f9e2af",  # yellow
+            logging.ERROR: "#f38ba8",    # red
+            logging.CRITICAL: "#f38ba8", # red
         }
         
         self.level_icons = {
@@ -77,7 +78,7 @@ class LogWidget(QWidget):
         level_frame = QFrame()
         level_frame.setStyleSheet("""
             QFrame {
-                background-color: #24283b;
+                background-color: #313244;
                 border-radius: 8px;
                 padding: 4px;
             }
@@ -115,8 +116,8 @@ class LogWidget(QWidget):
             QPlainTextEdit {
                 font-family: 'Consolas', 'D2Coding', monospace;
                 font-size: 9pt;
-                background-color: #1f2335;
-                border: 2px solid #3b4261;
+                background-color: #1e1e2e;
+                border: 2px solid #45475a;
                 border-radius: 12px;
                 padding: 12px;
                 line-height: 1.4;
@@ -167,11 +168,12 @@ class LogWidget(QWidget):
         self.append_log("로그가 초기화되었습니다.", "INFO")
     
     def append_log(self, message: str, level: str = "INFO"):
+        # Catppuccin Mocha colors
         colors = {
-            "DEBUG": "#565f89",
-            "INFO": "#9ece6a",
-            "WARNING": "#e0af68",
-            "ERROR": "#f7768e",
+            "DEBUG": "#6c7086",    # overlay0
+            "INFO": "#a6e3a1",     # green
+            "WARNING": "#f9e2af",  # yellow
+            "ERROR": "#f38ba8",    # red
         }
         icons = {
             "DEBUG": "🔍",
@@ -180,7 +182,7 @@ class LogWidget(QWidget):
             "ERROR": "❌",
         }
         
-        color = colors.get(level.upper(), "#c0caf5")
+        color = colors.get(level.upper(), "#cdd6f4")
         icon = icons.get(level.upper(), "📝")
         
         from datetime import datetime

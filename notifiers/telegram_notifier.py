@@ -4,8 +4,6 @@
 import asyncio
 import aiohttp
 from typing import Optional
-import sys
-sys.path.insert(0, '..')
 from models import Item
 from .base import BaseNotifier
 

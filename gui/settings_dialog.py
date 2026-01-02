@@ -8,8 +8,6 @@ from PyQt6.QtWidgets import (
     QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-import sys
-sys.path.insert(0, '..')
 from models import NotificationType, NotificationSchedule, ThemeMode
 from notifiers import TelegramNotifier, DiscordNotifier, SlackNotifier
 import asyncio
@@ -142,6 +140,10 @@ class SettingsDialog(QDialog):
         
         self.confirm_link_check = QCheckBox("상품 링크 열기 전 확인")
         window_layout.addWidget(self.confirm_link_check)
+        
+        self.notifications_enabled_check = QCheckBox("🔔 알림 받기 (텔레그램/디스코드/슬랙)")
+        self.notifications_enabled_check.setToolTip("체크 해제 시 모든 알림이 비활성화됩니다")
+        window_layout.addWidget(self.notifications_enabled_check)
         
         layout.addWidget(window_group)
         layout.addStretch()
@@ -443,6 +445,7 @@ class SettingsDialog(QDialog):
         self.start_minimized_check.setChecked(s.start_minimized)
         self.auto_start_check.setChecked(s.auto_start_monitoring)
         self.confirm_link_check.setChecked(s.confirm_link_open)
+        self.notifications_enabled_check.setChecked(getattr(s, 'notifications_enabled', False))
         
         # Load theme
         idx = self.theme_combo.findData(s.theme_mode)
@@ -482,11 +485,9 @@ class SettingsDialog(QDialog):
         s.headless_mode = self.headless_check.isChecked()
         s.minimize_to_tray = self.minimize_tray_check.isChecked()
         s.start_minimized = self.start_minimized_check.isChecked()
-        s.check_interval_seconds = self.interval_spin.value()
-        s.headless_mode = self.headless_check.isChecked()
-        s.minimize_to_tray = self.minimize_tray_check.isChecked()
-        s.start_minimized = self.start_minimized_check.isChecked()
         s.auto_start_monitoring = self.auto_start_check.isChecked()
+        s.confirm_link_open = self.confirm_link_check.isChecked()
+        s.notifications_enabled = self.notifications_enabled_check.isChecked()
         s.theme_mode = self.theme_combo.currentData()
         
         for n in s.notifiers:
@@ -511,6 +512,72 @@ class SettingsDialog(QDialog):
         self.settings.save()
         QMessageBox.information(self, "저장 완료", "설정이 저장되었습니다.")
         self.accept()
+    
+    def create_seller_tab(self) -> QWidget:
+        """Create tab for managing blocked sellers"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+        
+        desc = QLabel("🚫 차단된 판매자 목록 (이 판매자들의 상품은 알림이 오지 않습니다)")
+        desc.setStyleSheet("color: #89b4fa;")
+        layout.addWidget(desc)
+        
+        self.seller_table = QTableWidget()
+        self.seller_table.setColumnCount(3)
+        self.seller_table.setHorizontalHeaderLabels(["플랫폼", "판매자명", "차단일"])
+        self.seller_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.seller_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.seller_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.seller_table)
+        
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        
+        unblock_btn = QPushButton("🔓 차단 해제")
+        unblock_btn.setToolTip("선택한 판매자의 차단을 해제합니다")
+        unblock_btn.clicked.connect(self.unblock_seller)
+        btn_row.addWidget(unblock_btn)
+        
+        layout.addLayout(btn_row)
+        
+        return widget
+
+    def load_blocked_sellers(self):
+        """Load blocked sellers from DB"""
+        if not self.parent():
+            return
+            
+        try:
+            db = self.parent().engine.db
+            sellers = db.get_blocked_sellers()
+            self.seller_table.setRowCount(len(sellers))
+            for i, seller in enumerate(sellers):
+                self.seller_table.setItem(i, 0, QTableWidgetItem(seller['platform']))
+                self.seller_table.setItem(i, 1, QTableWidgetItem(seller['seller_name']))
+                self.seller_table.setItem(i, 2, QTableWidgetItem(seller['created_at'][:10]))
+        except Exception as e:
+            print(f"Error loading sellers: {e}")
+
+    def unblock_seller(self):
+        """Unblock selected seller"""
+        row = self.seller_table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "알림", "차단 해제할 판매자를 선택하세요.")
+            return
+            
+        platform = self.seller_table.item(row, 0).text()
+        seller = self.seller_table.item(row, 1).text()
+        
+        if QMessageBox.question(self, "확인", f"'{seller}' 판매자의 차단을 해제하시겠습니까?") == QMessageBox.StandardButton.Yes:
+            try:
+                db = self.parent().engine.db
+                db.remove_seller_filter(seller, platform)
+                self.load_blocked_sellers()
+                QMessageBox.information(self, "완료", "차단이 해제되었습니다.")
+            except Exception as e:
+                QMessageBox.warning(self, "오류", f"차단 해제 실패: {e}")
     
     def test_telegram(self):
         """Test Telegram notification"""
@@ -621,68 +688,4 @@ class NotificationTestThread(QThread):
             
         except Exception as e:
             self.finished.emit(False, f"오류 발생: {str(e)}")
-
-    def create_seller_tab(self) -> QWidget:
-        """Create tab for managing blocked sellers"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(16)
-        
-        desc = QLabel("🚫 차단된 판매자 목록 (이 판매자들의 상품은 알림이 오지 않습니다)")
-        desc.setStyleSheet("color: #7aa2f7;")
-        layout.addWidget(desc)
-        
-        self.seller_table = QTableWidget()
-        self.seller_table.setColumnCount(3)
-        self.seller_table.setHorizontalHeaderLabels(["플랫폼", "판매자명", "차단일"])
-        self.seller_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.seller_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.seller_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.seller_table)
-        
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        
-        unblock_btn = QPushButton("차단 해제")
-        unblock_btn.clicked.connect(self.unblock_seller)
-        btn_row.addWidget(unblock_btn)
-        
-        layout.addLayout(btn_row)
-        
-        return widget
-
-    def load_blocked_sellers(self):
-        """Load blocked sellers from DB"""
-        if not self.parent():
-            return
-            
-        try:
-            db = self.parent().engine.db
-            sellers = db.get_blocked_sellers()
-            self.seller_table.setRowCount(len(sellers))
-            for i, seller in enumerate(sellers):
-                self.seller_table.setItem(i, 0, QTableWidgetItem(seller['platform']))
-                self.seller_table.setItem(i, 1, QTableWidgetItem(seller['seller_name']))
-                self.seller_table.setItem(i, 2, QTableWidgetItem(seller['created_at'][:10]))
-        except Exception as e:
-            print(f"Error loading sellers: {e}")
-
-    def unblock_seller(self):
-        """Unblock selected seller"""
-        row = self.seller_table.currentRow()
-        if row < 0:
-            return
-            
-        platform = self.seller_table.item(row, 0).text()
-        seller = self.seller_table.item(row, 1).text()
-        
-        if QMessageBox.question(self, "확인", f"'{seller}' 판매자의 차단을 해제하시겠습니까?") == QMessageBox.StandardButton.Yes:
-            try:
-                db = self.parent().engine.db
-                db.remove_seller_filter(seller, platform)
-                self.load_blocked_sellers()
-                QMessageBox.information(self, "완료", "차단이 해제되었습니다.")
-            except Exception as e:
-                QMessageBox.warning(self, "오류", f"차단 해제 실패: {e}")
 

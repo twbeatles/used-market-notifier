@@ -2,11 +2,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 import logging
-import sys
-import os
-
-# Add parent directory to path for models import
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import Item from models - single source of truth
 from models import Item

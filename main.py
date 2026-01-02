@@ -21,15 +21,40 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 
 def setup_logging():
-    """Setup logging configuration"""
+    """Setup logging configuration with rotation"""
+    from logging.handlers import RotatingFileHandler
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    
+    # File handler with rotation (5MB max, keep 3 backups)
+    file_handler = RotatingFileHandler(
+        "notifier.log",
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=3,
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Configure root logger
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler("notifier.log", encoding='utf-8')
-        ]
+        handlers=[console_handler, file_handler]
     )
+    
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logging.error("Ignored exception/Crash caused by:", exc_info=(exc_type, exc_value, exc_traceback))
+
+    sys.excepthook = handle_exception
 
 
 def run_cli():

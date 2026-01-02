@@ -1,16 +1,19 @@
 from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QGraphicsDropShadowEffect
 )
+from PyQt6.QtCore import QPropertyAnimation, QEasingCurve, Qt
+from PyQt6.QtGui import QColor
 
 class StatCard(QFrame):
-    """Modern statistic card with gradient background"""
+    """Modern statistic card with gradient background and hover effects"""
     
     def __init__(self, title: str, value: str, icon: str = "", 
-                 color: str = "#7aa2f7", gradient_end: str = None, parent=None):
+                 color: str = "#89b4fa", gradient_end: str = None, parent=None):
         super().__init__(parent)
         self.color = color
         self.gradient_end = gradient_end or self._darken_color(color)
         self.setup_ui(title, value, icon)
+        self._setup_shadow()
     
     def _darken_color(self, hex_color: str) -> str:
         """Darken a hex color"""
@@ -19,20 +22,34 @@ class StatCard(QFrame):
         darkened = tuple(max(0, int(v * 0.7)) for v in rgb)
         return f"#{darkened[0]:02x}{darkened[1]:02x}{darkened[2]:02x}"
     
+    def _setup_shadow(self):
+        """Add subtle drop shadow for depth"""
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setXOffset(0)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 50))
+        self.setGraphicsEffect(shadow)
+    
     def setup_ui(self, title: str, value: str, icon: str):
         self.setMinimumSize(180, 110)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         
+        # Dark background with colored border - use specific class selector
+        self.setObjectName("statCard")
         self.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
-                    stop:0 {self.color}33, stop:1 {self.gradient_end}22);
-                border: 2px solid {self.color}44;
+            QFrame#statCard {{
+                background-color: #1e1e2e;
+                border: 2px solid {self.color};
                 border-radius: 16px;
-                padding: 16px;
             }}
-            QFrame:hover {{
-                border: 2px solid {self.color}88;
+            QFrame#statCard:hover {{
+                background-color: #313244;
+            }}
+            QFrame#statCard QLabel {{
+                border: none;
+                background: transparent;
             }}
         """)
         
@@ -48,7 +65,7 @@ class StatCard(QFrame):
         header.addWidget(icon_label)
         
         title_label = QLabel(title)
-        title_label.setStyleSheet(f"color: {self.color}; font-size: 11pt; background: transparent;")
+        title_label.setStyleSheet(f"color: {self.color}; font-size: 11pt; font-weight: bold; background: transparent;")
         header.addWidget(title_label)
         header.addStretch()
         
@@ -56,10 +73,10 @@ class StatCard(QFrame):
         
         # Value
         self.value_label = QLabel(value)
-        self.value_label.setStyleSheet("""
+        self.value_label.setStyleSheet(f"""
             font-size: 28pt; 
             font-weight: bold; 
-            color: #c0caf5;
+            color: #cdd6f4;
             background: transparent;
         """)
         layout.addWidget(self.value_label)
@@ -71,3 +88,4 @@ class StatCard(QFrame):
     
     def set_value(self, value: str):
         self.update_value(value)
+

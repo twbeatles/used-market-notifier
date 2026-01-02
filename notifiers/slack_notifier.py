@@ -3,8 +3,6 @@
 
 import aiohttp
 from typing import Optional
-import sys
-sys.path.insert(0, '..')
 from models import Item
 from .base import BaseNotifier
 
@@ -96,7 +94,7 @@ class SlackNotifier(BaseNotifier):
             new_num = int(''.join(c for c in new_price if c.isdigit()) or '0')
             emoji = ":chart_with_downwards_trend:" if new_num < old_num else ":chart_with_upwards_trend:"
             direction = "인하" if new_num < old_num else "인상"
-        except:
+        except (ValueError, TypeError):
             emoji = ":money_with_wings:"
             direction = "변동"
         

@@ -1,3 +1,5 @@
+import time
+import functools
 from .base import BaseScraper
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -5,12 +7,38 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import logging
 
+
+def retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
+    """Retry decorator with exponential backoff"""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            current_delay = delay
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    if attempt < max_attempts - 1:
+                        time.sleep(current_delay)
+                        current_delay *= backoff
+            raise last_exception
+        return wrapper
+    return decorator
+
+
 class SeleniumScraper(BaseScraper):
     """Base class for Selenium-based scrapers"""
     
-    def __init__(self, headless: bool = True, disable_images: bool = True):
+    def __init__(self, headless: bool = True, disable_images: bool = True, driver: webdriver.Chrome = None):
         super().__init__()
-        self.driver = self._create_driver(headless, disable_images)
+        self._owned_driver = False
+        if driver:
+            self.driver = driver
+        else:
+            self.driver = self._create_driver(headless, disable_images)
+            self._owned_driver = True
         self.wait_time = 10
 
     def _create_driver(self, headless: bool, disable_images: bool) -> webdriver.Chrome:
@@ -25,7 +53,7 @@ class SeleniumScraper(BaseScraper):
         options.add_argument('--window-size=1920,1080')
         options.add_argument('--disable-extensions')
         options.add_argument('--disable-infobars')
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
         
         # Performance optimizations
         if disable_images:
@@ -36,6 +64,7 @@ class SeleniumScraper(BaseScraper):
             options.add_experimental_option("prefs", prefs)
         
         try:
+            # Use cached driver path if possible
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
             return driver
@@ -43,9 +72,14 @@ class SeleniumScraper(BaseScraper):
             self.logger.error(f"Failed to initialize Chrome driver: {e}")
             raise e
 
+    @retry(max_attempts=3, delay=1.0)
+    def safe_search(self, keyword: str, location: str = None) -> list:
+        """Search with automatic retry on failure"""
+        return self.search(keyword, location)
+
     def close(self):
         """Clean up Selenium resources"""
-        if hasattr(self, 'driver') and self.driver:
+        if hasattr(self, 'driver') and self.driver and self._owned_driver:
             try:
                 self.driver.quit()
             except Exception as e:

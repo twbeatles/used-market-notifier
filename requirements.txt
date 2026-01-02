@@ -1,26 +1,6 @@
-# requirements.txt
-# Used Market Notifier - Dependencies
-
-# GUI Framework
-PyQt6>=6.5.0
-
-# Web Scraping
-selenium>=4.15.0
+PyQt6>=6.4.0
+selenium>=4.10.0
 webdriver-manager>=4.0.0
-
-# Async HTTP
-aiohttp>=3.9.0
-
-# Data Visualization (Optional - for charts)
-# Data Visualization (Optional - for charts)
+aiohttp>=3.8.0
 matplotlib>=3.7.0
 openpyxl>=3.1.0
-
-# Environment Variables
-python-dotenv>=1.0.0
-
-# Telegram Bot (lightweight alternative to python-telegram-bot)
-# Using aiohttp directly for API calls
-
-# For typing support
-typing-extensions>=4.8.0

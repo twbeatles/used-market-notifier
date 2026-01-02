@@ -70,6 +70,8 @@ class SettingsManager:
             'start_minimized': settings.start_minimized,
             'auto_start_monitoring': settings.auto_start_monitoring,
             'theme_mode': settings.theme_mode.value,
+            'confirm_link_open': settings.confirm_link_open,
+            'notifications_enabled': settings.notifications_enabled,
             'notification_schedule': {
                 'enabled': settings.notification_schedule.enabled,
                 'start_hour': settings.notification_schedule.start_hour,
@@ -133,7 +135,7 @@ class SettingsManager:
                     chat_id=n.get('chat_id', ''),
                     webhook_url=n.get('webhook_url', ''),
                 ))
-            except:
+            except Exception:
                 pass
         
         keywords = []
@@ -168,6 +170,8 @@ class SettingsManager:
             start_minimized=data.get('start_minimized', False),
             auto_start_monitoring=data.get('auto_start_monitoring', False),
             theme_mode=ThemeMode(data.get('theme_mode', 'dark')),
+            confirm_link_open=data.get('confirm_link_open', True),
+            notifications_enabled=data.get('notifications_enabled', False),
             notification_schedule=schedule,
             notifiers=notifiers,
             keywords=keywords,

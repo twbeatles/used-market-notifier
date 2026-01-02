@@ -1,8 +1,9 @@
 # scrapers/joonggonara.py
-"""Joonggonara (중고나라) scraper - Naver Cafe based"""
+"""Joonggonara (중고나라) scraper - Using Naver Search cafe results"""
 
 import time
 import re
+from urllib.parse import quote
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -12,95 +13,125 @@ from .base import Item
 
 class JoonggonaraScraper(SeleniumScraper):
     """
-    Joonggonara scraper using the public search interface.
-    Note: Some features may be limited without Naver login.
+    Joonggonara scraper using Naver Search cafe tab.
+    More reliable than direct café access which requires login/captcha.
     """
     
-    def __init__(self, headless: bool = True, disable_images: bool = True):
-        super().__init__(headless, disable_images)
+    # Joonggonara cafe ID
+    CAFE_ID = "10050146"
+    
+    # Invalid title patterns to filter out
+    INVALID_TITLE_PATTERNS = [
+        "판매완료", "예약중", "거래완료", "No Title", "광고", "배송비포함"
+    ]
+    
+    def __init__(self, headless: bool = True, disable_images: bool = True, driver=None):
+        super().__init__(headless, disable_images, driver)
+    
+    def _is_valid_title(self, title: str) -> bool:
+        """Check if title is valid (not sold out or placeholder)"""
+        if not title or len(title.strip()) < 2:
+            return False
+        if title.strip() in self.INVALID_TITLE_PATTERNS:
+            return False
+        return True
     
     def search(self, keyword: str, location: str = None) -> list[Item]:
         """
-        Search Joonggonara via Naver Cafe search.
-        Target URL: https://m.cafe.naver.com/joonggonara/search?search.query={keyword}
+        Search Joonggonara via Naver Search cafe tab.
+        This works better than direct cafe access which often requires captcha.
         """
-        # Encode keyword manually or use urllib. We need urllib quote for robust encoding
-        from urllib.parse import quote
         encoded = quote(keyword)
-        url = f"https://m.cafe.naver.com/joonggonara/search?search.query={encoded}"
+        
+        # Naver Search cafe-specific query for joonggonara
+        # site:cafe.naver.com/joonggonara forces results from this cafe
+        url = f"https://search.naver.com/search.naver?where=article&query={encoded}%20site%3Acafe.naver.com%2Fjoonggonara"
         
         self.logger.info(f"Visiting {url}")
         self.driver.get(url)
         
-        # Wait for list items
-        try:
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "li.list_item"))
-            )
-        except Exception as e:
-            self.logger.warning(f"Timeout waiting for Joonggonara results: {e}")
-            return []
-            
         items = []
+        
         try:
-            elements = self.driver.find_elements(By.CSS_SELECTOR, "li.list_item")
+            # Wait for search results
+            time.sleep(2)
             
-            for el in elements:
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a.title_link, a.api_txt_lines.total_tit, .bx, ul.lst_total"))
+                )
+            except Exception:
+                self.logger.info(f"No results found on Naver Search for '{keyword}' in Joonggonara")
+                return []
+            
+            # Try multiple selector patterns for Naver Search results
+            selectors = [
+                "a.title_link",  # Main title links
+                "a.api_txt_lines.total_tit",  # Alternative title format
+                "ul.lst_total > li a.link_tit",  # List format
+                "div.total_area a.api_txt_lines",  # Total search area
+            ]
+            
+            article_elements = []
+            for selector in selectors:
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                if elements:
+                    self.logger.debug(f"Found {len(elements)} elements with selector: {selector}")
+                    article_elements = elements
+                    break
+            
+            if not article_elements:
+                # Fallback: find any cafe links
+                all_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='cafe.naver.com/joonggonara']")
+                article_elements = [l for l in all_links if l.text.strip()]
+                self.logger.debug(f"Fallback: found {len(article_elements)} cafe links")
+            
+            for el in article_elements:
                 try:
-                    # Extracts are tricky on mobile Naver Cafe. 
-                    # Structure usually: a.item_link -> div.info -> strong.tit
+                    link = el.get_attribute("href") or ""
+                    title = el.text.strip()
                     
-                    link_el = el.find_element(By.CSS_SELECTOR, "a")
-                    link = link_el.get_attribute("href")
-                    
-                    if not link or "ArticleRead.nhn" not in link:
+                    # Must be joonggonara link
+                    if "joonggonara" not in link and "cafe.naver.com" not in link:
                         continue
-                        
-                    # Extract article ID
-                    # ../ArticleRead.nhn?clubid=10050146&articleid=101234567...
-                    match = re.search(r'articleid=(\d+)', link)
+                    
+                    # Extract article ID from URL
+                    match = re.search(r'articleid=(\d+)', link, re.IGNORECASE)
                     if not match:
+                        match = re.search(r'/(\d+)\?', link)
+                    if not match:
+                        match = re.search(r'/(\d+)$', link)
+                    if not match:
+                        # Generate ID from URL hash
+                        article_id = str(hash(link) % 1000000000)
+                    else:
+                        article_id = match.group(1)
+                    
+                    # Clean title (remove newlines and extra spaces)
+                    if '\n' in title:
+                        title = title.split('\n')[0].strip()
+                    title = ' '.join(title.split())
+                    
+                    if not self._is_valid_title(title):
                         continue
-                    article_id = match.group(1)
-                    
-                    title_el = el.find_element(By.CSS_SELECTOR, "strong.tit")
-                    title = title_el.text.strip()
-                    
-                    # Price might be missing or in different spot
-                    price = "가격문의"
-                    try:
-                        price_el = el.find_element(By.CSS_SELECTOR, "span.price")
-                        price = price_el.text.strip()
-                    except:
-                        pass
-                        
-                    # Get thumbnail
-                    thumbnail = None
-                    try:
-                        img = el.find_element(By.TAG_NAME, "img")
-                        thumbnail = img.get_attribute("src")
-                    except:
-                        pass
-
-                    if not link.startswith('http'):
-                        link = f"https://m.cafe.naver.com{link}"
                     
                     item = Item(
                         platform='joonggonara',
                         article_id=article_id,
                         title=title,
-                        price=price,
+                        price="가격문의",  # Search results don't show price
                         link=link,
                         keyword=keyword,
-                        thumbnail=thumbnail
+                        thumbnail=None
                     )
                     items.append(item)
                     
                 except Exception as e:
+                    self.logger.debug(f"Error parsing article: {e}")
                     continue
                     
         except Exception as e:
-            self.logger.error(f"Error scraping Joonggonara: {e}")
-            
-        self.logger.info(f"Found {len(items)} items on Joonggonara")
+            self.logger.error(f"Error scraping Joonggonara via Naver Search: {e}")
+        
+        self.logger.info(f"Found {len(items)} items on Joonggonara for '{keyword}'")
         return items

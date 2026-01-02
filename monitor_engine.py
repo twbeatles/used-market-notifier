@@ -22,11 +22,13 @@ class MonitorEngine:
         self.settings = settings_manager
         self.logger = logging.getLogger("MonitorEngine")
         self.db = DatabaseManager(self.settings.settings.db_path)
+        self._shared_driver = None
         
         self.scrapers = {}
         self.notifiers = []
         self.running = False
         self._task: Optional[asyncio.Task] = None
+        self.is_first_run = True  # Skip notifications on initial crawl
         
         # Callbacks for UI updates
         self.on_new_item: Optional[Callable[[Item], None]] = None
@@ -35,26 +37,77 @@ class MonitorEngine:
         self.on_error: Optional[Callable[[str], None]] = None
     
     def initialize_scrapers(self):
-        """Initialize all scrapers"""
-        headless = self.settings.settings.headless_mode
+        """Initialize scrapers with shared browser instance"""
+        import time
+        import gc
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from webdriver_manager.chrome import ChromeDriverManager
         
+        headless = self.settings.settings.headless_mode
+        self._update_status("스크래퍼 및 브라우저 초기화 중...")
+        
+        # 1. Create shared driver if not exists
+        if not self._shared_driver:
+            try:
+                options = Options()
+                if headless:
+                    options.add_argument('--headless')
+                options.add_argument('--no-sandbox')
+                options.add_argument('--disable-dev-shm-usage')
+                options.add_argument('--disable-gpu')
+                options.add_argument('--window-size=1920,1080')
+                options.add_argument('--disable-extensions')
+                options.add_argument('--disable-infobars')
+                options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+                
+                # Performance optimizations
+                prefs = {
+                    "profile.managed_default_content_settings.images": 2,
+                    "profile.default_content_setting_values.notifications": 2,
+                }
+                options.add_experimental_option("prefs", prefs)
+                
+                service = Service(ChromeDriverManager().install())
+                self._shared_driver = webdriver.Chrome(service=service, options=options)
+                self.logger.info("Shared Chrome driver initialized")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize shared driver: {e}")
+                import traceback
+                self.logger.debug(traceback.format_exc())
+                self._update_status("브라우저 초기화 실패")
+                return
+
+        # 2. Initialize scrapers with shared driver
+        # Danggeun
         try:
-            self.scrapers['danggeun'] = DanggeunScraper(headless=headless)
+            self.scrapers['danggeun'] = DanggeunScraper(headless=headless, driver=self._shared_driver)
             self.logger.info("Danggeun scraper initialized")
         except Exception as e:
             self.logger.error(f"Failed to initialize Danggeun scraper: {e}")
         
+        # Bunjang
         try:
-            self.scrapers['bunjang'] = BunjangScraper(headless=headless)
+            self.scrapers['bunjang'] = BunjangScraper(headless=headless, driver=self._shared_driver)
             self.logger.info("Bunjang scraper initialized")
         except Exception as e:
             self.logger.error(f"Failed to initialize Bunjang scraper: {e}")
         
-        try:
-            self.scrapers['joonggonara'] = JoonggonaraScraper(headless=headless)
-            self.logger.info("Joonggonara scraper initialized")
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Joonggonara scraper: {e}")
+        # Joonggonara (Skip in headless, but if enabled, share driver)
+        if not headless:
+            try:
+                self.scrapers['joonggonara'] = JoonggonaraScraper(headless=headless, driver=self._shared_driver)
+                self.logger.info("Joonggonara scraper initialized")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Joonggonara scraper: {e}")
+        else:
+            self.logger.warning("Joonggonara skipped in headless mode (Naver bot detection)")
+        
+        # Report initialized scrapers
+        active_count = len(self.scrapers)
+        self.logger.info(f"Initialized {active_count} scraper(s): {list(self.scrapers.keys())}")
+        self._update_status(f"스크래퍼 {active_count}개 초기화 완료 (공유 브라우저)")
     
     def initialize_notifiers(self):
         """Initialize notification channels based on settings"""
@@ -90,6 +143,10 @@ class MonitorEngine:
                                   old_price: str = None, new_price: str = None,
                                   listing_id: int = None):
         """Send notifications through all enabled channels"""
+        # Check if notifications are enabled globally
+        if not self.settings.settings.notifications_enabled:
+            return
+        
         # Check schedule
         schedule = self.settings.settings.notification_schedule
         if not schedule.is_active_now():
@@ -128,8 +185,8 @@ class MonitorEngine:
         if blocked_sellers:
             blocked_set = {(row['seller_name'], row['platform']) for row in blocked_sellers}
             
-        # Setup parallel tasks
-        tasks = []
+        # Execute searches sequentially (Single driver shared)
+        results = []
         active_platforms = []
         self._update_status(f"'{keyword_config.keyword}' 검색 중... ({', '.join(keyword_config.platforms)})")
         
@@ -137,16 +194,16 @@ class MonitorEngine:
             scraper = self.scrapers.get(platform)
             if not scraper:
                 continue
+            
             active_platforms.append(platform)
-            tasks.append(
-                asyncio.to_thread(scraper.safe_search, keyword_config.keyword, keyword_config.location)
-            )
-            
-        if not tasks:
-            return 0
-            
-        # Execute searches in parallel
-        results = await asyncio.gather(*tasks)
+            try:
+                # Run search sequentially to avoid driver conflict
+                # Use to_thread to keep UI responsive
+                items = await asyncio.to_thread(scraper.safe_search, keyword_config.keyword, keyword_config.location)
+                results.append(items)
+            except Exception as e:
+                self.logger.error(f"Error searching {platform}: {e}")
+                results.append([])
         
         # Process results
         for platform, items in zip(active_platforms, results):
@@ -172,7 +229,17 @@ class MonitorEngine:
                 
                 # Process items
                 platform_new = 0
+                invalid_titles = ["판매완료", "거래완료", "예약중", "No Title", "배송비포함", "제목 없음"]
+                
                 for item in items:
+                    # Validate title
+                    if not item.title or len(item.title.strip()) < 2:
+                        continue
+                        
+                    # Filter invalid titles
+                    if any(inv in item.title for inv in invalid_titles):
+                        continue
+                        
                     # Check fuzzy duplicate for reposts
                     if self.db.is_fuzzy_duplicate(item):
                         continue
@@ -186,8 +253,10 @@ class MonitorEngine:
                         if self.on_new_item:
                             self.on_new_item(item)
                         
-                        await self.send_notifications(item, listing_id=listing_id)
-                        await asyncio.sleep(0.5)  # Slight delay to prevent spam
+                        # Skip notifications on first run to avoid spam
+                        if not self.is_first_run:
+                            await self.send_notifications(item, listing_id=listing_id)
+                            await asyncio.sleep(0.5)  # Slight delay to prevent spam
                     
                     elif price_change:
                         self.logger.info(f"Price change: {item.title} ({price_change['old_price']} → {price_change['new_price']})")
@@ -256,6 +325,12 @@ class MonitorEngine:
             
             await asyncio.sleep(2)  # Pause between keywords
         
+        # After first cycle, enable notifications for future runs
+        if self.is_first_run:
+            self.is_first_run = False
+            self.logger.info(f"Initial crawl complete. Found {total_new} items (notifications skipped for initial run)")
+            self._update_status(f"초기 크롤링 완료: {total_new}개 발견 (알림 스킵됨)")
+        
         return total_new
     
     async def start(self):
@@ -273,8 +348,8 @@ class MonitorEngine:
         for notifier in self.notifiers:
             try:
                 await notifier.send_message("🚀 중고거래 알리미가 시작되었습니다!")
-            except:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Startup notification failed: {e}")
         
         self._update_status("모니터링 시작됨")
         
@@ -312,6 +387,15 @@ class MonitorEngine:
                 self.logger.error(f"Error closing {name} scraper: {e}")
         
         self.scrapers.clear()
+        
+        # Close shared driver
+        if self._shared_driver:
+            try:
+                self._shared_driver.quit()
+                self._shared_driver = None
+                self.logger.info("Shared driver closed")
+            except Exception as e:
+                self.logger.error(f"Error closing shared driver: {e}")
     
     def _update_status(self, status: str):
         """Update status and notify callback"""
@@ -328,6 +412,7 @@ class MonitorEngine:
             'daily_stats': self.db.get_daily_stats(7),
             'recent_listings': self.db.get_recent_listings(10),
             'price_changes': self.db.get_price_changes(7),
+            'price_analysis': self.db.get_keyword_price_stats(),
         }
     
     def close(self):

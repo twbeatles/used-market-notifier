@@ -4,8 +4,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 import logging
-import sys
-sys.path.insert(0, '..')
 from models import Item
 
 
@@ -71,7 +69,7 @@ class BaseNotifier(ABC):
             else:
                 emoji = "📈"
                 direction = "인상"
-        except:
+        except Exception:
             emoji = "💱"
             direction = "변동"
         

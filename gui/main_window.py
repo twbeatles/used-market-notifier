@@ -23,6 +23,7 @@ from gui.favorites_widget import FavoritesWidget
 from gui.notification_history import NotificationHistoryWidget
 from gui.system_tray import SystemTrayIcon
 from gui.log_widget import LogWidget
+from gui.listings_widget import ListingsWidget
 from settings_manager import SettingsManager
 from monitor_engine import MonitorEngine
 
@@ -117,6 +118,9 @@ class MainWindow(QMainWindow):
         self.keyword_widget = KeywordManagerWidget(self.settings_manager)
         self.tabs.addTab(self.keyword_widget, "🔍 키워드")
         
+        self.listings_widget = ListingsWidget(self.engine)
+        self.tabs.addTab(self.listings_widget, "📋 전체 매물")
+        
         self.stats_widget = StatsWidget(self.engine)
         self.tabs.addTab(self.stats_widget, "📊 통계")
         
@@ -210,6 +214,7 @@ class MainWindow(QMainWindow):
         self.start_btn.setObjectName("success")
         self.start_btn.setMinimumWidth(100)
         self.start_btn.setMinimumHeight(36)
+        self.start_btn.setToolTip("모니터링 시작/중지 (Ctrl+S)")
         self.start_btn.setStyleSheet("""
             QPushButton {
                 background-color: #a6e3a1;
@@ -230,6 +235,7 @@ class MainWindow(QMainWindow):
         # Settings button
         settings_btn = QPushButton("⚙️ 설정")
         settings_btn.setMinimumHeight(36)
+        settings_btn.setToolTip("알림, 테마, 스케줄 설정 (Ctrl+,)")
         settings_btn.setStyleSheet("""
             QPushButton {
                 background-color: #45475a;
@@ -300,6 +306,7 @@ class MainWindow(QMainWindow):
         
         self.engine = MonitorEngine(self.settings_manager)
         self.stats_widget.set_engine(self.engine)
+        self.listings_widget.set_engine(self.engine)
         
         self.monitor_thread = MonitorThread(self.engine)
         self.monitor_thread.status_update.connect(self.on_status_update)
@@ -362,17 +369,32 @@ class MainWindow(QMainWindow):
     
     def on_status_update(self, status: str):
         self.status_bar.showMessage(status)
-        # Update last search time when a search cycle completes
-        if "다음 검색까지" in status or "검색 중" in status:
+        # Update header status based on activity
+        if "검색 중" in status or "스크래핑" in status:
+            self.status_text.setText("검색 중...")
+            self.status_dot.setStyleSheet("color: #f9e2af; font-size: 10pt; background: transparent;")
+        elif "초기화" in status:
+            self.status_text.setText("초기화 중...")
+            self.status_dot.setStyleSheet("color: #89b4fa; font-size: 10pt; background: transparent;")
+        elif "다음 검색까지" in status:
+            self.status_text.setText("모니터링 중")
+            self.status_dot.setStyleSheet("color: #a6e3a1; font-size: 10pt; background: transparent;")
+            # Update last search time
             from datetime import datetime
             self.last_search_label.setText(f"마지막 검색: {datetime.now().strftime('%H:%M:%S')}")
     
     def on_new_item(self, item):
+        # Skip notifications during initial crawl (is_first_run handled in engine)
+        # Only show toast notifications for new items after first cycle
+        if hasattr(self.engine, 'is_first_run') and self.engine.is_first_run:
+            return
+        
         self.tray_icon.show_notification(
             f"🆕 새 상품 - {item.platform}",
             f"{item.title}\n{item.price}"
         )
         self.stats_widget.refresh_stats()
+        self.listings_widget.refresh_listings()
     
     def on_price_change(self, item, old_price: str, new_price: str):
         self.tray_icon.show_notification(
@@ -380,9 +402,12 @@ class MainWindow(QMainWindow):
             f"{item.title}\n{old_price} → {new_price}"
         )
         self.stats_widget.refresh_stats()
+        self.listings_widget.refresh_listings()
     
     def on_error(self, error: str):
         self.status_bar.showMessage(f"⚠️ 오류: {error}")
+        self.status_text.setText("오류 발생")
+        self.status_dot.setStyleSheet("color: #f38ba8; font-size: 10pt; background: transparent;")
     
     def open_settings(self):
         dialog = SettingsDialog(self.settings_manager, self)
@@ -393,7 +418,7 @@ class MainWindow(QMainWindow):
             self.apply_theme()
             
             # Update keywords
-            self.keyword_widget.load_keywords()
+            self.keyword_widget.refresh_list()
             
             # Restart if running
             if self.monitor_thread and self.monitor_thread.isRunning():
