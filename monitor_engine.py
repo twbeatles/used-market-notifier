@@ -1,11 +1,22 @@
 # monitor_engine.py
-"""Core monitoring engine that orchestrates scraping and notifications"""
+"""
+Core monitoring engine that orchestrates scraping and notifications.
+
+Features:
+- Playwright-based browser automation
+- Parallel scraping with asyncio.gather
+- Advanced stealth mode for bot detection bypass
+- Comprehensive debugging and diagnostics
+"""
 
 import asyncio
 import logging
 from datetime import datetime
 from typing import Optional, Callable
+from playwright.async_api import async_playwright, Playwright, Browser, BrowserContext
 from scrapers import DanggeunScraper, BunjangScraper, JoonggonaraScraper, Item
+from scrapers.stealth import apply_full_stealth, get_random_user_agent, get_random_viewport
+from scrapers.debug import setup_debug_logging
 from notifiers import TelegramNotifier, DiscordNotifier, SlackNotifier
 from db import DatabaseManager
 from settings_manager import SettingsManager
@@ -16,13 +27,28 @@ class MonitorEngine:
     """
     Core engine for monitoring used marketplaces.
     Coordinates scrapers, database, and notifications.
+    
+    Features:
+    - Playwright browser automation
+    - Parallel scraping (asyncio.gather)
+    - Advanced stealth mode (15 techniques)
+    - Debug mode with screenshots and network logs
     """
     
-    def __init__(self, settings_manager: SettingsManager):
+    def __init__(self, settings_manager: SettingsManager, debug_mode: bool = False):
         self.settings = settings_manager
+        self.debug_mode = debug_mode
         self.logger = logging.getLogger("MonitorEngine")
         self.db = DatabaseManager(self.settings.settings.db_path)
-        self._shared_driver = None
+        
+        # Setup debug logging if debug mode is enabled
+        if debug_mode:
+            setup_debug_logging("DEBUG")
+        
+        # Playwright instances
+        self._playwright: Optional[Playwright] = None
+        self._browser: Optional[Browser] = None
+        self._context: Optional[BrowserContext] = None
         
         self.scrapers = {}
         self.notifiers = []
@@ -36,78 +62,122 @@ class MonitorEngine:
         self.on_status_update: Optional[Callable[[str], None]] = None
         self.on_error: Optional[Callable[[str], None]] = None
     
-    def initialize_scrapers(self):
-        """Initialize scrapers with shared browser instance"""
-        import time
+    async def initialize_scrapers(self):
+        """Initialize scrapers with Playwright browser"""
         import gc
-        from selenium import webdriver
-        from selenium.webdriver.chrome.service import Service
-        from selenium.webdriver.chrome.options import Options
-        from webdriver_manager.chrome import ChromeDriverManager
         
         headless = self.settings.settings.headless_mode
-        self._update_status("스크래퍼 및 브라우저 초기화 중...")
+        self._update_status("Playwright 브라우저 초기화 중...")
         
-        # 1. Create shared driver if not exists
-        if not self._shared_driver:
-            try:
-                options = Options()
-                if headless:
-                    options.add_argument('--headless')
-                options.add_argument('--no-sandbox')
-                options.add_argument('--disable-dev-shm-usage')
-                options.add_argument('--disable-gpu')
-                options.add_argument('--window-size=1920,1080')
-                options.add_argument('--disable-extensions')
-                options.add_argument('--disable-infobars')
-                options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
-                
-                # Performance optimizations
-                prefs = {
-                    "profile.managed_default_content_settings.images": 2,
-                    "profile.default_content_setting_values.notifications": 2,
+        try:
+            # 1. Initialize Playwright
+            if not self._playwright:
+                self._playwright = await async_playwright().start()
+                self.logger.info("Playwright started")
+            
+            # 2. Launch browser
+            if not self._browser:
+                launch_options = {
+                    "headless": headless,
+                    "args": [
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-extensions",
+                        "--disable-infobars",
+                        "--disable-blink-features=AutomationControlled",  # Key for stealth
+                    ]
                 }
-                options.add_experimental_option("prefs", prefs)
+                self._browser = await self._playwright.chromium.launch(**launch_options)
+                self.logger.info(f"Chromium browser launched (headless={headless})")
+            
+            # 3. Create shared context with random fingerprint
+            if not self._context:
+                user_agent = get_random_user_agent()
+                viewport = get_random_viewport()
                 
-                service = Service(ChromeDriverManager().install())
-                self._shared_driver = webdriver.Chrome(service=service, options=options)
-                self.logger.info("Shared Chrome driver initialized")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize shared driver: {e}")
-                import traceback
-                self.logger.debug(traceback.format_exc())
-                self._update_status("브라우저 초기화 실패")
-                return
-
-        # 2. Initialize scrapers with shared driver
+                self._context = await self._browser.new_context(
+                    viewport=viewport,
+                    user_agent=user_agent,
+                    locale="ko-KR",
+                    timezone_id="Asia/Seoul",
+                    permissions=["geolocation"],
+                    geolocation={"latitude": 37.5665, "longitude": 126.9780},  # Seoul
+                )
+                
+                # Apply full stealth mode
+                await apply_full_stealth(self._context)
+                self.logger.info("🛡️ Full stealth mode applied (15 techniques)")
+                
+                # ===== PERFORMANCE OPTIMIZATIONS =====
+                # 1. Block images for performance
+                await self._context.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico}", lambda route: route.abort())
+                
+                # 2. Block fonts to reduce bandwidth
+                await self._context.route("**/*.{woff,woff2,ttf,otf,eot}", lambda route: route.abort())
+                
+                # 3. Block analytics and tracking scripts
+                await self._context.route("**/{analytics,tracking,ads,advertisement,google-analytics,gtag}*", lambda route: route.abort())
+                await self._context.route("**/googlesyndication.com/**", lambda route: route.abort())
+                await self._context.route("**/doubleclick.net/**", lambda route: route.abort())
+                await self._context.route("**/facebook.net/**", lambda route: route.abort())
+                
+                self.logger.info("⚡ Performance optimization: blocking images, fonts, analytics")
+                self.logger.info(f"Browser context created (UA: {user_agent[:50]}...)")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Playwright: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            self._update_status("브라우저 초기화 실패")
+            return
+        
+        # 4. Initialize scrapers with shared context
         # Danggeun
         try:
-            self.scrapers['danggeun'] = DanggeunScraper(headless=headless, driver=self._shared_driver)
+            scraper = DanggeunScraper(
+                headless=headless, 
+                context=self._context,
+                debug_mode=self.debug_mode
+            )
+            await scraper.initialize(browser=self._browser)
+            self.scrapers['danggeun'] = scraper
             self.logger.info("Danggeun scraper initialized")
         except Exception as e:
             self.logger.error(f"Failed to initialize Danggeun scraper: {e}")
         
         # Bunjang
         try:
-            self.scrapers['bunjang'] = BunjangScraper(headless=headless, driver=self._shared_driver)
+            scraper = BunjangScraper(
+                headless=headless, 
+                context=self._context,
+                debug_mode=self.debug_mode
+            )
+            await scraper.initialize(browser=self._browser)
+            self.scrapers['bunjang'] = scraper
             self.logger.info("Bunjang scraper initialized")
         except Exception as e:
             self.logger.error(f"Failed to initialize Bunjang scraper: {e}")
         
-        # Joonggonara (Skip in headless, but if enabled, share driver)
-        if not headless:
-            try:
-                self.scrapers['joonggonara'] = JoonggonaraScraper(headless=headless, driver=self._shared_driver)
-                self.logger.info("Joonggonara scraper initialized")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize Joonggonara scraper: {e}")
-        else:
-            self.logger.warning("Joonggonara skipped in headless mode (Naver bot detection)")
+        # Joonggonara (with enhanced stealth mode)
+        try:
+            scraper = JoonggonaraScraper(
+                headless=headless, 
+                context=self._context,
+                debug_mode=self.debug_mode
+            )
+            await scraper.initialize(browser=self._browser)
+            self.scrapers['joonggonara'] = scraper
+            self.logger.info("Joonggonara scraper initialized (enhanced stealth mode)")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Joonggonara scraper: {e}")
         
         # Report initialized scrapers
         active_count = len(self.scrapers)
         self.logger.info(f"Initialized {active_count} scraper(s): {list(self.scrapers.keys())}")
-        self._update_status(f"스크래퍼 {active_count}개 초기화 완료 (공유 브라우저)")
+        stealth_status = "🛡️ Stealth ON" if True else ""
+        debug_status = "🔍 Debug ON" if self.debug_mode else ""
+        self._update_status(f"Playwright 스크래퍼 {active_count}개 초기화 완료 {stealth_status} {debug_status}".strip())
     
     def initialize_notifiers(self):
         """Initialize notification channels based on settings"""
@@ -173,6 +243,7 @@ class MonitorEngine:
     async def search_keyword(self, keyword_config: SearchKeyword) -> int:
         """
         Search for a single keyword across all enabled platforms.
+        Uses parallel scraping with asyncio.gather for better performance.
         
         Returns:
             Number of new items found
@@ -184,10 +255,11 @@ class MonitorEngine:
         blocked_set = set()
         if blocked_sellers:
             blocked_set = {(row['seller_name'], row['platform']) for row in blocked_sellers}
-            
-        # Execute searches sequentially (Single driver shared)
-        results = []
+        
+        # Execute searches in PARALLEL using asyncio.gather
         active_platforms = []
+        search_tasks = []
+        
         self._update_status(f"'{keyword_config.keyword}' 검색 중... ({', '.join(keyword_config.platforms)})")
         
         for platform in keyword_config.platforms:
@@ -196,17 +268,24 @@ class MonitorEngine:
                 continue
             
             active_platforms.append(platform)
-            try:
-                # Run search sequentially to avoid driver conflict
-                # Use to_thread to keep UI responsive
-                items = await asyncio.to_thread(scraper.safe_search, keyword_config.keyword, keyword_config.location)
-                results.append(items)
-            except Exception as e:
-                self.logger.error(f"Error searching {platform}: {e}")
-                results.append([])
+            # Create async task for each platform
+            search_tasks.append(scraper.safe_search(keyword_config.keyword, keyword_config.location))
+        
+        # Run all searches in parallel
+        if search_tasks:
+            results = await asyncio.gather(*search_tasks, return_exceptions=True)
+        else:
+            results = []
         
         # Process results
-        for platform, items in zip(active_platforms, results):
+        for i, platform in enumerate(active_platforms):
+            items = results[i]
+            
+            # Handle exceptions
+            if isinstance(items, Exception):
+                self.logger.error(f"Error searching {platform}: {items}")
+                items = []
+            
             scraper = self.scrapers.get(platform)
             try:
                 # Apply filters
@@ -339,19 +418,19 @@ class MonitorEngine:
             return
         
         self.running = True
-        self.logger.info("Starting monitor engine...")
+        self.logger.info("Starting monitor engine (Playwright)...")
         
-        self.initialize_scrapers()
+        await self.initialize_scrapers()
         self.initialize_notifiers()
         
         # Send startup notification
         for notifier in self.notifiers:
             try:
-                await notifier.send_message("🚀 중고거래 알리미가 시작되었습니다!")
+                await notifier.send_message("🚀 중고거래 알리미가 시작되었습니다! (Playwright)")
             except Exception as e:
                 self.logger.debug(f"Startup notification failed: {e}")
         
-        self._update_status("모니터링 시작됨")
+        self._update_status("모니터링 시작됨 (Playwright)")
         
         while self.running:
             try:
@@ -373,29 +452,54 @@ class MonitorEngine:
         
         self._update_status("모니터링 중지됨")
     
-    def stop(self):
-        """Stop the monitoring loop"""
+    async def stop_async(self):
+        """Stop the monitoring loop (async version)"""
         self.running = False
         self.logger.info("Stopping monitor engine...")
         
         # Close scrapers
         for name, scraper in self.scrapers.items():
             try:
-                scraper.close()
+                await scraper.close()
                 self.logger.info(f"Closed {name} scraper")
             except Exception as e:
                 self.logger.error(f"Error closing {name} scraper: {e}")
         
         self.scrapers.clear()
         
-        # Close shared driver
-        if self._shared_driver:
+        # Close Playwright resources
+        if self._context:
             try:
-                self._shared_driver.quit()
-                self._shared_driver = None
-                self.logger.info("Shared driver closed")
+                await self._context.close()
+                self._context = None
+                self.logger.info("Browser context closed")
             except Exception as e:
-                self.logger.error(f"Error closing shared driver: {e}")
+                self.logger.error(f"Error closing context: {e}")
+        
+        if self._browser:
+            try:
+                await self._browser.close()
+                self._browser = None
+                self.logger.info("Browser closed")
+            except Exception as e:
+                self.logger.error(f"Error closing browser: {e}")
+        
+        if self._playwright:
+            try:
+                await self._playwright.stop()
+                self._playwright = None
+                self.logger.info("Playwright stopped")
+            except Exception as e:
+                self.logger.error(f"Error stopping Playwright: {e}")
+    
+    def stop(self):
+        """Stop the monitoring loop (sync wrapper for compatibility)"""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.stop_async())
+        except RuntimeError:
+            # No running loop, try to run directly
+            asyncio.run(self.stop_async())
     
     def _update_status(self, status: str):
         """Update status and notify callback"""

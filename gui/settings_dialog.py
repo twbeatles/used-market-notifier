@@ -24,7 +24,7 @@ class SettingsDialog(QDialog):
     
     def setup_ui(self):
         self.setWindowTitle("설정")
-        self.setMinimumSize(600, 550)
+        self.setMinimumSize(800, 700)
         self.setStyleSheet("QDialog { background-color: #1a1b26; }")
         
         layout = QVBoxLayout(self)

@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt6.QtCore import Qt
+import warnings
 
 try:
     import matplotlib
@@ -84,7 +85,10 @@ class PlatformChart(QWidget):
         
         ax.axis('equal')
         self.figure.patch.set_facecolor('#1e1e2e')
-        self.figure.tight_layout()
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            self.figure.tight_layout()
         
         self.canvas.draw()
 
@@ -155,6 +159,9 @@ class DailyChart(QWidget):
         ax.spines['bottom'].set_color('#3b4261')
         
         self.figure.patch.set_facecolor('#1e1e2e')
-        self.figure.tight_layout()
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            self.figure.tight_layout()
         
         self.canvas.draw()

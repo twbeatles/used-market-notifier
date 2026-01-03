@@ -143,24 +143,31 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("준비됨")
     
     def create_header(self) -> QWidget:
-        """Create the header with logo, title, and controls"""
+        """Create the header with gradient background, logo, title, and enhanced controls"""
+        from gui.components import PulsingDot
+        
         header = QFrame()
         header.setObjectName("header")
         header.setStyleSheet("""
             QFrame#header {
-                background-color: #181825;
-                border-bottom: 1px solid #313244;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                    stop:0 #181825, stop:0.5 #1e1e2e, stop:1 #181825);
+                border-bottom: 1px solid rgba(137, 180, 250, 0.3);
             }
         """)
-        header.setFixedHeight(72)
+        header.setFixedHeight(80)
         
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(20, 12, 20, 12)
+        layout.setContentsMargins(24, 12, 24, 12)
         layout.setSpacing(16)
         
-        # Logo
+        # Logo with subtle glow effect
         logo = QLabel("🥕")
-        logo.setStyleSheet("font-size: 32pt; background: transparent;")
+        logo.setStyleSheet("""
+            font-size: 36pt; 
+            background: transparent;
+            padding: 4px;
+        """)
         layout.addWidget(logo)
         
         # Title section
@@ -168,14 +175,23 @@ class MainWindow(QMainWindow):
         title_widget.setStyleSheet("background: transparent;")
         title_layout = QVBoxLayout(title_widget)
         title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(2)
+        title_layout.setSpacing(4)
         
         title = QLabel("중고거래 알리미")
-        title.setStyleSheet("font-size: 18pt; font-weight: bold; color: #cdd6f4; background: transparent;")
+        title.setStyleSheet("""
+            font-size: 20pt; 
+            font-weight: bold; 
+            color: #cdd6f4; 
+            background: transparent;
+        """)
         title_layout.addWidget(title)
         
         subtitle = QLabel("🥕 당근마켓  ·  ⚡ 번개장터  ·  🛒 중고나라")
-        subtitle.setStyleSheet("font-size: 10pt; color: #6c7086; background: transparent;")
+        subtitle.setStyleSheet("""
+            font-size: 10pt; 
+            color: #6c7086; 
+            background: transparent;
+        """)
         title_layout.addWidget(subtitle)
         
         layout.addWidget(title_widget)
@@ -183,70 +199,91 @@ class MainWindow(QMainWindow):
         
         # Last search time indicator
         self.last_search_label = QLabel("마지막 검색: -")
-        self.last_search_label.setStyleSheet("color: #6c7086; font-size: 9pt; background: transparent;")
+        self.last_search_label.setStyleSheet("""
+            color: #6c7086; 
+            font-size: 9pt; 
+            background: transparent;
+            padding: 4px 8px;
+        """)
         layout.addWidget(self.last_search_label)
         
-        # Status indicator
+        # Status indicator with glass effect
         self.status_frame = QFrame()
+        self.status_frame.setObjectName("statusIndicator")
         self.status_frame.setStyleSheet("""
-            QFrame {
-                background-color: #313244;
-                border-radius: 14px;
-                padding: 4px 12px;
+            QFrame#statusIndicator {
+                background-color: rgba(49, 50, 68, 0.8);
+                border: 1px solid rgba(69, 71, 90, 0.5);
+                border-radius: 18px;
             }
         """)
         status_layout = QHBoxLayout(self.status_frame)
-        status_layout.setContentsMargins(12, 4, 12, 4)
+        status_layout.setContentsMargins(14, 6, 14, 6)
         status_layout.setSpacing(8)
         
-        self.status_dot = QLabel("●")
-        self.status_dot.setStyleSheet("color: #6c7086; font-size: 10pt; background: transparent;")
+        # Use PulsingDot component
+        self.status_dot = PulsingDot("#6c7086")
         status_layout.addWidget(self.status_dot)
         
         self.status_text = QLabel("대기 중")
-        self.status_text.setStyleSheet("color: #a6adc8; font-size: 10pt; background: transparent;")
+        self.status_text.setStyleSheet("""
+            color: #a6adc8; 
+            font-size: 10pt; 
+            background: transparent;
+        """)
         status_layout.addWidget(self.status_text)
         
         layout.addWidget(self.status_frame)
         
-        # Start button
+        # Start button with gradient
         self.start_btn = QPushButton("▶️ 시작")
         self.start_btn.setObjectName("success")
-        self.start_btn.setMinimumWidth(100)
-        self.start_btn.setMinimumHeight(36)
+        self.start_btn.setMinimumWidth(110)
+        self.start_btn.setMinimumHeight(40)
+        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.setToolTip("모니터링 시작/중지 (Ctrl+S)")
         self.start_btn.setStyleSheet("""
             QPushButton {
-                background-color: #a6e3a1;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #a6e3a1, stop:1 #94e2d5);
                 color: #1e1e2e;
                 border: none;
-                padding: 8px 20px;
-                border-radius: 8px;
+                padding: 10px 24px;
+                border-radius: 10px;
                 font-weight: bold;
                 font-size: 11pt;
             }
             QPushButton:hover {
-                background-color: #94e2d5;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #94e2d5, stop:1 #89dceb);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #89dceb, stop:1 #74c7ec);
             }
         """)
         self.start_btn.clicked.connect(self.toggle_monitoring)
         layout.addWidget(self.start_btn)
         
-        # Settings button
+        # Settings button with glass effect
         settings_btn = QPushButton("⚙️ 설정")
-        settings_btn.setMinimumHeight(36)
+        settings_btn.setMinimumHeight(40)
+        settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         settings_btn.setToolTip("알림, 테마, 스케줄 설정 (Ctrl+,)")
         settings_btn.setStyleSheet("""
             QPushButton {
-                background-color: #45475a;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #45475a, stop:1 #313244);
                 color: #cdd6f4;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 8px;
+                border: 1px solid rgba(69, 71, 90, 0.5);
+                padding: 10px 20px;
+                border-radius: 10px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #585b70;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #585b70, stop:1 #45475a);
+                border: 1px solid rgba(137, 180, 250, 0.4);
             }
         """)
         settings_btn.clicked.connect(self.open_settings)
@@ -330,40 +367,57 @@ class MainWindow(QMainWindow):
             self.start_btn.setText("⏹️ 중지")
             self.start_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #f38ba8;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                        stop:0 #f38ba8, stop:1 #eba0ac);
                     color: #1e1e2e;
                     border: none;
-                    padding: 8px 20px;
-                    border-radius: 8px;
+                    padding: 10px 24px;
+                    border-radius: 10px;
                     font-weight: bold;
                     font-size: 11pt;
                 }
                 QPushButton:hover {
-                    background-color: #eba0ac;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                        stop:0 #eba0ac, stop:1 #f5c2e7);
                 }
             """)
-            self.status_dot.setStyleSheet("color: #a6e3a1; font-size: 10pt; background: transparent;")
+            # Update status indicator
+            self.status_dot.set_color("#a6e3a1")
+            self.status_dot.start_pulsing()
             self.status_text.setText("모니터링 중")
-            self.status_text.setStyleSheet("color: #a6e3a1; font-size: 10pt; font-weight: bold; background: transparent;")
+            self.status_text.setStyleSheet("""
+                color: #a6e3a1; 
+                font-size: 10pt; 
+                font-weight: bold; 
+                background: transparent;
+            """)
         else:
             self.start_btn.setText("▶️ 시작")
             self.start_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #a6e3a1;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                        stop:0 #a6e3a1, stop:1 #94e2d5);
                     color: #1e1e2e;
                     border: none;
-                    padding: 8px 20px;
-                    border-radius: 8px;
+                    padding: 10px 24px;
+                    border-radius: 10px;
                     font-weight: bold;
                     font-size: 11pt;
                 }
                 QPushButton:hover {
-                    background-color: #94e2d5;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                        stop:0 #94e2d5, stop:1 #89dceb);
                 }
             """)
-            self.status_dot.setStyleSheet("color: #6c7086; font-size: 10pt; background: transparent;")
+            # Reset status indicator
+            self.status_dot.stop_pulsing()
+            self.status_dot.set_color("#6c7086")
             self.status_text.setText("대기 중")
-            self.status_text.setStyleSheet("color: #a6adc8; font-size: 10pt; background: transparent;")
+            self.status_text.setStyleSheet("""
+                color: #a6adc8; 
+                font-size: 10pt; 
+                background: transparent;
+            """)
         
         self.tray_icon.set_monitoring_state(is_running)
     
@@ -372,13 +426,13 @@ class MainWindow(QMainWindow):
         # Update header status based on activity
         if "검색 중" in status or "스크래핑" in status:
             self.status_text.setText("검색 중...")
-            self.status_dot.setStyleSheet("color: #f9e2af; font-size: 10pt; background: transparent;")
+            self.status_dot.set_color("#f9e2af")
         elif "초기화" in status:
             self.status_text.setText("초기화 중...")
-            self.status_dot.setStyleSheet("color: #89b4fa; font-size: 10pt; background: transparent;")
+            self.status_dot.set_color("#89b4fa")
         elif "다음 검색까지" in status:
             self.status_text.setText("모니터링 중")
-            self.status_dot.setStyleSheet("color: #a6e3a1; font-size: 10pt; background: transparent;")
+            self.status_dot.set_color("#a6e3a1")
             # Update last search time
             from datetime import datetime
             self.last_search_label.setText(f"마지막 검색: {datetime.now().strftime('%H:%M:%S')}")
