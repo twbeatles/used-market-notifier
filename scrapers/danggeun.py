@@ -1,13 +1,17 @@
 # scrapers/danggeun.py
-"""Danggeun Market (당근마켓) scraper - Playwright version with async support"""
+"""Danggeun Market (당근마켓) scraper using Selenium"""
 
 import json
+import time
 from urllib.parse import quote
-from .playwright_base import PlaywrightScraper
-from models import Item
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from .selenium_base import SeleniumScraper
+from .base import Item
 
 
-class DanggeunScraper(PlaywrightScraper):
+class DanggeunScraper(SeleniumScraper):
     """Danggeun Market (당근마켓) scraper with location filter support"""
     
     # Invalid title patterns to filter out
@@ -15,21 +19,22 @@ class DanggeunScraper(PlaywrightScraper):
         "판매완료", "예약중", "거래완료", "No Title", "광고"
     ]
     
-    def __init__(
-        self, 
-        headless: bool = True, 
-        disable_images: bool = True,
-        context=None,
-        debug_mode: bool = False
-    ):
-        super().__init__(
-            headless=headless, 
-            disable_images=disable_images, 
-            context=context,
-            debug_mode=debug_mode
-        )
+    def __init__(self, headless: bool = True, disable_images: bool = True, 
+                 driver=None):
+        super().__init__(headless, disable_images, driver)
     
-    async def search(self, keyword: str, location: str = None) -> list[Item]:
+    def _is_valid_title(self, title: str) -> bool:
+        """Check if title is valid (not sold out or placeholder)"""
+        if not title or len(title.strip()) < 2:
+            return False
+        # Filter out sold/reserved items - use partial matching
+        title_lower = title.strip().lower()
+        for pattern in self.INVALID_TITLE_PATTERNS:
+            if pattern.lower() in title_lower:
+                return False
+        return True
+
+    def search(self, keyword: str, location: str = None) -> list[Item]:
         """
         Search Danggeun Market for keyword.
         
@@ -42,26 +47,25 @@ class DanggeunScraper(PlaywrightScraper):
         url = f"https://www.daangn.com/kr/buy-sell/?search={encoded_keyword}"
         
         self.logger.info(f"Visiting {url}")
-        
-        page = await self.get_page()
-        await page.goto(url, wait_until="domcontentloaded")
+        self.driver.get(url)
         
         # Wait for content or JSON-LD
         try:
-            await page.wait_for_selector("script[type='application/ld+json']", timeout=10000)
+            WebDriverWait(self.driver, self.wait_time).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "script[type='application/ld+json']"))
+            )
         except Exception:
-            # Small delay as fallback
-            await page.wait_for_timeout(3000)
-        
+            time.sleep(3)
+
         items = []
         try:
             # Try to parse JSON-LD first (Most reliable)
-            scripts = await page.query_selector_all("script[type='application/ld+json']")
+            scripts = self.driver.find_elements(By.CSS_SELECTOR, "script[type='application/ld+json']")
             json_items = []
             
             for script in scripts:
                 try:
-                    script_content = await script.inner_html()
+                    script_content = script.get_attribute('innerHTML')
                     data = json.loads(script_content)
                     if data.get('@type') == 'ItemList' and 'itemListElement' in data:
                         json_items.extend(data['itemListElement'])
@@ -97,35 +101,32 @@ class DanggeunScraper(PlaywrightScraper):
                                 price = f"{int(float(price_val))}원"
                         
                         # Extract ID from URL
-                        # https://www.daangn.com/kr/buy-sell/title-slug-articleid/
                         article_id = None
                         if link:
                             # Handle trailing slashes and split
-                            # URL typically ends with slug-id
                             parts = link.rstrip('/').split('-')
                             if len(parts) > 1:
                                 article_id = parts[-1]
-                            # Sometimes URL is just /.../id without dash? Unlikely but fallback
                             elif parts:
                                 article_id = parts[0].split('/')[-1]
-                        
+
                         if not article_id:
                             continue
-                        
+
                         # Robust price parsing
                         try:
-                            if price != "가격문의" and price.replace('원','').replace(',','').isdigit() == False:
-                                # Try to clean it up
-                                p_clean = ''.join(c for c in price if c.isdigit())
-                                if p_clean:
-                                    price = f"{int(p_clean)}원"
+                             if price != "가격문의" and price.replace('원','').replace(',','').isdigit() == False:
+                                  # Try to clean it up
+                                  p_clean = ''.join(c for c in price if c.isdigit())
+                                  if p_clean:
+                                      price = f"{int(p_clean)}원"
                         except Exception:
                             pass
-                        
+
                         # Filter invalid titles
                         if not self._is_valid_title(title):
                             continue
-                        
+
                         item = Item(
                             platform='danggeun',
                             article_id=article_id,
@@ -143,18 +144,18 @@ class DanggeunScraper(PlaywrightScraper):
             else:
                 # Fallback to HTML parsing if JSON-LD fails
                 self.logger.info("JSON-LD not found/empty, falling back to HTML parsing")
-                elements = await page.query_selector_all('a[href*="/kr/buy-sell/"]')
+                elements = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/kr/buy-sell/"]')
                 
                 for el in elements:
                     try:
-                        link = await el.get_attribute('href')
+                        link = el.get_attribute('href')
                         if not link or 'search=' in link:  # Skip navigation links
                             continue
-                        
-                        text = await el.inner_text()
+                            
+                        text = el.text
                         if not text:
                             continue
-                        
+                            
                         # Simple cleanup parsing
                         lines = [l for l in text.split('\n') if l.strip()]
                         title = lines[0] if lines else "No Title"
@@ -165,10 +166,18 @@ class DanggeunScraper(PlaywrightScraper):
                                 price = l
                                 break
                         
-                        # Extract article_id from link
-                        parts = link.rstrip('/').split('-')
-                        article_id = parts[-1] if len(parts) > 1 else link.split('/')[-1]
-                        
+                        # Extract article ID
+                        article_id = None
+                        if link:
+                            parts = link.rstrip('/').split('-')
+                            if len(parts) > 1:
+                                article_id = parts[-1]
+                            elif parts:
+                                article_id = parts[0].split('/')[-1]
+                                
+                        if not article_id:
+                            continue
+                                
                         # Filter invalid titles
                         if not self._is_valid_title(title):
                             continue
@@ -186,14 +195,13 @@ class DanggeunScraper(PlaywrightScraper):
                         items.append(item)
                     except Exception:
                         continue
-                        
+                    
         except Exception as e:
             self.logger.error(f"Error fetching danggeun items: {e}")
-        
-        # Filter by location if strictly required and we have info (JSON LD weak on location)
+
+        # Filter by location if strictly required and we have info
         if location and items:
-            # Re-verify location for top items if needed, but for now return all matches to ensure data flow
             pass
-        
+
         self.logger.info(f"Found {len(items)} items on Danggeun for '{keyword}'")
         return items

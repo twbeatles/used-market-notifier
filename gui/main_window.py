@@ -40,8 +40,14 @@ class MonitorThread(QThread):
         super().__init__()
         self.engine = engine
         self.loop = None
+        self._stop_requested = False
     
     def run(self):
+        # Windows requires ProactorEventLoop for Playwright subprocess handling
+        import sys
+        if sys.platform == 'win32':
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         
@@ -53,13 +59,39 @@ class MonitorThread(QThread):
         try:
             self.loop.run_until_complete(self.engine.start())
         except Exception as e:
-            self.error.emit(str(e))
+            if not self._stop_requested:  # Only report errors if not intentionally stopped
+                import traceback
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                print(f"MonitorThread error: {error_msg}")
+                self.error.emit(str(e))
         finally:
-            self.loop.close()
+            # Clean up pending tasks
+            try:
+                pending = asyncio.all_tasks(self.loop)
+                for task in pending:
+                    task.cancel()
+                # Allow cancelled tasks to complete
+                if pending:
+                    self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except Exception:
+                pass
+            try:
+                self.loop.close()
+            except Exception:
+                pass
     
     def stop(self):
-        self.engine.stop()
-        if self.loop:
+        self._stop_requested = True
+        self.engine.running = False  # Signal engine to stop
+        
+        if self.loop and self.loop.is_running():
+            # Schedule async stop and wait for it
+            future = asyncio.run_coroutine_threadsafe(self.engine.stop(), self.loop)
+            try:
+                future.result(timeout=5.0)  # Wait max 5 seconds for stop
+            except Exception:
+                pass
+            # Now stop the loop
             self.loop.call_soon_threadsafe(self.loop.stop)
 
 
@@ -313,15 +345,48 @@ class MainWindow(QMainWindow):
         shortcut_quit = QShortcut(QKeySequence("Ctrl+Q"), self)
         shortcut_quit.activated.connect(self.quit_app)
         
-        # Ctrl+1/2/3: Switch tabs
-        shortcut_tab1 = QShortcut(QKeySequence("Ctrl+1"), self)
-        shortcut_tab1.activated.connect(lambda: self.tabs.setCurrentIndex(0))
+        # Ctrl+1/2/3/4/5/6: Switch tabs
+        for i in range(6):
+            shortcut = QShortcut(QKeySequence(f"Ctrl+{i+1}"), self)
+            shortcut.activated.connect(lambda idx=i: self.tabs.setCurrentIndex(idx))
         
-        shortcut_tab2 = QShortcut(QKeySequence("Ctrl+2"), self)
-        shortcut_tab2.activated.connect(lambda: self.tabs.setCurrentIndex(1))
+        # F1: Show shortcuts help
+        shortcut_help = QShortcut(QKeySequence("F1"), self)
+        shortcut_help.activated.connect(self.show_shortcuts_help)
         
-        shortcut_tab3 = QShortcut(QKeySequence("Ctrl+3"), self)
-        shortcut_tab3.activated.connect(lambda: self.tabs.setCurrentIndex(2))
+        # F5: Refresh current tab
+        shortcut_refresh = QShortcut(QKeySequence("F5"), self)
+        shortcut_refresh.activated.connect(self.refresh_current_tab)
+    
+    def show_shortcuts_help(self):
+        """Show keyboard shortcuts help dialog"""
+        help_text = """
+<b>⌨️ 키보드 단축키</b><br><br>
+<table>
+<tr><td><b>Ctrl+S</b></td><td>모니터링 시작/중지</td></tr>
+<tr><td><b>Ctrl+,</b></td><td>설정 열기</td></tr>
+<tr><td><b>Ctrl+Q</b></td><td>프로그램 종료</td></tr>
+<tr><td><b>Ctrl+1~6</b></td><td>탭 전환</td></tr>
+<tr><td><b>F1</b></td><td>단축키 도움말</td></tr>
+<tr><td><b>F5</b></td><td>현재 탭 새로고침</td></tr>
+<tr><td><b>Enter</b></td><td>매물 링크 열기 (목록에서)</td></tr>
+<tr><td><b>F</b></td><td>즐겨찾기 추가 (목록에서)</td></tr>
+</table>
+        """
+        QMessageBox.information(self, "단축키 도움말", help_text)
+    
+    def refresh_current_tab(self):
+        """Refresh data in current tab"""
+        current = self.tabs.currentWidget()
+        if hasattr(current, 'refresh_listings'):
+            current.refresh_listings()
+        elif hasattr(current, 'refresh_stats'):
+            current.refresh_stats()
+        elif hasattr(current, 'refresh_list'):
+            current.refresh_list()
+        elif hasattr(current, 'refresh'):
+            current.refresh()
+        self.status_bar.showMessage("새로고침 완료")
     
     def toggle_monitoring(self):
         if self.monitor_thread and self.monitor_thread.isRunning():
@@ -480,9 +545,14 @@ class MainWindow(QMainWindow):
                 self.start_monitoring()
 
     def apply_theme(self):
-        """Apply current theme"""
+        """Apply current theme with system detection"""
         mode = self.settings_manager.settings.theme_mode
-        is_dark = mode == ThemeMode.DARK or (mode == ThemeMode.SYSTEM)
+        
+        # Detect system theme for ThemeMode.SYSTEM
+        if mode == ThemeMode.SYSTEM:
+            is_dark = self._detect_system_dark_mode()
+        else:
+            is_dark = mode == ThemeMode.DARK
         
         style = DARK_STYLE if is_dark else LIGHT_STYLE
         self.setStyleSheet(style)
@@ -507,6 +577,23 @@ class MainWindow(QMainWindow):
         # Optional: Update StatsWidget if method exists
         if hasattr(self, 'stats_widget') and hasattr(self.stats_widget, 'update_theme'):
             self.stats_widget.update_theme(is_dark)
+    
+    def _detect_system_dark_mode(self) -> bool:
+        """Detect Windows system dark mode setting"""
+        try:
+            import sys
+            if sys.platform == 'win32':
+                import winreg
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+                )
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                winreg.CloseKey(key)
+                return value == 0  # 0 = dark mode, 1 = light mode
+        except Exception:
+            pass
+        return True  # Default to dark mode
     
     def show_window(self):
         self.show()

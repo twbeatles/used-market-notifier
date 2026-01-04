@@ -145,6 +145,17 @@ class FavoritesWidget(QWidget):
         
         layout.addWidget(self.table)
         
+        # Empty state placeholder
+        from gui.loading_spinner import EmptyStateWidget
+        self.empty_state = EmptyStateWidget(
+            icon="⭐",
+            title="즐겨찾기가 비어있습니다",
+            message="관심있는 매물을 즐겨찾기에 추가해보세요.\n매물 목록에서 우클릭 → '즐겨찾기 추가'",
+            parent=self
+        )
+        self.empty_state.hide()
+        layout.addWidget(self.empty_state)
+        
         # Context menu
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
@@ -155,6 +166,14 @@ class FavoritesWidget(QWidget):
     def refresh_list(self):
         favorites = self.db.get_favorites()
         self.table.setRowCount(len(favorites))
+        
+        # Show/hide empty state
+        if not favorites:
+            self.table.hide()
+            self.empty_state.show()
+        else:
+            self.empty_state.hide()
+            self.table.show()
         
         for row, item in enumerate(favorites):
             # Platform

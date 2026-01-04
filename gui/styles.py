@@ -282,38 +282,48 @@ QComboBox QAbstractItemView::item {
 /* ===== Enhanced Lists & Tables ===== */
 QListWidget, QTableWidget, QTreeWidget {
     background-color: rgba(30, 30, 46, 0.95);
-    alternate-background-color: rgba(49, 50, 68, 0.5);
+    alternate-background-color: rgba(49, 50, 68, 0.6);
     border: 1px solid rgba(69, 71, 90, 0.5);
     border-radius: 12px;
     padding: 8px;
-    gridline-color: rgba(69, 71, 90, 0.3);
+    gridline-color: rgba(69, 71, 90, 0.2);
+    outline: none;
 }
 
 QListWidget::item, QTableWidget::item {
-    padding: 12px;
+    padding: 10px 12px;
     border-radius: 6px;
-    margin: 2px 0;
+    border-bottom: 1px solid rgba(69, 71, 90, 0.15);
 }
 
 QListWidget::item:selected, QTableWidget::item:selected {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-        stop:0 #89b4fa, stop:1 #74c7ec);
+        stop:0 rgba(137, 180, 250, 0.9), stop:1 rgba(116, 199, 236, 0.9));
     color: #1e1e2e;
+    border-radius: 8px;
 }
 
 QListWidget::item:hover:!selected, QTableWidget::item:hover:!selected {
-    background-color: rgba(69, 71, 90, 0.5);
+    background-color: rgba(137, 180, 250, 0.15);
+    border-radius: 6px;
 }
 
 QHeaderView::section {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
         stop:0 #313244, stop:1 #252535);
-    color: #cdd6f4;
-    padding: 12px 8px;
+    color: #89b4fa;
+    padding: 14px 12px;
     border: none;
-    border-bottom: 2px solid #89b4fa;
+    border-bottom: 2px solid rgba(137, 180, 250, 0.4);
     font-weight: bold;
+    font-size: 10pt;
 }
+
+QHeaderView::section:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+        stop:0 #45475a, stop:1 #313244);
+}
+
 
 /* ===== Enhanced Scrollbars ===== */
 QScrollBar:vertical {

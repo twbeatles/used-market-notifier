@@ -5,11 +5,12 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QPushButton, QDialog, QFormLayout, QLineEdit, QSpinBox, QComboBox,
     QCheckBox, QLabel, QGroupBox, QMessageBox, QTextEdit, QFrame,
-    QScrollArea, QGridLayout, QSizePolicy, QGraphicsDropShadowEffect
+    QScrollArea, QGridLayout, QSizePolicy, QGraphicsDropShadowEffect,
+    QInputDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QFont, QColor
-from models import SearchKeyword
+from models import SearchKeyword, KeywordPreset
 
 
 class KeywordCard(QFrame):
@@ -107,6 +108,17 @@ class KeywordCard(QFrame):
             """)
             details.addWidget(ex_label)
         
+        # Notification status
+        notify_enabled = getattr(self.keyword, 'notify_enabled', True)
+        notify_icon = "🔔" if notify_enabled else "🔕"
+        notify_label = QLabel(notify_icon)
+        notify_label.setStyleSheet("""
+            font-size: 9pt;
+            background: transparent;
+        """)
+        notify_label.setToolTip("알림 " + ("켜짐" if notify_enabled else "꺼짐"))
+        details.addWidget(notify_label)
+        
         details.addStretch()
         layout.addLayout(details)
     
@@ -189,9 +201,10 @@ class KeywordCard(QFrame):
 class KeywordEditDialog(QDialog):
     """Modern dialog for editing keyword configuration"""
     
-    def __init__(self, keyword: SearchKeyword = None, parent=None):
+    def __init__(self, keyword: SearchKeyword = None, settings_manager=None, parent=None):
         super().__init__(parent)
         self.keyword = keyword or SearchKeyword(keyword="")
+        self.settings_manager = settings_manager
         self.setup_ui()
         self.load_keyword()
     
@@ -219,9 +232,28 @@ class KeywordEditDialog(QDialog):
         self.keyword_edit.setMinimumHeight(40)
         keyword_layout.addRow("검색어", self.keyword_edit)
         
+        # Preset dropdown
+        preset_row = QHBoxLayout()
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItem("📁 프리셋 선택...")
+        self._load_presets()
+        self.preset_combo.currentIndexChanged.connect(self._on_preset_selected)
+        self.preset_combo.setMinimumHeight(36)
+        preset_row.addWidget(self.preset_combo)
+        
+        save_preset_btn = QPushButton("💾 프리셋 저장")
+        save_preset_btn.setMinimumHeight(36)
+        save_preset_btn.clicked.connect(self._save_as_preset)
+        preset_row.addWidget(save_preset_btn)
+        keyword_layout.addRow("프리셋", preset_row)
+        
         self.enabled_check = QCheckBox("🔍 키워드 모니터링 활성화")
         self.enabled_check.setChecked(True)
         keyword_layout.addRow("", self.enabled_check)
+        
+        self.notify_check = QCheckBox("🔔 이 키워드 알림 받기")
+        self.notify_check.setChecked(True)
+        keyword_layout.addRow("", self.notify_check)
         
         layout.addWidget(keyword_group)
         
@@ -322,6 +354,7 @@ class KeywordEditDialog(QDialog):
     def load_keyword(self):
         self.keyword_edit.setText(self.keyword.keyword)
         self.enabled_check.setChecked(self.keyword.enabled)
+        self.notify_check.setChecked(getattr(self.keyword, 'notify_enabled', True))
         
         if self.keyword.min_price:
             self.min_price_spin.setValue(self.keyword.min_price)
@@ -334,6 +367,67 @@ class KeywordEditDialog(QDialog):
         self.danggeun_check.setChecked("danggeun" in self.keyword.platforms)
         self.bunjang_check.setChecked("bunjang" in self.keyword.platforms)
         self.joonggonara_check.setChecked("joonggonara" in self.keyword.platforms)
+    
+    def _load_presets(self):
+        """Load presets into combo box"""
+        if self.settings_manager:
+            for preset in self.settings_manager.get_presets():
+                self.preset_combo.addItem(f"📋 {preset.name}", preset)
+    
+    def _on_preset_selected(self, index: int):
+        """Apply selected preset"""
+        if index <= 0:
+            return
+        preset = self.preset_combo.itemData(index)
+        if preset:
+            if preset.min_price:
+                self.min_price_spin.setValue(preset.min_price)
+            else:
+                self.min_price_spin.setValue(0)
+            if preset.max_price:
+                self.max_price_spin.setValue(preset.max_price)
+            else:
+                self.max_price_spin.setValue(0)
+            self.location_edit.setText(preset.location or "")
+            self.exclude_edit.setPlainText("\n".join(preset.exclude_keywords))
+            self.danggeun_check.setChecked("danggeun" in preset.platforms)
+            self.bunjang_check.setChecked("bunjang" in preset.platforms)
+            self.joonggonara_check.setChecked("joonggonara" in preset.platforms)
+    
+    def _save_as_preset(self):
+        """Save current settings as preset"""
+        if not self.settings_manager:
+            QMessageBox.warning(self, "오류", "설정 관리자 없음")
+            return
+        
+        name, ok = QInputDialog.getText(self, "프리셋 저장", "프리셋 이름:")
+        if not ok or not name.strip():
+            return
+        
+        platforms = []
+        if self.danggeun_check.isChecked():
+            platforms.append("danggeun")
+        if self.bunjang_check.isChecked():
+            platforms.append("bunjang")
+        if self.joonggonara_check.isChecked():
+            platforms.append("joonggonara")
+        
+        exclude_text = self.exclude_edit.toPlainText().strip()
+        exclude_keywords = [k.strip() for k in exclude_text.split("\n") if k.strip()]
+        
+        preset = KeywordPreset(
+            name=name.strip(),
+            min_price=self.min_price_spin.value() if self.min_price_spin.value() > 0 else None,
+            max_price=self.max_price_spin.value() if self.max_price_spin.value() > 0 else None,
+            location=self.location_edit.text().strip() or None,
+            exclude_keywords=exclude_keywords,
+            platforms=platforms,
+        )
+        self.settings_manager.add_preset(preset)
+        
+        # Refresh combo
+        self.preset_combo.addItem(f"📋 {name}", preset)
+        QMessageBox.information(self, "성공", f"프리셋 '{name}'이(가) 저장되었습니다!")
     
     def get_keyword(self) -> SearchKeyword:
         platforms = []
@@ -354,7 +448,8 @@ class KeywordEditDialog(QDialog):
             location=self.location_edit.text().strip() or None,
             exclude_keywords=exclude_keywords,
             platforms=platforms,
-            enabled=self.enabled_check.isChecked()
+            enabled=self.enabled_check.isChecked(),
+            notify_enabled=self.notify_check.isChecked(),
         )
 
 
@@ -540,7 +635,7 @@ class KeywordManagerWidget(QWidget):
         self.on_card_clicked(new_idx)
     
     def add_keyword(self):
-        dialog = KeywordEditDialog(parent=self)
+        dialog = KeywordEditDialog(settings_manager=self.settings, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             keyword = dialog.get_keyword()
             if keyword.keyword:
@@ -554,7 +649,7 @@ class KeywordManagerWidget(QWidget):
             return
         
         keyword = self.settings.settings.keywords[self.selected_index]
-        dialog = KeywordEditDialog(keyword, parent=self)
+        dialog = KeywordEditDialog(keyword, settings_manager=self.settings, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_keyword = dialog.get_keyword()
             if new_keyword.keyword:

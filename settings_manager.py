@@ -8,7 +8,8 @@ from dataclasses import asdict
 from typing import Optional
 from models import (
     AppSettings, SearchKeyword, NotifierConfig, 
-    NotificationSchedule, NotificationType, ThemeMode, SellerFilter
+    NotificationSchedule, NotificationType, ThemeMode, SellerFilter,
+    KeywordPreset
 )
 
 SETTINGS_FILE = "settings.json"
@@ -100,8 +101,20 @@ class SettingsManager:
                     'group_name': k.group_name,
                     'custom_interval': k.custom_interval,
                     'target_price': k.target_price,
+                    'notify_enabled': k.notify_enabled,
                 }
                 for k in settings.keywords
+            ],
+            'keyword_presets': [
+                {
+                    'name': p.name,
+                    'min_price': p.min_price,
+                    'max_price': p.max_price,
+                    'location': p.location,
+                    'exclude_keywords': p.exclude_keywords,
+                    'platforms': p.platforms,
+                }
+                for p in getattr(settings, 'keyword_presets', [])
             ],
             'seller_filters': [
                 {
@@ -151,6 +164,18 @@ class SettingsManager:
                 group_name=k.get('group_name'),
                 custom_interval=k.get('custom_interval'),
                 target_price=k.get('target_price'),
+                notify_enabled=k.get('notify_enabled', True),
+            ))
+        
+        keyword_presets = []
+        for p in data.get('keyword_presets', []):
+            keyword_presets.append(KeywordPreset(
+                name=p.get('name', ''),
+                min_price=p.get('min_price'),
+                max_price=p.get('max_price'),
+                location=p.get('location'),
+                exclude_keywords=p.get('exclude_keywords', []),
+                platforms=p.get('platforms', ['danggeun', 'bunjang', 'joonggonara']),
             ))
             
         seller_filters = []
@@ -175,6 +200,7 @@ class SettingsManager:
             notification_schedule=schedule,
             notifiers=notifiers,
             keywords=keywords,
+            keyword_presets=keyword_presets,
             seller_filters=seller_filters,
         )
     
@@ -210,3 +236,30 @@ class SettingsManager:
             if n.type == NotificationType.SLACK:
                 return n
         return None
+    
+    # Preset methods
+    def add_preset(self, preset: KeywordPreset) -> None:
+        """Add a new keyword preset"""
+        self.settings.keyword_presets.append(preset)
+        self.save()
+    
+    def remove_preset(self, index: int) -> None:
+        """Remove a preset by index"""
+        if 0 <= index < len(self.settings.keyword_presets):
+            self.settings.keyword_presets.pop(index)
+            self.save()
+    
+    def get_presets(self) -> list[KeywordPreset]:
+        """Get all presets"""
+        return self.settings.keyword_presets
+    
+    def apply_preset(self, preset: KeywordPreset, keyword_text: str) -> SearchKeyword:
+        """Create a SearchKeyword from preset with given keyword text"""
+        return SearchKeyword(
+            keyword=keyword_text,
+            min_price=preset.min_price,
+            max_price=preset.max_price,
+            location=preset.location,
+            exclude_keywords=preset.exclude_keywords.copy(),
+            platforms=preset.platforms.copy(),
+        )

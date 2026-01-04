@@ -58,6 +58,7 @@ class SearchKeyword:
     group_name: Optional[str] = None
     custom_interval: Optional[int] = None
     target_price: Optional[int] = None
+    notify_enabled: bool = True  # Per-keyword notification toggle
 
     def matches_price(self, item: Item) -> bool:
         """Check if item price is within range"""
@@ -101,6 +102,17 @@ class FavoriteItem:
     added_at: str  # ISO format string
     notes: str = ""
     target_price: Optional[int] = None
+
+
+@dataclass
+class KeywordPreset:
+    """Preset for quickly applying keyword configurations"""
+    name: str
+    min_price: Optional[int] = None
+    max_price: Optional[int] = None
+    location: Optional[str] = None
+    exclude_keywords: list[str] = field(default_factory=list)
+    platforms: list[str] = field(default_factory=lambda: ["danggeun", "bunjang", "joonggonara"])
 
 
 @dataclass
@@ -178,4 +190,6 @@ class AppSettings:
     notification_schedule: NotificationSchedule = field(default_factory=NotificationSchedule)
     notifiers: list[NotifierConfig] = field(default_factory=list)
     keywords: list[SearchKeyword] = field(default_factory=list)
+    keyword_presets: list[KeywordPreset] = field(default_factory=list)
     seller_filters: list[SellerFilter] = field(default_factory=list)
+

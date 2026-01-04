@@ -20,8 +20,15 @@ class DatabaseManager:
         self.conn.row_factory = sqlite3.Row
         self.lock = threading.Lock()
         
-        # Enable WAL mode for better concurrency
+        # Stats cache with TTL (reduce redundant queries)
+        self._stats_cache = {}
+        self._cache_ttl = 30  # 30 seconds cache
+        self._cache_time = None
+        
+        # Enable WAL mode and other optimizations for better concurrency
         self.conn.execute('PRAGMA journal_mode=WAL')
+        self.conn.execute('PRAGMA synchronous=NORMAL')  # Faster writes
+        self.conn.execute('PRAGMA cache_size=-64000')  # 64MB cache
         self.create_tables()
     
     def create_tables(self):
@@ -121,6 +128,29 @@ class DatabaseManager:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_search_stats_date ON search_stats(checked_at)')
             # Composite index for duplicate checking (most frequent query)
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_platform_article ON listings(platform, article_id)')
+            
+            # Search history table for keyword suggestions
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS search_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    keyword TEXT NOT NULL UNIQUE,
+                    use_count INTEGER DEFAULT 1,
+                    last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Listing notes table for user annotations
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS listing_notes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL UNIQUE,
+                    note TEXT,
+                    status_tag TEXT DEFAULT 'interested',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (listing_id) REFERENCES listings(id)
+                )
+            ''')
             
             self.conn.commit()
     
@@ -552,6 +582,89 @@ class DatabaseManager:
     def close(self):
         """Close database connection"""
         self.conn.close()
+    
+    # Search History Methods
+    def add_search_history(self, keyword: str):
+        """Add or update search history entry"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                INSERT INTO search_history (keyword)
+                VALUES (?)
+                ON CONFLICT(keyword) DO UPDATE SET
+                use_count = use_count + 1,
+                last_used = CURRENT_TIMESTAMP
+            ''', (keyword,))
+            self.conn.commit()
+    
+    def get_search_history(self, limit: int = 10) -> list:
+        """Get recent search keywords, ordered by last used"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT keyword, use_count, last_used
+                FROM search_history
+                ORDER BY last_used DESC
+                LIMIT ?
+            ''', (limit,))
+            return [row['keyword'] for row in cursor.fetchall()]
+    
+    def clear_search_history(self):
+        """Clear all search history"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('DELETE FROM search_history')
+            self.conn.commit()
+    
+    # Listing Notes Methods
+    def add_listing_note(self, listing_id: int, note: str = "", status_tag: str = "interested") -> bool:
+        """Add or update a note for a listing"""
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('''
+                    INSERT INTO listing_notes (listing_id, note, status_tag)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(listing_id) DO UPDATE SET
+                    note = excluded.note,
+                    status_tag = excluded.status_tag,
+                    updated_at = CURRENT_TIMESTAMP
+                ''', (listing_id, note, status_tag))
+                self.conn.commit()
+                return True
+            except Exception:
+                return False
+    
+    def get_listing_note(self, listing_id: int) -> Optional[dict]:
+        """Get note for a listing"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT note, status_tag, created_at, updated_at
+                FROM listing_notes
+                WHERE listing_id = ?
+            ''', (listing_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    
+    def delete_listing_note(self, listing_id: int):
+        """Delete a listing note"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('DELETE FROM listing_notes WHERE listing_id = ?', (listing_id,))
+            self.conn.commit()
+    
+    def get_listings_with_notes(self) -> list:
+        """Get all listings that have notes"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT l.*, ln.note, ln.status_tag, ln.updated_at as note_updated
+                FROM listing_notes ln
+                JOIN listings l ON ln.listing_id = l.id
+                ORDER BY ln.updated_at DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
 
 
 if __name__ == "__main__":

@@ -1,90 +1,79 @@
-# 🥕 중고거래 알리미 (Used Market Notifier) v2.0
+# 🥕 중고거래 알리미 (Used Market Notifier)
 
-당근마켓, 번개장터, 중고나라에서 원하는 상품을 자동으로 모니터링하고 알림을 받을 수 있는 데스크톱 애플리케이션입니다.
+당근마켓, 번개장터, 중고나라에서 키워드를 모니터링하고 새 상품이 등록되면 실시간 알림을 보내는 프로그램입니다.
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![PyQt6](https://img.shields.io/badge/PyQt6-6.4+-green.svg)
-![Playwright](https://img.shields.io/badge/Playwright-1.40+-purple.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green)
+![Selenium](https://img.shields.io/badge/Scraping-Selenium-orange)
 
 ---
 
 ## ✨ 주요 기능
 
-### 🔍 스마트 모니터링
-- **다중 플랫폼 동시 검색** - 당근마켓, 번개장터, 중고나라 병렬 스크래핑
-- **키워드 기반 필터링** - 원하는 상품만 알림
-- **가격 범위 설정** - 최소/최대 가격 필터
-- **제외 키워드** - 불필요한 상품 자동 필터링
-
-### 🛡️ 고급 봇 탐지 우회 (v2.0)
-- **15가지 Stealth 기술** - WebDriver 숨김, Chrome 객체 모방
-- **WebGL/Canvas 핑거프린트 보호**
-- **인간 행동 시뮬레이션** - 무작위 지연, 스크롤 패턴
-
-### 🔍 디버깅 시스템 (v2.0)
-- **자동 스크린샷** - 에러 발생 시 페이지 캡처
-- **네트워크 로그** - 요청/응답 기록
-- **세션 리포트** - JSON 형식 진단 데이터
-
-### 🎨 모던 UI/UX (v2.0)
-- **Glassmorphism 디자인** - 반투명 카드, 그라디언트 버튼
-- **펄스 애니메이션** - 상태 표시 시각 효과
-- **호버 리프트 효과** - 카드 상호작용 피드백
-- **Catppuccin 테마** - 눈이 편안한 다크 모드
-
-### 📱 다중 알림
-- **Telegram** - 이미지 포함 알림 지원
-- **Discord** - Webhook 연동
-- **Slack** - Webhook 연동
-
-### 📊 통계 및 분석
-- **대시보드** - 플랫폼별/키워드별 통계
-- **가격 추이** - 관심 상품 가격 변동 추적
-- **즐겨찾기** - 관심 상품 저장
+| 기능 | 설명 |
+|------|------|
+| 🔍 키워드 모니터링 | 여러 키워드 동시 모니터링 |
+| 🏪 3대 플랫폼 지원 | 당근마켓, 번개장터, 중고나라 |
+| 📢 알림 전송 | Telegram, Discord, Slack |
+| 💰 가격 필터 | 최소/최대 가격 설정 |
+| 📊 통계 대시보드 | 일별/키워드별 통계 |
+| ⭐ 즐겨찾기 | 관심 매물 저장 |
+| 📝 매물 메모 | 상태 태그 및 메모 추가 |
+| 📊 매물 비교 | 다중 매물 비교 기능 |
+| 💾 키워드 프리셋 | 필터 설정 저장/불러오기 |
+| 🔔 키워드별 알림 | 개별 알림 ON/OFF |
 
 ---
 
-## 📦 설치
+## 🚀 설치 방법
 
 ### 요구사항
 - Python 3.10 이상
-- Windows 10/11
+- Chrome 브라우저 (Selenium용)
 
-### 패키지 설치
+### 1. 의존성 설치
 ```bash
 pip install -r requirements.txt
-playwright install chromium
 ```
 
----
-
-## 🚀 실행
-
+### 2. 실행
 ```bash
-# GUI 모드 (기본)
+# GUI 모드
 python main.py
 
 # CLI 모드 (백그라운드)
 python main.py --cli
-
-# 디버그 모드
-python main.py --debug
 ```
 
 ---
 
-## ⚙️ 설정
+## 📦 빌드 (EXE)
 
-### 키워드 추가
-1. "🔍 키워드" 탭 → "+ 새 키워드" 클릭
-2. 검색어, 가격 범위, 플랫폼 선택
-3. 저장
+### PyInstaller 빌드
+```bash
+# UPX 설치 (선택, 압축용)
+# https://github.com/upx/upx/releases
 
-### Telegram 알림 설정
-1. [@BotFather](https://t.me/BotFather)에서 봇 생성 → 토큰 복사
-2. [@userinfobot](https://t.me/userinfobot)에서 Chat ID 확인
-3. 설정 → Telegram 탭에서 입력
+# 빌드 실행
+pyinstaller used_market_notifier.spec
+```
+
+빌드된 파일: `dist/UsedMarketNotifier.exe`
+
+---
+
+## ⌨️ 키보드 단축키
+
+| 단축키 | 기능 |
+|--------|------|
+| `Ctrl+S` | 모니터링 시작/중지 |
+| `Ctrl+,` | 설정 열기 |
+| `Ctrl+Q` | 프로그램 종료 |
+| `Ctrl+1~6` | 탭 전환 |
+| `F1` | 단축키 도움말 |
+| `F5` | 현재 탭 새로고침 |
+| `Enter` | 매물 링크 열기 |
+| `F` | 즐겨찾기 추가 |
 
 ---
 
@@ -92,56 +81,50 @@ python main.py --debug
 
 ```
 used_market_notifier/
-├── main.py                  # 진입점
-├── monitor_engine.py        # 모니터링 핵심 로직
-├── settings_manager.py      # 설정 관리
-├── db.py                    # SQLite 데이터베이스
-├── models.py                # 데이터 모델
-├── scrapers/
-│   ├── playwright_base.py   # Playwright 베이스 (Stealth 통합)
-│   ├── stealth.py           # 봇 탐지 우회 모듈
-│   ├── debug.py             # 디버깅 도구
+├── main.py              # 진입점
+├── monitor_engine.py    # 코어 모니터링 엔진
+├── db.py                # SQLite 데이터베이스
+├── settings_manager.py  # 설정 관리
+├── models.py            # 데이터 모델
+├── scrapers/            # 스크래퍼
+│   ├── selenium_base.py
 │   ├── danggeun.py
 │   ├── bunjang.py
 │   └── joonggonara.py
-├── notifiers/
+├── notifiers/           # 알림 전송
 │   ├── telegram_notifier.py
 │   ├── discord_notifier.py
 │   └── slack_notifier.py
-└── gui/
-    ├── main_window.py       # 메인 윈도우
-    ├── styles.py            # Glassmorphism 스타일
-    ├── components.py        # 커스텀 컴포넌트
-    ├── keyword_manager.py   # 키워드 관리
-    └── stats_widget.py      # 통계 위젯
+├── gui/                 # PyQt6 GUI
+│   ├── main_window.py
+│   ├── keyword_manager.py
+│   ├── listings_widget.py
+│   └── ...
+└── requirements.txt
 ```
 
 ---
 
-## 🔧 빌드
+## ⚙️ 설정
 
-```bash
-pyinstaller used_market_notifier.spec
-```
+### 알림 설정 (설정 → 알림)
+- **Telegram**: Bot Token + Chat ID
+- **Discord**: Webhook URL
+- **Slack**: Webhook URL
 
-결과: `dist/중고거래알리미.exe` (약 50-60MB)
-
-> ⚠️ Playwright 브라우저는 별도 설치 필요: `playwright install chromium`
-
----
-
-## 🆕 v2.0 변경사항
-
-| 항목 | v1.x | v2.0 |
-|------|------|------|
-| 스크래핑 | Selenium (순차) | Playwright (병렬) |
-| 봇 탐지 우회 | 기본 UA | 15가지 Stealth 기술 |
-| 디버깅 | 없음 | 스크린샷/네트워크 로그 |
-| UI 디자인 | 기본 | Glassmorphism + 애니메이션 |
-| 성능 | ~5초 시작 | ~2초 시작 |
+### 모니터링 설정
+- 검색 주기 (기본: 5분)
+- Headless 모드 (브라우저 숨김)
+- 시스템 트레이 최소화
 
 ---
 
-## 📝 라이선스
+## 📄 라이선스
 
 MIT License
+
+---
+
+## 🙏 기여
+
+이슈 및 PR 환영합니다!

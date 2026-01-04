@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QMessageBox, QMenu, QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QDesktopServices, QShortcut, QKeySequence
 
 
 class ListingsWidget(QWidget):
@@ -38,6 +38,39 @@ class ListingsWidget(QWidget):
         
         # Try to load existing data on startup
         QTimer.singleShot(200, self._load_initial_listings)
+        
+        # Setup keyboard shortcuts
+        self._setup_shortcuts()
+    
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for listing interactions"""
+        # Enter: Open selected item link
+        shortcut_open = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
+        shortcut_open.activated.connect(self._open_selected)
+        
+        # F: Add to favorites
+        shortcut_fav = QShortcut(QKeySequence(Qt.Key.Key_F), self)
+        shortcut_fav.activated.connect(self._add_selected_to_favorites)
+    
+    def _open_selected(self):
+        """Open currently selected item"""
+        row = self.table.currentRow()
+        if row >= 0:
+            self.on_row_double_click(row, 0)
+    
+    def _add_selected_to_favorites(self):
+        """Add currently selected item to favorites"""
+        row = self.table.currentRow()
+        if row >= 0:
+            item = self.table.item(row, 0)
+            if item:
+                listing_id = item.data(Qt.ItemDataRole.UserRole + 1)
+                db = self.engine.db if self.engine else self._standalone_db
+                if listing_id and db:
+                    if db.add_favorite(listing_id):
+                        QMessageBox.information(self, "성공", "즐겨찾기에 추가되었습니다.")
+                    else:
+                        QMessageBox.warning(self, "알림", "이미 즐겨찾기에 등록된 상품입니다.")
     
     def _load_initial_listings(self):
         """Load listings from DB even if engine isn't running"""
@@ -156,6 +189,25 @@ class ListingsWidget(QWidget):
         refresh_btn.clicked.connect(self.refresh_listings)
         header_layout.addWidget(refresh_btn)
         
+        # Compare button
+        compare_btn = QPushButton("📊 비교")
+        compare_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #89b4fa;
+                color: #1e1e2e;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #b4befe;
+            }
+        """)
+        compare_btn.setToolTip("선택한 매물들을 비교합니다 (2-5개 선택)")
+        compare_btn.clicked.connect(self._compare_selected)
+        header_layout.addWidget(compare_btn)
+        
         layout.addLayout(header_layout)
         
         # Table
@@ -171,6 +223,7 @@ class ListingsWidget(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)  # Allow multi-select
         self.table.verticalHeader().setVisible(False)
         self.table.cellDoubleClicked.connect(self.on_row_double_click)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -375,6 +428,7 @@ class ListingsWidget(QWidget):
         menu = QMenu(self)
         open_action = menu.addAction("🔗 링크 열기")
         fav_action = menu.addAction("⭐ 즐겨찾기 추가")
+        note_action = menu.addAction("📝 메모 추가/편집")
         
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         
@@ -384,8 +438,61 @@ class ListingsWidget(QWidget):
             item = self.table.item(row, 0)
             if item:
                 listing_id = item.data(Qt.ItemDataRole.UserRole + 1)
-                if listing_id and self.engine:
-                    if self.engine.db.add_favorite(listing_id):
+                db = self.engine.db if self.engine else self._standalone_db
+                if listing_id and db:
+                    if db.add_favorite(listing_id):
                         QMessageBox.information(self, "성공", "즐겨찾기에 추가되었습니다.")
                     else:
                         QMessageBox.warning(self, "알림", "이미 즐겨찾기에 등록된 상품입니다.")
+        elif action == note_action:
+            item = self.table.item(row, 0)
+            if item:
+                listing_id = item.data(Qt.ItemDataRole.UserRole + 1)
+                db = self.engine.db if self.engine else self._standalone_db
+                if listing_id and db:
+                    self._show_note_dialog(listing_id, db)
+    
+    def _show_note_dialog(self, listing_id: int, db):
+        """Show note edit dialog for a listing"""
+        from gui.note_dialog import NoteDialog
+        
+        # Get existing note
+        existing = db.get_listing_note(listing_id)
+        note = existing.get('note', '') if existing else ''
+        status_tag = existing.get('status_tag', 'interested') if existing else 'interested'
+        
+        dialog = NoteDialog(note, status_tag, self)
+        if dialog.exec():
+            new_note = dialog.get_note()
+            new_tag = dialog.get_status_tag()
+            db.add_listing_note(listing_id, new_note, new_tag)
+            QMessageBox.information(self, "성공", "메모가 저장되었습니다.")
+    
+    def _compare_selected(self):
+        """Open compare dialog with selected listings"""
+        selected_rows = set()
+        for item in self.table.selectedItems():
+            selected_rows.add(item.row())
+        
+        if len(selected_rows) < 2:
+            QMessageBox.information(self, "알림", "비교할 매물을 2개 이상 선택하세요.\n(Ctrl+클릭으로 다중 선택)")
+            return
+        
+        if len(selected_rows) > 5:
+            QMessageBox.warning(self, "알림", "최대 5개까지만 비교할 수 있습니다.")
+            return
+        
+        # Collect listing data
+        listings = []
+        for row in sorted(selected_rows):
+            item = self.table.item(row, 0)
+            if item:
+                listing_data = item.data(Qt.ItemDataRole.UserRole)
+                if listing_data:
+                    listings.append(listing_data)
+        
+        if listings:
+            from gui.compare_dialog import CompareDialog
+            dialog = CompareDialog(listings, self)
+            dialog.exec()
+

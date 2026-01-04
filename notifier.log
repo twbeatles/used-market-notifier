@@ -1,0 +1,168 @@
+2026-01-04 11:27:13,607 - MonitorEngine - INFO - Starting monitor engine...
+2026-01-04 11:27:13,613 - MonitorEngine - INFO - 스크래퍼 및 브라우저 초기화 중...
+2026-01-04 11:27:13,617 - WDM - INFO - ====== WebDriver manager ======
+2026-01-04 11:27:14,772 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2026-01-04 11:27:15,130 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2026-01-04 11:27:15,415 - WDM - INFO - Driver [C:\Users\soulb\.wdm\drivers\chromedriver\win64\143.0.7499.169\chromedriver-win32/chromedriver.exe] found in cache
+2026-01-04 11:27:16,498 - MonitorEngine - INFO - Shared Chrome driver initialized
+2026-01-04 11:27:16,501 - MonitorEngine - INFO - Danggeun scraper initialized
+2026-01-04 11:27:16,503 - MonitorEngine - INFO - Bunjang scraper initialized
+2026-01-04 11:27:16,504 - MonitorEngine - WARNING - Joonggonara skipped in headless mode (Naver bot detection)
+2026-01-04 11:27:16,509 - MonitorEngine - INFO - Initialized 2 scraper(s): ['danggeun', 'bunjang']
+2026-01-04 11:27:16,512 - MonitorEngine - INFO - 스크래퍼 2개 초기화 완료 (공유 브라우저)
+2026-01-04 11:27:16,522 - MonitorEngine - INFO - 모니터링 시작됨
+2026-01-04 11:27:16,525 - MonitorEngine - INFO - 검색 사이클 시작...
+2026-01-04 11:27:16,544 - MonitorEngine - INFO - '맥북 에어 M2 256' 검색 중... (danggeun, bunjang)
+2026-01-04 11:27:16,564 - DanggeunScraper - INFO - Visiting https://www.daangn.com/kr/buy-sell/?search=%EB%A7%A5%EB%B6%81%20%EC%97%90%EC%96%B4%20M2%20256
+2026-01-04 11:27:18,123 - DanggeunScraper - INFO - Found 1 items via JSON-LD
+2026-01-04 11:27:18,183 - DanggeunScraper - INFO - Found 1 items on Danggeun for '맥북 에어 M2 256'
+2026-01-04 11:27:18,188 - BunjangScraper - INFO - Visiting https://m.bunjang.co.kr/search/products?q=%EB%A7%A5%EB%B6%81%20%EC%97%90%EC%96%B4%20M2%20256
+2026-01-04 11:27:27,137 - BunjangScraper - INFO - Found 59 items on Bunjang for '맥북 에어 M2 256'
+2026-01-04 11:27:27,193 - MonitorEngine - INFO - Found 1 items on danggeun for '맥북 에어 M2 256'
+2026-01-04 11:27:27,228 - MonitorEngine - INFO - New item: 맥북 에어 m2 15인치 스그 8/256 7월5일만 급처
+2026-01-04 11:27:27,252 - MonitorEngine - INFO - Found 59 items on bunjang for '맥북 에어 M2 256'
+2026-01-04 11:27:27,272 - MonitorEngine - INFO - New item: 맥북에어 m2 스페이스그레이 256기가
+2026-01-04 11:27:27,295 - MonitorEngine - INFO - Price change: 맥북 에어 M2 13인치 8 256 미드나이트 풀박스 (670000 → 660000)
+2026-01-04 11:27:27,855 - MonitorEngine - INFO - Price change: 2022 맥북 에어 13 스타라이트 M2 256기가 8코어 풀박스 (800,000 → 750000)
+2026-01-04 11:27:28,397 - MonitorEngine - INFO - New item: 맥북에어 m2 13 8 256
+2026-01-04 11:27:28,423 - MonitorEngine - INFO - New item: 맥북에어M2 8GB 256 스그
+2026-01-04 11:27:28,454 - MonitorEngine - INFO - New item: 맥북에어 m2(2022)256GB 미드나이트 영문판 13인치
+2026-01-04 11:27:28,498 - MonitorEngine - INFO - New item: 맥북에어 13인치 M2 미드나이트 8GB / 256GB 판매
+2026-01-04 11:27:28,531 - MonitorEngine - INFO - New item: 맥북에어13 실버 M2 256GB
+2026-01-04 11:27:28,563 - MonitorEngine - INFO - New item: 맥북에어M2 13형 8GB/256GB 배터리92% (부산 직거래)
+2026-01-04 11:27:28,614 - MonitorEngine - INFO - New item: 맥북 에어 13.6 M2 (256GB 램8GB) + 매직마우스
+2026-01-04 11:27:28,645 - MonitorEngine - INFO - New item: 맥북에어 M2 15인치 미드나이트 8GB/256GB 박스풀
+2026-01-04 11:27:28,679 - MonitorEngine - INFO - New item: 애플 맥북 에어 M2 스페이스 그레이 풀박스 (8G/256G/13인치)
+2026-01-04 11:27:28,712 - MonitorEngine - INFO - New item: 맥북에어 15인치 m2 10GPU 8GB 256GB 미드나이트
+2026-01-04 11:27:28,736 - MonitorEngine - INFO - New item: 맥북에어 13인치 M2/8GB/SSD 256G(2022년형)
+2026-01-04 11:27:28,763 - MonitorEngine - INFO - New item: 맥북 에어 13 M2 16GB 256GB
+2026-01-04 11:27:28,788 - MonitorEngine - INFO - New item: 맥북에어 M2(실버) 8GB/256GB 기본형
+2026-01-04 11:27:30,820 - MonitorEngine - INFO - Initial crawl complete. Found 15 items (notifications skipped for initial run)
+2026-01-04 11:27:30,849 - MonitorEngine - INFO - 초기 크롤링 완료: 15개 발견 (알림 스킵됨)
+2026-01-04 11:27:30,874 - MonitorEngine - INFO - 다음 검색까지 300초 대기 중... (새 상품 15개 발견)
+2026-01-04 11:28:22,332 - MonitorEngine - INFO - Stopping monitor engine...
+2026-01-04 11:28:22,356 - MonitorEngine - INFO - Closed danggeun scraper
+2026-01-04 11:28:22,378 - MonitorEngine - INFO - Closed bunjang scraper
+2026-01-04 11:28:24,541 - MonitorEngine - INFO - Shared driver closed
+2026-01-04 11:42:47,324 - root - ERROR - Ignored exception/Crash caused by:
+Traceback (most recent call last):
+  File "d:\google antigravity\used_market_notifier\main.py", line 138, in <module>
+    main()
+    ~~~~^^
+  File "d:\google antigravity\used_market_notifier\main.py", line 134, in main
+    run_gui()
+    ~~~~~~~^^
+  File "d:\google antigravity\used_market_notifier\main.py", line 89, in run_gui
+    from PyQt6.QtWidgets import QApplication
+ModuleNotFoundError: No module named 'PyQt6'
+2026-01-04 11:43:14,064 - MonitorEngine - INFO - Starting monitor engine...
+2026-01-04 11:43:14,071 - MonitorEngine - INFO - 스크래퍼 및 브라우저 초기화 중...
+2026-01-04 11:43:15,592 - MonitorEngine - INFO - Shared Playwright browser initialized
+2026-01-04 11:43:15,614 - MonitorEngine - INFO - Danggeun scraper initialized
+2026-01-04 11:54:28,973 - MonitorEngine - INFO - Starting monitor engine...
+2026-01-04 11:54:28,976 - MonitorEngine - INFO - 스크래퍼 및 브라우저 초기화 중...
+2026-01-04 11:54:34,647 - MonitorEngine - INFO - Shared Playwright browser initialized
+2026-01-04 11:54:34,648 - MonitorEngine - INFO - Danggeun scraper initialized
+2026-01-04 11:54:34,649 - MonitorEngine - INFO - Bunjang scraper initialized
+2026-01-04 11:54:34,649 - MonitorEngine - WARNING - Joonggonara skipped in headless mode (Naver bot detection)
+2026-01-04 11:54:34,651 - MonitorEngine - INFO - Initialized 2 scraper(s): ['danggeun', 'bunjang']
+2026-01-04 11:54:34,652 - MonitorEngine - INFO - 스크래퍼 2개 초기화 완료 (Playwright)
+2026-01-04 11:54:34,654 - MonitorEngine - INFO - 모니터링 시작됨
+2026-01-04 11:54:34,656 - MonitorEngine - INFO - 검색 사이클 시작...
+2026-01-04 11:54:34,658 - MonitorEngine - INFO - '맥북 에어 M2 256' 검색 중... (danggeun, bunjang)
+2026-01-04 11:54:34,864 - DanggeunScraper - INFO - Visiting https://www.daangn.com/kr/buy-sell/?search=%EB%A7%A5%EB%B6%81%20%EC%97%90%EC%96%B4%20M2%20256
+2026-01-04 11:54:48,675 - DanggeunScraper - INFO - Found 1 items via JSON-LD
+2026-01-04 11:54:48,676 - DanggeunScraper - INFO - Found 1 items on Danggeun for '맥북 에어 M2 256'
+2026-01-04 11:54:48,757 - BunjangScraper - INFO - Visiting https://m.bunjang.co.kr/search/products?q=%EB%A7%A5%EB%B6%81%20%EC%97%90%EC%96%B4%20M2%20256
+2026-01-04 11:54:56,591 - BunjangScraper - INFO - Found 0 items on Bunjang for '맥북 에어 M2 256'
+2026-01-04 11:54:56,592 - MonitorEngine - INFO - Found 1 items on danggeun for '맥북 에어 M2 256'
+2026-01-04 11:54:56,609 - MonitorEngine - INFO - New item: 맥북 에어 m2 15인치 스그 8/256 7월5일만 급처
+2026-01-04 11:54:56,613 - MonitorEngine - INFO - Found 0 items on bunjang for '맥북 에어 M2 256'
+2026-01-04 11:54:58,622 - MonitorEngine - INFO - Initial crawl complete. Found 1 items (notifications skipped for initial run)
+2026-01-04 11:54:58,623 - MonitorEngine - INFO - 초기 크롤링 완료: 1개 발견 (알림 스킵됨)
+2026-01-04 11:54:58,626 - MonitorEngine - INFO - 다음 검색까지 300초 대기 중... (새 상품 1개 발견)
+2026-01-04 11:55:03,703 - MonitorEngine - INFO - Stopping monitor engine...
+2026-01-04 20:19:34,398 - MonitorEngine - INFO - Starting monitor engine...
+2026-01-04 20:19:34,424 - MonitorEngine - INFO - 스크래퍼 및 브라우저 초기화 중...
+2026-01-04 20:19:34,450 - WDM - INFO - ====== WebDriver manager ======
+2026-01-04 20:19:37,540 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2026-01-04 20:19:38,193 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2026-01-04 20:19:38,766 - WDM - INFO - Driver [C:\Users\soulb\.wdm\drivers\chromedriver\win64\143.0.7499.169\chromedriver-win32/chromedriver.exe] found in cache
+2026-01-04 20:19:40,477 - MonitorEngine - INFO - Shared Selenium driver initialized
+2026-01-04 20:19:40,490 - MonitorEngine - INFO - Danggeun scraper initialized
+2026-01-04 20:19:40,497 - MonitorEngine - INFO - Bunjang scraper initialized
+2026-01-04 20:19:40,507 - MonitorEngine - WARNING - Joonggonara skipped in headless mode (Naver bot detection)
+2026-01-04 20:19:40,518 - MonitorEngine - INFO - Initialized 2 scraper(s): ['danggeun', 'bunjang']
+2026-01-04 20:19:40,528 - MonitorEngine - INFO - 스크래퍼 2개 초기화 완료 (Selenium)
+2026-01-04 20:19:40,545 - MonitorEngine - INFO - 모니터링 시작됨
+2026-01-04 20:19:40,551 - MonitorEngine - INFO - 검색 사이클 시작...
+2026-01-04 20:19:40,558 - MonitorEngine - INFO - '맥북 에어 M2 256' 검색 중... (danggeun, bunjang)
+2026-01-04 20:19:40,575 - DanggeunScraper - INFO - Visiting https://www.daangn.com/kr/buy-sell/?search=%EB%A7%A5%EB%B6%81%20%EC%97%90%EC%96%B4%20M2%20256
+2026-01-04 20:19:43,600 - DanggeunScraper - INFO - Found 1 items via JSON-LD
+2026-01-04 20:19:43,658 - DanggeunScraper - INFO - Found 1 items on Danggeun for '맥북 에어 M2 256'
+2026-01-04 20:19:43,663 - BunjangScraper - INFO - Visiting https://m.bunjang.co.kr/search/products?q=%EB%A7%A5%EB%B6%81%20%EC%97%90%EC%96%B4%20M2%20256
+2026-01-04 20:20:12,330 - BunjangScraper - INFO - Found 57 items on Bunjang for '맥북 에어 M2 256'
+2026-01-04 20:20:12,348 - MonitorEngine - INFO - Found 1 items on danggeun for '맥북 에어 M2 256'
+2026-01-04 20:20:12,397 - MonitorEngine - INFO - Found 57 items on bunjang for '맥북 에어 M2 256'
+2026-01-04 20:20:12,430 - MonitorEngine - INFO - New item: 맥북 에어 15 M2 미드나이트 (16/256) 미개봉
+2026-01-04 20:20:12,469 - MonitorEngine - INFO - New item: 2022 맥북 에어 13 스타라이트 M2 256기가 8코어 풀박스
+2026-01-04 20:20:12,509 - MonitorEngine - INFO - New item: 맥북에어 m2 스페이스그레이 256기가
+2026-01-04 20:20:12,554 - MonitorEngine - INFO - New item: 맥북에어 m2 13 8 256
+2026-01-04 20:20:12,596 - MonitorEngine - INFO - New item: 맥북 에어 M2 13인치 8 256 미드나이트 풀박스
+2026-01-04 20:20:12,630 - MonitorEngine - INFO - New item: 맥북에어M2 8GB 256 스그
+2026-01-04 20:20:12,661 - MonitorEngine - INFO - New item: 맥북에어 M2 13인치 256 팝니당(사용감x)
+2026-01-04 20:20:12,695 - MonitorEngine - INFO - New item: 맥북에어 m2 13인치 256
+2026-01-04 20:20:12,724 - MonitorEngine - INFO - New item: 맥북에어 m2 13인치 256기가
+2026-01-04 20:20:12,762 - MonitorEngine - INFO - New item: 맥북에어m2 8ram 256기가 미드나잇블루
+2026-01-04 20:20:12,799 - MonitorEngine - INFO - New item: 맥북에어m2 16 256 배터리 효율 100 s급 팝니다. 대구
+2026-01-04 20:20:12,845 - MonitorEngine - INFO - New item: 맥북 에어 m2 13인치 8gb / 256
+2026-01-04 20:20:12,883 - MonitorEngine - INFO - New item: 맥북에어 m2 13인치 256기가
+2026-01-04 20:20:12,930 - MonitorEngine - INFO - New item: 맥북에어 m2 8+256
+2026-01-04 20:20:12,969 - MonitorEngine - INFO - New item: 맥북에어m2 스타라이트13인치 256/16 + 매직 마우스 2
+2026-01-04 20:20:13,006 - MonitorEngine - INFO - New item: 맥북에어 m2 13인치 8램 256기가
+2026-01-04 20:20:13,036 - MonitorEngine - INFO - New item: 맥북에어 M2 미드나이트 사이클17 13.6인치 8/256
+2026-01-04 20:20:13,065 - MonitorEngine - INFO - New item: 맥북에어m2 13인치 256/8gb 판매합니다.
+2026-01-04 20:20:13,098 - MonitorEngine - INFO - New item: (마지막 급처) 맥북에어 M2 스그 15인치 256기가 판매합니다
+2026-01-04 20:20:13,132 - MonitorEngine - INFO - New item: 맥북에어 m2 13인치 램8 ssd 256 배터리 100
+2026-01-04 20:20:13,161 - MonitorEngine - INFO - New item: 맥북 에어 15인치 M2 8기가 256
+2026-01-04 20:20:13,197 - MonitorEngine - INFO - New item: 맥북 에어 m2 13 256 실버 판매합니다
+2026-01-04 20:20:13,232 - MonitorEngine - INFO - New item: 급처) 맥북 m2 에어 15인치 8/256 기본사양 박스O
+2026-01-04 20:20:13,266 - MonitorEngine - INFO - New item: 맥북 에어 m2 256기가
+2026-01-04 20:20:13,300 - MonitorEngine - INFO - New item: 맥북에어m2 256 s급
+2026-01-04 20:20:13,336 - MonitorEngine - INFO - New item: 맥북에어 m2 256 s급
+2026-01-04 20:20:13,379 - MonitorEngine - INFO - New item: 급처) 맥북 에어 M2 / 8 / 256 / 풀박 충전기 포함 / 상태
+2026-01-04 20:20:13,422 - MonitorEngine - INFO - New item: 맥북에어 13인치 M2 미드나이트 8GB / 256GB 판매
+2026-01-04 20:20:13,465 - MonitorEngine - INFO - New item: 맥북에어M2 13형 8GB/256GB 배터리92% (부산 직거래)
+2026-01-04 20:20:13,507 - MonitorEngine - INFO - New item: 맥북에어 15인치 스그 m2 256 16gb 영문키보드
+2026-01-04 20:20:13,554 - MonitorEngine - INFO - New item: 맥북에어 15인치 m2 10GPU 8GB 256GB 미드나이트
+2026-01-04 20:20:13,596 - MonitorEngine - INFO - New item: Apple 맥북 에어 13 M2 미드나이트 M2 8코어 256GB
+2026-01-04 20:20:13,637 - MonitorEngine - INFO - New item: 맥북 에어 13 M2 256GB
+2026-01-04 20:20:13,679 - MonitorEngine - INFO - New item: 맥북에어 M3 13인치 16RAM 256GB
+2026-01-04 20:20:13,721 - MonitorEngine - INFO - New item: 맥북 에어 M2 13 256gb
+2026-01-04 20:20:13,764 - MonitorEngine - INFO - New item: 맥북에어 m2(2022)256GB 미드나이트 영문판 13인치
+2026-01-04 20:20:13,804 - MonitorEngine - INFO - New item: Apple 2022 맥북 에어 M2 스타라이트 256GB
+2026-01-04 20:20:13,845 - MonitorEngine - INFO - New item: 맥북에어13 실버 M2 256GB
+2026-01-04 20:20:13,888 - MonitorEngine - INFO - New item: 맥북 에어 m2 256gb
+2026-01-04 20:20:13,931 - MonitorEngine - INFO - New item: 맥북 에어 m2 256GB
+2026-01-04 20:20:13,972 - MonitorEngine - INFO - New item: 애플 맥북 에어 13 M2 미드나이트 256GB
+2026-01-04 20:20:14,010 - MonitorEngine - INFO - New item: 맥북 에어 M2 13.6인치 실버 256GB
+2026-01-04 20:20:14,045 - MonitorEngine - INFO - New item: 맥북 에어 M2 256GB 스페이스 그레이 풀박스 + 매직마우스 판매합니
+2026-01-04 20:20:14,078 - MonitorEngine - INFO - New item: 애플 맥북 에어 M2 스페이스 그레이 풀박스 (8G/256G/13인치)
+2026-01-04 20:20:14,110 - MonitorEngine - INFO - New item: 맥북에어 13인치 M2/8GB/SSD 256G(2022년형)
+2026-01-04 20:20:14,144 - MonitorEngine - INFO - New item: 애플 맥북 에어 M2 미드나이트 256GB
+2026-01-04 20:20:14,170 - MonitorEngine - INFO - New item: 맥북 에어 M2 실버 256GB
+2026-01-04 20:20:14,200 - MonitorEngine - INFO - New item: 2023년 맥북 에어 15인치 M2 / 8GB / 256GB 판매합니다.
+2026-01-04 20:20:14,234 - MonitorEngine - INFO - New item: 애케플포함) 애플 맥북 에어 M2 2022 실버 256GB
+2026-01-04 20:20:14,272 - MonitorEngine - INFO - New item: 맥북 에어 13 M2 256GB 스타라이트 8GB램 미개봉
+2026-01-04 20:20:14,312 - MonitorEngine - INFO - New item: 맥북 에어14인치 m2 256gb램8gb
+2026-01-04 20:20:14,355 - MonitorEngine - INFO - New item: 맥북 에어 13 M2 16GB 256GB
+2026-01-04 20:20:14,391 - MonitorEngine - INFO - New item: 맥북 에어 13 M2 256GB 실버 팝니당
+2026-01-04 20:20:14,426 - MonitorEngine - INFO - New item: 맥북에어 M2(실버) 8GB/256GB 기본형
+2026-01-04 20:20:14,458 - MonitorEngine - INFO - New item: 맥북 에어 15 M2 실버 256GB
+2026-01-04 20:20:14,488 - MonitorEngine - INFO - New item: 맥북에어 M2 스페이스그레이 16/256GB
+2026-01-04 20:20:16,528 - MonitorEngine - INFO - Initial crawl complete. Found 56 items (notifications skipped for initial run)
+2026-01-04 20:20:16,556 - MonitorEngine - INFO - 초기 크롤링 완료: 56개 발견 (알림 스킵됨)
+2026-01-04 20:20:16,586 - MonitorEngine - INFO - 다음 검색까지 300초 대기 중... (새 상품 56개 발견)
+2026-01-04 20:22:01,977 - MonitorEngine - INFO - Stopping monitor engine...
+2026-01-04 20:26:30,835 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<MonitorEngine.stop() done, defined at D:\google antigravity\used_market_notifier\monitor_engine.py:407> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at C:\Python314\Lib\asyncio\futures.py:393, Task.task_wakeup()]> cb=[_chain_future.<locals>._call_set_state() at C:\Python314\Lib\asyncio\futures.py:400]>

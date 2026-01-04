@@ -80,7 +80,7 @@ def run_cli():
     except KeyboardInterrupt:
         logger.info("Stopping...")
     finally:
-        engine.close()
+        asyncio.run(engine.close())
         logger.info("Goodbye.")
 
 
