@@ -86,9 +86,23 @@ def run_cli():
 
 def run_gui():
     """Run in GUI mode"""
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication, QMessageBox
     from PyQt6.QtCore import Qt
     from gui.main_window import MainWindow
+    
+    # Global exception handler to prevent silent crashes
+    def exception_hook(exc_type, exc_value, exc_tb):
+        import traceback
+        error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        logging.getLogger("Main").error(f"Uncaught exception:\n{error_msg}")
+        # Don't crash, just log
+        if exc_type != KeyboardInterrupt:
+            try:
+                QMessageBox.critical(None, "오류", f"예상치 못한 오류가 발생했습니다:\n{exc_value}")
+            except Exception:
+                pass
+    
+    sys.excepthook = exception_hook
     
     # Enable high DPI scaling
     QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -102,10 +116,15 @@ def run_gui():
     # Set application style
     app.setStyle("Fusion")
     
-    window = MainWindow()
-    window.show()
-    
-    sys.exit(app.exec())
+    try:
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec())
+    except Exception as e:
+        logging.getLogger("Main").error(f"Failed to start GUI: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 def main():

@@ -9,7 +9,7 @@ from typing import Optional
 from models import (
     AppSettings, SearchKeyword, NotifierConfig, 
     NotificationSchedule, NotificationType, ThemeMode, SellerFilter,
-    KeywordPreset
+    KeywordPreset, TagRule, MessageTemplate
 )
 
 SETTINGS_FILE = "settings.json"
@@ -124,6 +124,33 @@ class SettingsManager:
                     'notes': s.notes,
                 }
                 for s in settings.seller_filters
+            ],
+            # New settings for features #17, #18, #28, #29
+            'auto_backup_enabled': settings.auto_backup_enabled,
+            'auto_backup_interval_days': settings.auto_backup_interval_days,
+            'backup_keep_count': settings.backup_keep_count,
+            'auto_cleanup_enabled': settings.auto_cleanup_enabled,
+            'cleanup_days': settings.cleanup_days,
+            'cleanup_exclude_favorites': settings.cleanup_exclude_favorites,
+            'cleanup_exclude_noted': settings.cleanup_exclude_noted,
+            'auto_tagging_enabled': settings.auto_tagging_enabled,
+            'tag_rules': [
+                {
+                    'tag_name': t.tag_name,
+                    'keywords': t.keywords,
+                    'color': t.color,
+                    'icon': t.icon,
+                    'enabled': t.enabled,
+                }
+                for t in settings.tag_rules
+            ],
+            'message_templates': [
+                {
+                    'name': m.name,
+                    'content': m.content,
+                    'platform': m.platform,
+                }
+                for m in settings.message_templates
             ]
         }
         return data
@@ -187,6 +214,25 @@ class SettingsManager:
                 notes=s.get('notes', ''),
             ))
         
+        # Parse new settings for features #28, #29
+        tag_rules = []
+        for t in data.get('tag_rules', []):
+            tag_rules.append(TagRule(
+                tag_name=t.get('tag_name', ''),
+                keywords=t.get('keywords', []),
+                color=t.get('color', '#89b4fa'),
+                icon=t.get('icon', '🏷️'),
+                enabled=t.get('enabled', True),
+            ))
+        
+        message_templates = []
+        for m in data.get('message_templates', []):
+            message_templates.append(MessageTemplate(
+                name=m.get('name', ''),
+                content=m.get('content', ''),
+                platform=m.get('platform', 'all'),
+            ))
+        
         return AppSettings(
             check_interval_seconds=data.get('check_interval_seconds', 300),
             headless_mode=data.get('headless_mode', True),
@@ -202,6 +248,17 @@ class SettingsManager:
             keywords=keywords,
             keyword_presets=keyword_presets,
             seller_filters=seller_filters,
+            # New settings
+            auto_backup_enabled=data.get('auto_backup_enabled', True),
+            auto_backup_interval_days=data.get('auto_backup_interval_days', 7),
+            backup_keep_count=data.get('backup_keep_count', 5),
+            auto_cleanup_enabled=data.get('auto_cleanup_enabled', False),
+            cleanup_days=data.get('cleanup_days', 30),
+            cleanup_exclude_favorites=data.get('cleanup_exclude_favorites', True),
+            cleanup_exclude_noted=data.get('cleanup_exclude_noted', True),
+            auto_tagging_enabled=data.get('auto_tagging_enabled', True),
+            tag_rules=tag_rules,
+            message_templates=message_templates,
         )
     
     # Convenience methods

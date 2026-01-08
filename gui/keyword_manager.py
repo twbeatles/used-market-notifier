@@ -559,16 +559,26 @@ class KeywordManagerWidget(QWidget):
         layout.addLayout(action_layout)
     
     def refresh_list(self):
-        # Clear existing cards
+        # Clear existing cards - proper cleanup to prevent memory leaks
         for card in self.cards:
+            try:
+                card.clicked.disconnect()
+                card.double_clicked.disconnect()
+            except Exception:
+                pass  # Already disconnected
+            card.hide()
+            card.setParent(None)
             card.deleteLater()
         self.cards.clear()
         
-        # Remove stretch
+        # Remove stretch and other widgets
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
         
         # Create new cards
         keywords = self.settings.settings.keywords

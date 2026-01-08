@@ -31,6 +31,11 @@ class DatabaseManager:
         self.conn.execute('PRAGMA cache_size=-64000')  # 64MB cache
         self.create_tables()
     
+    def _invalidate_cache(self):
+        """Invalidate stats cache on write operations"""
+        self._cache_time = None
+        self._stats_cache = {}
+    
     def create_tables(self):
         """Create all required tables"""
         with self.lock:
@@ -50,6 +55,7 @@ class DatabaseManager:
                     thumbnail TEXT,
                     seller TEXT,
                     location TEXT,
+                    sale_status TEXT DEFAULT 'for_sale',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(platform, article_id)
@@ -128,6 +134,9 @@ class DatabaseManager:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_search_stats_date ON search_stats(checked_at)')
             # Composite index for duplicate checking (most frequent query)
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_platform_article ON listings(platform, article_id)')
+            # Additional indexes for new features
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_sale_status ON listings(sale_status)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_listing ON favorites(listing_id)')
             
             # Search history table for keyword suggestions
             cursor.execute('''
@@ -146,11 +155,27 @@ class DatabaseManager:
                     listing_id INTEGER NOT NULL UNIQUE,
                     note TEXT,
                     status_tag TEXT DEFAULT 'interested',
+                    auto_tags TEXT DEFAULT '[]',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (listing_id) REFERENCES listings(id)
                 )
             ''')
+            
+            # Index for listing_notes (created after table exists)
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listing_notes_listing ON listing_notes(listing_id)')
+            
+            # Migration: Add sale_status column if not exists (for existing databases)
+            try:
+                cursor.execute('ALTER TABLE listings ADD COLUMN sale_status TEXT DEFAULT "for_sale"')
+            except Exception:
+                pass  # Column already exists
+            
+            # Migration: Add auto_tags column if not exists
+            try:
+                cursor.execute('ALTER TABLE listing_notes ADD COLUMN auto_tags TEXT DEFAULT "[]"')
+            except Exception:
+                pass  # Column already exists
             
             self.conn.commit()
     
@@ -163,6 +188,14 @@ class DatabaseManager:
                 (platform, article_id)
             )
             return cursor.fetchone() is not None
+    
+    def get_listing_by_id(self, listing_id: int) -> Optional[dict]:
+        """Get listing by its ID"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM listings WHERE id = ?', (listing_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
     
     def get_listing(self, platform: str, article_id: str) -> Optional[dict]:
         """Get existing listing"""
@@ -659,11 +692,231 @@ class DatabaseManager:
         with self.lock:
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT l.*, ln.note, ln.status_tag, ln.updated_at as note_updated
+                SELECT l.*, ln.note, ln.status_tag, ln.auto_tags, ln.updated_at as note_updated
                 FROM listing_notes ln
                 JOIN listings l ON ln.listing_id = l.id
                 ORDER BY ln.updated_at DESC
             ''')
+            return [dict(row) for row in cursor.fetchall()]
+    
+    # ===== Feature #12: Sale Status =====
+    
+    def update_sale_status(self, listing_id: int, status: str):
+        """Update sale status of a listing"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                UPDATE listings SET sale_status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (status, listing_id))
+            self.conn.commit()
+    
+    def detect_sale_status(self, title: str) -> str:
+        """Detect sale status from title text"""
+        title_lower = title.lower() if title else ""
+        if any(keyword in title_lower for keyword in ["판매완료", "거래완료", "sold"]):
+            return "sold"
+        elif any(keyword in title_lower for keyword in ["예약중", "예약", "reserved"]):
+            return "reserved"
+        return "for_sale"
+    
+    def get_listings_by_status(self, status: str = None, platform: str = None, 
+                                search: str = None, limit: int = 50, offset: int = 0) -> list:
+        """Get listings filtered by sale status"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            query = 'SELECT * FROM listings WHERE 1=1'
+            params = []
+            
+            if status and status != 'all':
+                query += ' AND sale_status = ?'
+                params.append(status)
+            
+            if platform:
+                query += ' AND platform = ?'
+                params.append(platform)
+            
+            if search:
+                query += ' AND title LIKE ?'
+                params.append(f'%{search}%')
+            
+            query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_status_counts(self) -> dict:
+        """Get count of listings by sale status"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT sale_status, COUNT(*) as count
+                FROM listings
+                GROUP BY sale_status
+            ''')
+            return {row['sale_status'] or 'for_sale': row['count'] for row in cursor.fetchall()}
+    
+    # ===== Feature #18: Cleanup =====
+    
+    def get_cleanup_preview(self, days: int = 30, 
+                            exclude_favorites: bool = True,
+                            exclude_noted: bool = True) -> dict:
+        """Preview how many listings would be deleted"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            
+            query = '''
+                SELECT COUNT(*) as count FROM listings
+                WHERE created_at < datetime('now', ?)
+            '''
+            params = [f'-{days} days']
+            
+            if exclude_favorites:
+                query += ' AND id NOT IN (SELECT listing_id FROM favorites)'
+            
+            if exclude_noted:
+                query += ' AND id NOT IN (SELECT listing_id FROM listing_notes)'
+            
+            cursor.execute(query, params)
+            delete_count = cursor.fetchone()['count']
+            
+            # Get total count
+            cursor.execute('SELECT COUNT(*) as count FROM listings')
+            total_count = cursor.fetchone()['count']
+            
+            return {
+                'delete_count': delete_count,
+                'total_count': total_count,
+                'days': days,
+                'exclude_favorites': exclude_favorites,
+                'exclude_noted': exclude_noted
+            }
+    
+    def cleanup_old_listings(self, days: int = 30,
+                             exclude_favorites: bool = True,
+                             exclude_noted: bool = True) -> int:
+        """Delete old listings and return count deleted"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            
+            # First, delete related records
+            subquery = '''
+                SELECT id FROM listings
+                WHERE created_at < datetime('now', ?)
+            '''
+            params = [f'-{days} days']
+            
+            if exclude_favorites:
+                subquery += ' AND id NOT IN (SELECT listing_id FROM favorites)'
+            
+            if exclude_noted:
+                subquery += ' AND id NOT IN (SELECT listing_id FROM listing_notes)'
+            
+            # Delete price history for these listings
+            cursor.execute(f'''
+                DELETE FROM price_history WHERE listing_id IN ({subquery})
+            ''', params)
+            
+            # Delete notification logs for these listings
+            cursor.execute(f'''
+                DELETE FROM notification_log WHERE listing_id IN ({subquery})
+            ''', params)
+            
+            # Delete the listings
+            delete_query = f'''
+                DELETE FROM listings WHERE id IN ({subquery})
+            '''
+            cursor.execute(delete_query, params)
+            deleted_count = cursor.rowcount
+            
+            self.conn.commit()
+            return deleted_count
+    
+    # ===== Feature #28: Auto Tags =====
+    
+    def add_auto_tags(self, listing_id: int, tags: list):
+        """Add or update auto-generated tags for a listing"""
+        import json
+        with self.lock:
+            cursor = self.conn.cursor()
+            tags_json = json.dumps(tags, ensure_ascii=False)
+            
+            # Check if note exists
+            cursor.execute('SELECT id FROM listing_notes WHERE listing_id = ?', (listing_id,))
+            if cursor.fetchone():
+                cursor.execute('''
+                    UPDATE listing_notes SET auto_tags = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE listing_id = ?
+                ''', (tags_json, listing_id))
+            else:
+                cursor.execute('''
+                    INSERT INTO listing_notes (listing_id, note, status_tag, auto_tags)
+                    VALUES (?, '', 'interested', ?)
+                ''', (listing_id, tags_json))
+            
+            self.conn.commit()
+    
+    def get_auto_tags(self, listing_id: int) -> list:
+        """Get auto-generated tags for a listing"""
+        import json
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT auto_tags FROM listing_notes WHERE listing_id = ?', (listing_id,))
+            row = cursor.fetchone()
+            if row and row['auto_tags']:
+                try:
+                    return json.loads(row['auto_tags'])
+                except json.JSONDecodeError:
+                    return []
+            return []
+    
+    # ===== Feature #16: Enhanced Export =====
+    
+    def get_listings_for_export(self, platform: str = None, search: str = None,
+                                 status: str = None, date_from: str = None,
+                                 date_to: str = None, include_sold: bool = True) -> list:
+        """Get listings with all filters for export"""
+        with self.lock:
+            cursor = self.conn.cursor()
+            query = '''
+                SELECT l.*, 
+                       COALESCE(ln.note, '') as note,
+                       COALESCE(ln.status_tag, '') as user_status,
+                       COALESCE(ln.auto_tags, '[]') as auto_tags
+                FROM listings l
+                LEFT JOIN listing_notes ln ON l.id = ln.listing_id
+                WHERE 1=1
+            '''
+            params = []
+            
+            if platform and platform != 'all':
+                query += ' AND l.platform = ?'
+                params.append(platform)
+            
+            if search:
+                query += ' AND l.title LIKE ?'
+                params.append(f'%{search}%')
+            
+            if status and status != 'all':
+                query += ' AND l.sale_status = ?'
+                params.append(status)
+            
+            if not include_sold:
+                query += ' AND l.sale_status != ?'
+                params.append('sold')
+            
+            if date_from:
+                query += ' AND l.created_at >= ?'
+                params.append(date_from)
+            
+            if date_to:
+                query += ' AND l.created_at <= ?'
+                params.append(date_to)
+            
+            query += ' ORDER BY l.created_at DESC'
+            
+            cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
 
 

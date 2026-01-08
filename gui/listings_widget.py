@@ -22,7 +22,7 @@ class ListingsWidget(QWidget):
         self.total_count = 0
         self.current_platform = "all"
         self.search_text = ""
-        self.exclude_sold = True  # Default: exclude sold items
+        self.current_status = "all"  # Status filter: all, for_sale, reserved, sold
         
         self.setup_ui()
         
@@ -146,31 +146,27 @@ class ListingsWidget(QWidget):
         self.platform_combo.currentTextChanged.connect(self.on_platform_changed)
         header_layout.addWidget(self.platform_combo)
         
-        # Exclude sold checkbox
-        self.exclude_sold_check = QCheckBox("판매완료 제외")
-        self.exclude_sold_check.setChecked(True)
-        self.exclude_sold_check.setStyleSheet("""
-            QCheckBox {
-                color: #cdd6f4;
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-            }
-            QCheckBox::indicator:unchecked {
-                border: 2px solid #45475a;
-                border-radius: 4px;
+        # Status filter dropdown (replaces exclude_sold checkbox)
+        status_label = QLabel("상태:")
+        status_label.setStyleSheet("color: #a6adc8;")
+        header_layout.addWidget(status_label)
+        
+        self.status_combo = QComboBox()
+        self.status_combo.addItems(["전체", "판매중", "예약중", "판매완료"])
+        self.status_combo.setStyleSheet("""
+            QComboBox {
                 background-color: #313244;
+                border: 1px solid #45475a;
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: #cdd6f4;
+                min-width: 80px;
             }
-            QCheckBox::indicator:checked {
-                border: 2px solid #a6e3a1;
-                border-radius: 4px;
-                background-color: #a6e3a1;
-            }
+            QComboBox::drop-down { border: none; }
+            QComboBox::down-arrow { image: none; border: none; }
         """)
-        self.exclude_sold_check.stateChanged.connect(self.on_exclude_sold_changed)
-        header_layout.addWidget(self.exclude_sold_check)
+        self.status_combo.currentTextChanged.connect(self.on_status_changed)
+        header_layout.addWidget(self.status_combo)
         
         # Refresh button
         refresh_btn = QPushButton("🔄 새로고침")
@@ -207,6 +203,25 @@ class ListingsWidget(QWidget):
         compare_btn.setToolTip("선택한 매물들을 비교합니다 (2-5개 선택)")
         compare_btn.clicked.connect(self._compare_selected)
         header_layout.addWidget(compare_btn)
+        
+        # Export button (Feature #16)
+        export_btn = QPushButton("📥 내보내기")
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f9e2af;
+                color: #1e1e2e;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #fab387;
+            }
+        """)
+        export_btn.setToolTip("현재 필터가 적용된 매물을 CSV/Excel로 내보내기")
+        export_btn.clicked.connect(self._show_export_dialog)
+        header_layout.addWidget(export_btn)
         
         layout.addLayout(header_layout)
         
@@ -319,9 +334,15 @@ class ListingsWidget(QWidget):
         self.current_page = 0
         self.refresh_listings()
     
-    def on_exclude_sold_changed(self, state):
-        """Handle exclude sold checkbox change"""
-        self.exclude_sold = state == 2  # Qt.CheckState.Checked
+    def on_status_changed(self, text):
+        """Handle status filter change"""
+        status_map = {
+            "전체": "all",
+            "판매중": "for_sale",
+            "예약중": "reserved",
+            "판매완료": "sold"
+        }
+        self.current_status = status_map.get(text, "all")
         self.current_page = 0
         self.refresh_listings()
     
@@ -341,20 +362,16 @@ class ListingsWidget(QWidget):
             offset = self.current_page * self.page_size
             
             platform = None if self.current_platform == "all" else self.current_platform
-            listings = db.get_listings_paginated(
+            status = None if self.current_status == "all" else self.current_status
+            
+            # Use new DB method with status filter
+            listings = db.get_listings_by_status(
+                status=status,
                 platform=platform,
                 search=self.search_text,
-                limit=self.page_size * 2 if self.exclude_sold else self.page_size,  # Fetch more if filtering
+                limit=self.page_size,
                 offset=offset
             )
-            
-            # Apply sold filter client-side
-            if self.exclude_sold:
-                sold_patterns = ["판매완료", "거래완료", "예약중"]
-                listings = [
-                    item for item in listings
-                    if not any(p in (item.get('title', '') or '') for p in sold_patterns)
-                ][:self.page_size]  # Limit to page size after filtering
             
             # Get total count (approximate when filtering)
             self.total_count = db.get_listings_count(
@@ -365,29 +382,40 @@ class ListingsWidget(QWidget):
             # Update table
             self.table.setRowCount(len(listings))
             for i, item in enumerate(listings):
-                # Platform
-                platform_item = QTableWidgetItem(item.get('platform', ''))
-                platform_item.setData(Qt.ItemDataRole.UserRole, item.get('url'))
+                # Platform - colorful icon display
+                platform = item.get('platform', '')
+                platform_icons = {
+                    'danggeun': '🥕 당근',
+                    'bunjang': '⚡ 번개',
+                    'joonggonara': '🛒 중고'
+                }
+                platform_item = QTableWidgetItem(platform_icons.get(platform, platform))
+                platform_item.setData(Qt.ItemDataRole.UserRole, item)  # Store full item data
                 platform_item.setData(Qt.ItemDataRole.UserRole + 1, item.get('id'))
                 self.table.setItem(i, 0, platform_item)
                 
-                # Title
-                self.table.setItem(i, 1, QTableWidgetItem(item.get('title', '')))
+                # Title with truncation hint
+                title = item.get('title', '')
+                title_item = QTableWidgetItem(title[:60] + '...' if len(title) > 60 else title)
+                title_item.setToolTip(title)  # Full title on hover
+                self.table.setItem(i, 1, title_item)
                 
-                # Price
-                self.table.setItem(i, 2, QTableWidgetItem(item.get('price', '')))
+                # Price with formatting
+                price = item.get('price', '')
+                price_item = QTableWidgetItem(price)
+                self.table.setItem(i, 2, price_item)
                 
                 # Keyword
                 self.table.setItem(i, 3, QTableWidgetItem(item.get('keyword', '')))
                 
-                # Date
+                # Date - formatted nicely
                 created = item.get('created_at', '')
                 if created:
                     created = created[:16].replace('T', ' ')
                 self.table.setItem(i, 4, QTableWidgetItem(created))
                 
-                # Link button
-                link_item = QTableWidgetItem("🔗")
+                # Link button with better visibility
+                link_item = QTableWidgetItem("🔗 열기")
                 link_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(i, 5, link_item)
             
@@ -429,6 +457,7 @@ class ListingsWidget(QWidget):
         open_action = menu.addAction("🔗 링크 열기")
         fav_action = menu.addAction("⭐ 즐겨찾기 추가")
         note_action = menu.addAction("📝 메모 추가/편집")
+        message_action = menu.addAction("📨 판매자에게 메시지")
         
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         
@@ -451,6 +480,8 @@ class ListingsWidget(QWidget):
                 db = self.engine.db if self.engine else self._standalone_db
                 if listing_id and db:
                     self._show_note_dialog(listing_id, db)
+        elif action == message_action:
+            self._show_message_dialog(row)
     
     def _show_note_dialog(self, listing_id: int, db):
         """Show note edit dialog for a listing"""
@@ -495,4 +526,64 @@ class ListingsWidget(QWidget):
             from gui.compare_dialog import CompareDialog
             dialog = CompareDialog(listings, self)
             dialog.exec()
+    
+    def _show_export_dialog(self):
+        """Show export dialog with current filters"""
+        db = self.engine.db if self.engine else self._standalone_db
+        if not db:
+            QMessageBox.warning(self, "알림", "데이터베이스에 연결되지 않았습니다.")
+            return
+        
+        from gui.export_dialog import ExportDialog
+        
+        # Pass current filters to the dialog
+        current_filters = {
+            'platform': None if self.current_platform == "all" else self.current_platform,
+            'status': None if self.current_status == "all" else self.current_status,
+            'search': self.search_text,
+            'include_sold': self.current_status != "sold"
+        }
+        
+        dialog = ExportDialog(db, current_filters, self)
+        dialog.exec()
+    
+    def _show_message_dialog(self, row: int):
+        """Show message dialog for a listing"""
+        item = self.table.item(row, 0)
+        if not item:
+            return
+        
+        db = self.engine.db if self.engine else self._standalone_db
+        if not db:
+            return
+        
+        listing_id = item.data(Qt.ItemDataRole.UserRole + 1)
+        if not listing_id:
+            return
+        
+        # Get full listing data from database
+        listing = db.get_listing_by_id(listing_id) if hasattr(db, 'get_listing_by_id') else None
+        
+        if not listing:
+            # Fallback: construct from table data
+            listing = {
+                'platform': self.table.item(row, 0).text() if self.table.item(row, 0) else '',
+                'title': self.table.item(row, 1).text() if self.table.item(row, 1) else '',
+                'price': self.table.item(row, 2).text() if self.table.item(row, 2) else '',
+                'url': item.data(Qt.ItemDataRole.UserRole),
+                'seller': '',
+                'location': ''
+            }
+        
+        from gui.message_dialog import MessageDialog
+        
+        # Get target price from favorites if available
+        target_price = None
+        if db.is_favorite(listing_id):
+            fav_details = db.get_favorite_details(listing_id)
+            if fav_details:
+                target_price = fav_details.get('target_price')
+        
+        dialog = MessageDialog(listing, target_price, parent=self)
+        dialog.exec()
 

@@ -1,79 +1,54 @@
-# 🥕 중고거래 알리미 (Used Market Notifier)
+# 🛒 중고거래 알리미 (Used Market Notifier)
 
-당근마켓, 번개장터, 중고나라에서 키워드를 모니터링하고 새 상품이 등록되면 실시간 알림을 보내는 프로그램입니다.
+실시간 중고거래 플랫폼 모니터링 및 알림 프로그램
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green)
-![Selenium](https://img.shields.io/badge/Scraping-Selenium-orange)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![PyQt6](https://img.shields.io/badge/PyQt6-6.4+-green.svg)](https://pypi.org/project/PyQt6/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
 ## ✨ 주요 기능
 
-| 기능 | 설명 |
-|------|------|
-| 🔍 키워드 모니터링 | 여러 키워드 동시 모니터링 |
-| 🏪 3대 플랫폼 지원 | 당근마켓, 번개장터, 중고나라 |
-| 📢 알림 전송 | Telegram, Discord, Slack |
-| 💰 가격 필터 | 최소/최대 가격 설정 |
-| 📊 통계 대시보드 | 일별/키워드별 통계 |
-| ⭐ 즐겨찾기 | 관심 매물 저장 |
-| 📝 매물 메모 | 상태 태그 및 메모 추가 |
-| 📊 매물 비교 | 다중 매물 비교 기능 |
-| 💾 키워드 프리셋 | 필터 설정 저장/불러오기 |
-| 🔔 키워드별 알림 | 개별 알림 ON/OFF |
+### 🔍 검색 및 모니터링
+- **다중 플랫폼**: 당근마켓, 번개장터, 중고나라
+- **키워드 모니터링**: 무제한 등록, 개별 설정
+- **가격 필터**: 최소/최대 가격 범위
+- **제외 키워드**: 원하지 않는 매물 필터링
+- **지역 필터**: 당근마켓 지역 검색
+
+### 📢 알림
+| 플랫폼 | 설정 |
+|--------|------|
+| 텔레그램 | 봇 토큰 + 채팅 ID |
+| 디스코드 | 웹훅 URL |
+| 슬랙 | 웹훅 URL |
+
+### 📊 데이터 관리
+- 즐겨찾기 / 가격 추적
+- 판매 상태 필터 (판매중/예약중/판매완료)
+- CSV/Excel 내보내기
+- 자동 백업/복원
+
+### 🎨 UI/UX
+- Catppuccin Mocha 다크 테마
+- 글래스모피즘 카드 효과
+- 단축키: F5 새로고침, Ctrl+S 시작/정지
 
 ---
 
-## 🚀 설치 방법
+## 🚀 실행 방법
 
-### 요구사항
-- Python 3.10 이상
-- Chrome 브라우저 (Selenium용)
+### 실행 파일 (권장)
+```
+dist/UsedMarketNotifier.exe
+```
 
-### 1. 의존성 설치
+### Python 개발 실행
 ```bash
 pip install -r requirements.txt
-```
-
-### 2. 실행
-```bash
-# GUI 모드
 python main.py
-
-# CLI 모드 (백그라운드)
-python main.py --cli
 ```
-
----
-
-## 📦 빌드 (EXE)
-
-### PyInstaller 빌드
-```bash
-# UPX 설치 (선택, 압축용)
-# https://github.com/upx/upx/releases
-
-# 빌드 실행
-pyinstaller used_market_notifier.spec
-```
-
-빌드된 파일: `dist/UsedMarketNotifier.exe`
-
----
-
-## ⌨️ 키보드 단축키
-
-| 단축키 | 기능 |
-|--------|------|
-| `Ctrl+S` | 모니터링 시작/중지 |
-| `Ctrl+,` | 설정 열기 |
-| `Ctrl+Q` | 프로그램 종료 |
-| `Ctrl+1~6` | 탭 전환 |
-| `F1` | 단축키 도움말 |
-| `F5` | 현재 탭 새로고침 |
-| `Enter` | 매물 링크 열기 |
-| `F` | 즐겨찾기 추가 |
 
 ---
 
@@ -82,49 +57,47 @@ pyinstaller used_market_notifier.spec
 ```
 used_market_notifier/
 ├── main.py              # 진입점
-├── monitor_engine.py    # 코어 모니터링 엔진
-├── db.py                # SQLite 데이터베이스
+├── monitor_engine.py    # 모니터링 엔진
+├── db.py                # 데이터베이스
 ├── settings_manager.py  # 설정 관리
 ├── models.py            # 데이터 모델
-├── scrapers/            # 스크래퍼
-│   ├── selenium_base.py
+├── constants.py         # 상수 정의
+├── gui/                 # UI 컴포넌트
+│   ├── main_window.py
+│   ├── styles.py
+│   ├── components.py
+│   └── ...
+├── scrapers/            # 플랫폼 스크래퍼
 │   ├── danggeun.py
 │   ├── bunjang.py
 │   └── joonggonara.py
-├── notifiers/           # 알림 전송
-│   ├── telegram_notifier.py
-│   ├── discord_notifier.py
-│   └── slack_notifier.py
-├── gui/                 # PyQt6 GUI
-│   ├── main_window.py
-│   ├── keyword_manager.py
-│   ├── listings_widget.py
-│   └── ...
-└── requirements.txt
+└── notifiers/           # 알림 모듈
+    ├── telegram.py
+    ├── discord.py
+    └── slack.py
 ```
 
 ---
 
 ## ⚙️ 설정
 
-### 알림 설정 (설정 → 알림)
-- **Telegram**: Bot Token + Chat ID
-- **Discord**: Webhook URL
-- **Slack**: Webhook URL
+### 알림 설정
+1. **텔레그램**: @BotFather에서 봇 생성 → 토큰/채팅ID 입력
+2. **디스코드**: 서버 설정 → 연동 → 웹훅 URL 복사
+3. **슬랙**: 앱 설정 → Incoming Webhooks 활성화
 
-### 모니터링 설정
-- 검색 주기 (기본: 5분)
-- Headless 모드 (브라우저 숨김)
-- 시스템 트레이 최소화
+---
+
+## 📝 최근 업데이트 (2026-01)
+
+- ✅ 크롤링 아키텍처 재설계 (안정성 향상)
+- ✅ UI/UX 개선 (테이블 가독성, 토스트 알림)
+- ✅ 성능 최적화 (DB 인덱스, 드라이버 관리)
+- ✅ 메시지박스 버튼 가시성 수정
+- ✅ 스레드 종료 시 앱 안정성 개선
 
 ---
 
 ## 📄 라이선스
 
 MIT License
-
----
-
-## 🙏 기여
-
-이슈 및 PR 환영합니다!

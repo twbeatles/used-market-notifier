@@ -415,9 +415,18 @@ class MainWindow(QMainWindow):
         self.monitor_thread.new_item.connect(self.on_new_item)
         self.monitor_thread.price_change.connect(self.on_price_change)
         self.monitor_thread.error.connect(self.on_error)
+        # Handle thread termination to reset UI
+        self.monitor_thread.finished.connect(self.on_monitor_finished)
         self.monitor_thread.start()
         
         self.update_ui_state(True)
+    
+    def on_monitor_finished(self):
+        """Called when monitor thread finishes (unexpectedly or normally)"""
+        self.update_ui_state(False)
+        if self.monitor_thread and not self.monitor_thread._stop_requested:
+            # Thread ended unexpectedly
+            self.on_status_update("모니터링이 종료되었습니다. 다시 시작하려면 버튼을 눌러주세요.")
     
     def stop_monitoring(self):
         if self.monitor_thread:
@@ -503,15 +512,16 @@ class MainWindow(QMainWindow):
             self.last_search_label.setText(f"마지막 검색: {datetime.now().strftime('%H:%M:%S')}")
     
     def on_new_item(self, item):
-        # Skip notifications during initial crawl (is_first_run handled in engine)
-        # Only show toast notifications for new items after first cycle
-        if hasattr(self.engine, 'is_first_run') and self.engine.is_first_run:
-            return
+        # Skip NOTIFICATIONS during initial crawl, but still update UI
+        skip_notification = hasattr(self.engine, 'is_first_run') and self.engine.is_first_run
         
-        self.tray_icon.show_notification(
-            f"🆕 새 상품 - {item.platform}",
-            f"{item.title}\n{item.price}"
-        )
+        if not skip_notification:
+            self.tray_icon.show_notification(
+                f"🆕 새 상품 - {item.platform}",
+                f"{item.title}\n{item.price}"
+            )
+        
+        # Always refresh stats and listings (even during initial crawl)
         self.stats_widget.refresh_stats()
         self.listings_widget.refresh_listings()
     

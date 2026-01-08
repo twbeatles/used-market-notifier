@@ -18,6 +18,14 @@ class NotificationType(Enum):
     SLACK = "slack"
 
 
+class SaleStatus(Enum):
+    """Sale status of a listing"""
+    FOR_SALE = "for_sale"       # 판매중
+    RESERVED = "reserved"       # 예약중
+    SOLD = "sold"               # 판매완료
+    UNKNOWN = "unknown"         # 상태 미확인
+
+
 @dataclass
 class Item:
     """Represents a listing item from any platform"""
@@ -176,6 +184,24 @@ class NotifierConfig:
 
 
 @dataclass
+class TagRule:
+    """Rule for auto-tagging listings based on title keywords"""
+    tag_name: str           # 태그 이름 (예: "A급")
+    keywords: list[str] = field(default_factory=list)  # 트리거 키워드들
+    color: str = "#89b4fa"  # 태그 색상
+    icon: str = "🏷️"        # 태그 아이콘
+    enabled: bool = True
+
+
+@dataclass
+class MessageTemplate:
+    """Template for quick messages to sellers"""
+    name: str               # 템플릿 이름
+    content: str            # 템플릿 내용 (변수: {title}, {price}, {seller}, {location}, {target_price})
+    platform: str = "all"   # "all", "danggeun", "bunjang", "joonggonara"
+
+
+@dataclass
 class AppSettings:
     """Application settings"""
     check_interval_seconds: int = 300
@@ -192,4 +218,21 @@ class AppSettings:
     keywords: list[SearchKeyword] = field(default_factory=list)
     keyword_presets: list[KeywordPreset] = field(default_factory=list)
     seller_filters: list[SellerFilter] = field(default_factory=list)
-
+    
+    # Backup settings (#17)
+    auto_backup_enabled: bool = True
+    auto_backup_interval_days: int = 7
+    backup_keep_count: int = 5
+    
+    # Cleanup settings (#18)
+    auto_cleanup_enabled: bool = False
+    cleanup_days: int = 30
+    cleanup_exclude_favorites: bool = True
+    cleanup_exclude_noted: bool = True
+    
+    # Auto-tagging settings (#28)
+    auto_tagging_enabled: bool = True
+    tag_rules: list[TagRule] = field(default_factory=list)
+    
+    # Message templates (#29)
+    message_templates: list[MessageTemplate] = field(default_factory=list)

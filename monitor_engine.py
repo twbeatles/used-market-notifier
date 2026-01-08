@@ -66,6 +66,10 @@ class MonitorEngine:
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
         
         # Performance optimizations
+        options.add_argument('--disable-software-rasterizer')
+        options.add_argument('--disable-background-timer-throttling')
+        options.page_load_strategy = 'eager'  # Don't wait for all resources
+        
         prefs = {
             "profile.managed_default_content_settings.images": 2,
             "profile.default_content_setting_values.notifications": 2,
@@ -74,6 +78,7 @@ class MonitorEngine:
         
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
+        driver.set_page_load_timeout(30)  # 30 second timeout
         driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
             'source': '''
                 Object.defineProperty(navigator, 'webdriver', {
@@ -82,6 +87,36 @@ class MonitorEngine:
             '''
         })
         return driver
+    
+    def _cleanup_driver(self):
+        """Safe driver cleanup to prevent memory leaks"""
+        if self._driver:
+            try:
+                self._driver.quit()
+                self.logger.info("Selenium driver cleaned up")
+            except Exception as e:
+                self.logger.warning(f"Error during driver cleanup: {e}")
+            finally:
+                self._driver = None
+    
+    def _ensure_driver(self) -> bool:
+        """Ensure driver is alive, recreate if needed"""
+        if self._driver:
+            try:
+                # Health check - try to access current_url
+                _ = self._driver.current_url
+                return True
+            except Exception as e:
+                self.logger.warning(f"Driver health check failed: {e}")
+                self._cleanup_driver()
+        
+        try:
+            self._driver = self._create_driver()
+            self.logger.info("Driver recreated successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Driver creation failed: {e}")
+            return False
     
     async def initialize_scrapers(self):
         """Initialize scrapers with shared Selenium driver instance"""
@@ -375,8 +410,25 @@ class MonitorEngine:
         self.running = True
         self.logger.info("Starting monitor engine...")
         
-        await self.initialize_scrapers()
-        self.initialize_notifiers()
+        try:
+            await self.initialize_scrapers()
+            self.initialize_notifiers()
+        except Exception as e:
+            self.logger.error(f"Failed to initialize: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            if self.on_error:
+                self.on_error(f"초기화 실패: {e}")
+            self.running = False
+            return
+        
+        # Check if we have any scrapers
+        if not self.scrapers:
+            self.logger.error("No scrapers initialized, cannot start monitoring")
+            if self.on_error:
+                self.on_error("스크래퍼가 없습니다. 브라우저를 확인해주세요.")
+            self.running = False
+            return
         
         # Send startup notification
         for notifier in self.notifiers:
@@ -387,10 +439,32 @@ class MonitorEngine:
         
         self._update_status("모니터링 시작됨")
         
+        error_count = 0
+        max_errors = 5  # Maximum consecutive errors before stopping
+        
         while self.running:
             try:
+                # Validate driver before each cycle
+                if not self._ensure_driver():
+                    self.logger.warning("Driver not available, attempting to reinitialize scrapers...")
+                    try:
+                        await self.initialize_scrapers()
+                    except Exception as e:
+                        self.logger.error(f"Failed to reinitialize scrapers: {e}")
+                        error_count += 1
+                        if error_count >= max_errors:
+                            self.logger.error("Too many errors, stopping monitoring")
+                            if self.on_error:
+                                self.on_error("오류가 너무 많습니다. 모니터링 중지.")
+                            break
+                        await asyncio.sleep(30)
+                        continue
+                
                 self._update_status("검색 사이클 시작...")
                 new_items = await self.run_cycle()
+                
+                # Reset error count on success
+                error_count = 0
                 
                 interval = self.settings.settings.check_interval_seconds
                 self._update_status(f"다음 검색까지 {interval}초 대기 중... (새 상품 {new_items}개 발견)")
@@ -398,13 +472,27 @@ class MonitorEngine:
                 await asyncio.sleep(interval)
                 
             except asyncio.CancelledError:
+                self.logger.info("Monitor loop cancelled")
                 break
             except Exception as e:
-                self.logger.error(f"Error in monitoring loop: {e}")
+                error_count += 1
+                self.logger.error(f"Error in monitoring loop (attempt {error_count}): {e}")
+                import traceback
+                self.logger.debug(traceback.format_exc())
+                
                 if self.on_error:
                     self.on_error(f"모니터링 오류: {e}")
-                await asyncio.sleep(30)  # Wait before retry
+                
+                if error_count >= max_errors:
+                    self.logger.error("Too many consecutive errors, stopping")
+                    if self.on_error:
+                        self.on_error("오류가 반복되어 모니터링을 중지합니다.")
+                    break
+                
+                # Wait before retry, increasing delay with error count
+                await asyncio.sleep(min(30 * error_count, 120))
         
+        self.running = False
         self._update_status("모니터링 중지됨")
     
     async def stop(self):

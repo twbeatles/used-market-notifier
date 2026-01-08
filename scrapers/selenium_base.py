@@ -67,6 +67,10 @@ class SeleniumScraper(BaseScraper):
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
         
         # Performance optimizations
+        options.add_argument('--disable-software-rasterizer')
+        options.add_argument('--disable-background-timer-throttling')
+        options.page_load_strategy = 'eager'  # DOM ready, don't wait for all resources
+        
         if disable_images:
             prefs = {
                 "profile.managed_default_content_settings.images": 2,
@@ -78,6 +82,7 @@ class SeleniumScraper(BaseScraper):
             # Use cached driver path if possible
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
+            driver.set_page_load_timeout(30)  # 30 second timeout
             driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                 'source': '''
                     Object.defineProperty(navigator, 'webdriver', {

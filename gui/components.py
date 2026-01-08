@@ -262,3 +262,193 @@ class SectionHeader(QWidget):
         """)
         layout.addWidget(title_label)
         layout.addStretch()
+
+
+class EmptyState(QWidget):
+    """
+    Empty state placeholder with icon, message, and optional action button.
+    """
+    
+    def __init__(
+        self, 
+        icon: str = "📭", 
+        title: str = "데이터가 없습니다",
+        message: str = "",
+        action_text: str = None,
+        parent=None
+    ):
+        super().__init__(parent)
+        self.action_callback = None
+        self._setup_ui(icon, title, message, action_text)
+    
+    def _setup_ui(self, icon: str, title: str, message: str, action_text: str):
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(16)
+        layout.setContentsMargins(40, 60, 40, 60)
+        
+        # Icon
+        icon_label = QLabel(icon)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet("""
+            font-size: 48pt;
+            background: transparent;
+            color: #6c7086;
+        """)
+        layout.addWidget(icon_label)
+        
+        # Title
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("""
+            font-size: 16pt;
+            font-weight: bold;
+            color: #cdd6f4;
+            background: transparent;
+        """)
+        layout.addWidget(title_label)
+        
+        # Message
+        if message:
+            msg_label = QLabel(message)
+            msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            msg_label.setWordWrap(True)
+            msg_label.setStyleSheet("""
+                font-size: 11pt;
+                color: #6c7086;
+                background: transparent;
+                line-height: 1.5;
+            """)
+            layout.addWidget(msg_label)
+        
+        # Action button
+        if action_text:
+            self.action_btn = QPushButton(action_text)
+            self.action_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                        stop:0 #89b4fa, stop:1 #74c7ec);
+                    color: #1e1e2e;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                        stop:0 #b4befe, stop:1 #89b4fa);
+                }
+            """)
+            layout.addWidget(self.action_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+    
+    def set_action(self, callback):
+        """Set callback for action button"""
+        self.action_callback = callback
+        if hasattr(self, 'action_btn'):
+            self.action_btn.clicked.connect(callback)
+
+
+class Toast(QFrame):
+    """
+    Toast notification popup.
+    """
+    
+    TYPES = {
+        'success': {'color': '#a6e3a1', 'icon': '✅'},
+        'error': {'color': '#f38ba8', 'icon': '❌'},
+        'warning': {'color': '#f9e2af', 'icon': '⚠️'},
+        'info': {'color': '#89b4fa', 'icon': 'ℹ️'},
+    }
+    
+    def __init__(self, message: str, toast_type: str = "info", duration: int = 3000, parent=None):
+        super().__init__(parent)
+        self.duration = duration
+        self._setup_ui(message, toast_type)
+        self._setup_animation()
+    
+    def _setup_ui(self, message: str, toast_type: str):
+        type_info = self.TYPES.get(toast_type, self.TYPES['info'])
+        
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(49, 50, 68, 0.95);
+                border: 1px solid {type_info['color']};
+                border-left: 4px solid {type_info['color']};
+                border-radius: 8px;
+                padding: 12px 16px;
+            }}
+        """)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(12)
+        
+        icon_label = QLabel(type_info['icon'])
+        icon_label.setStyleSheet("font-size: 16pt; background: transparent;")
+        layout.addWidget(icon_label)
+        
+        msg_label = QLabel(message)
+        msg_label.setStyleSheet(f"color: #cdd6f4; font-size: 10pt; background: transparent;")
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label, 1)
+        
+        close_btn = QPushButton("×")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #6c7086;
+                border: none;
+                font-size: 16pt;
+                padding: 0;
+                min-width: 24px;
+            }
+            QPushButton:hover { color: #cdd6f4; }
+        """)
+        close_btn.clicked.connect(self.close)
+        layout.addWidget(close_btn)
+        
+        # Setup shadow
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+    
+    def _setup_animation(self):
+        self.fade_timer = QTimer(self)
+        self.fade_timer.setSingleShot(True)
+        self.fade_timer.timeout.connect(self.close)
+    
+    def show(self):
+        super().show()
+        self.fade_timer.start(self.duration)
+
+
+class StatusBadge(QLabel):
+    """
+    Sale status badge with color-coded background.
+    """
+    
+    STATUSES = {
+        'for_sale': {'color': '#a6e3a1', 'bg': 'rgba(166, 227, 161, 0.2)', 'text': '판매중', 'icon': '🟢'},
+        'reserved': {'color': '#f9e2af', 'bg': 'rgba(249, 226, 175, 0.2)', 'text': '예약중', 'icon': '🟡'},
+        'sold': {'color': '#f38ba8', 'bg': 'rgba(243, 139, 168, 0.2)', 'text': '판매완료', 'icon': '🔴'},
+        'unknown': {'color': '#6c7086', 'bg': 'rgba(108, 112, 134, 0.2)', 'text': '알수없음', 'icon': '⚪'},
+    }
+    
+    def __init__(self, status: str = 'for_sale', parent=None):
+        super().__init__(parent)
+        self.set_status(status)
+    
+    def set_status(self, status: str):
+        info = self.STATUSES.get(status, self.STATUSES['unknown'])
+        self.setText(f"{info['icon']} {info['text']}")
+        self.setStyleSheet(f"""
+            background-color: {info['bg']};
+            color: {info['color']};
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 9pt;
+            font-weight: bold;
+        """)
+
