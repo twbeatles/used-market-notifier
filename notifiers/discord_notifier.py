@@ -15,17 +15,42 @@ class DiscordNotifier(BaseNotifier):
         self.webhook_url = webhook_url
         self.enabled = bool(webhook_url)
     
-    async def _send_webhook(self, payload: dict) -> bool:
-        """Send webhook request to Discord"""
+    async def _send_webhook(self, payload: dict, max_retries: int = 3) -> bool:
+        """Send webhook request to Discord with retry logic"""
         if not self.enabled:
             return False
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.webhook_url, json=payload) as resp:
-                    return resp.status in (200, 204)
-        except Exception as e:
-            self.logger.error(f"Discord webhook error: {e}")
-            return False
+        
+        import asyncio
+        
+        for attempt in range(max_retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(self.webhook_url, json=payload) as resp:
+                        if resp.status in (200, 204):
+                            return True
+                        elif resp.status >= 500:  # Server error, retry
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(1.0 * (attempt + 1))
+                                continue
+                        return False
+            except asyncio.TimeoutError:
+                self.logger.warning(f"Discord request timeout (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+                return False
+            except aiohttp.ClientError as e:
+                self.logger.warning(f"Discord connection error (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+                return False
+            except Exception as e:
+                self.logger.error(f"Discord webhook error: {e}")
+                return False
+        
+        return False
     
     async def send_message(self, text: str) -> bool:
         """Send simple text message"""

@@ -426,17 +426,38 @@ class StatsWidget(QWidget):
         
         if not filename:
             return
+        
+        # Get DB reference
+        db = self.engine.db if self.engine else self._standalone_db
+        if not db:
+            QMessageBox.warning(self, "오류", "데이터베이스 연결이 없습니다.")
+            return
             
-        data = self.engine.db.get_recent_listings(limit=100)
+        data = db.get_recent_listings(limit=100)
         fields = ['platform', 'title', 'price', 'keyword', 'url', 'created_at']
         
-        success = False
         if format_type == "csv":
-            success = ExportManager.export_to_csv(data, filename, fields)
+            success, message = ExportManager.export_to_csv(data, filename, fields)
         else:
-            success = ExportManager.export_to_excel(data, filename, fields)
+            success, message = ExportManager.export_to_excel(data, filename, fields)
             
         if success:
-            QMessageBox.information(self, "완료", "저장되었습니다.")
+            QMessageBox.information(self, "완료", f"✅ {message}")
         else:
-            QMessageBox.critical(self, "실패", "저장에 실패했습니다. (openpyxl 설치 확인 필요)")
+            QMessageBox.critical(self, "실패", f"저장 실패: {message}")
+    
+    def closeEvent(self, event):
+        """Clean up resources on close"""
+        # Stop refresh timer
+        if hasattr(self, 'refresh_timer'):
+            self.refresh_timer.stop()
+        
+        # Close standalone database connection
+        if self._standalone_db:
+            try:
+                self._standalone_db.close()
+                self._standalone_db = None
+            except Exception:
+                pass
+        
+        super().closeEvent(event)

@@ -15,6 +15,7 @@ from notifiers import TelegramNotifier, DiscordNotifier, SlackNotifier
 from db import DatabaseManager
 from settings_manager import SettingsManager
 from models import SearchKeyword, NotificationType
+from auto_tagger import AutoTagger
 
 
 class MonitorEngine:
@@ -39,6 +40,12 @@ class MonitorEngine:
         
         # Thread pool for synchronous scraping
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        
+        # Auto-tagger for automatic tag detection
+        self.auto_tagger = AutoTagger()
+        
+        # Consecutive empty result tracking per platform
+        self._empty_result_counter = {}
         
         # Callbacks for UI updates
         self.on_new_item: Optional[Callable[[Item], None]] = None
@@ -154,16 +161,15 @@ class MonitorEngine:
         except Exception as e:
             self.logger.error(f"Failed to initialize Bunjang scraper: {e}")
         
-        # Joonggonara (Skip in headless, but if enabled, share driver)
-        if not headless:
-            try:
-                scraper = JoonggonaraScraper(headless=headless, driver=self._driver)
-                self.scrapers['joonggonara'] = scraper
-                self.logger.info("Joonggonara scraper initialized")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize Joonggonara scraper: {e}")
-        else:
-            self.logger.warning("Joonggonara skipped in headless mode (Naver bot detection)")
+        # Joonggonara (works with limitations in headless due to Naver bot detection)
+        try:
+            if headless:
+                self.logger.warning("중고나라: 헤드리스 모드에서 네이버 봇 탐지로 결과가 제한될 수 있습니다")
+            scraper = JoonggonaraScraper(headless=headless, driver=self._driver)
+            self.scrapers['joonggonara'] = scraper
+            self.logger.info("Joonggonara scraper initialized")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Joonggonara scraper: {e}")
         
         # Report initialized scrapers
         active_count = len(self.scrapers)
@@ -259,6 +265,9 @@ class MonitorEngine:
             active_platforms.append(platform)
             try:
                 # Run search in thread pool (Selenium is synchronous)
+                import time as _time
+                start_time = _time.time()
+                
                 loop = asyncio.get_event_loop()
                 items = await loop.run_in_executor(
                     self._executor,
@@ -266,6 +275,9 @@ class MonitorEngine:
                     keyword_config.keyword,
                     keyword_config.location
                 )
+                
+                elapsed = _time.time() - start_time
+                self.logger.debug(f"{platform} 검색 완료: {len(items)}개, {elapsed:.2f}초")
                 results.append(items)
             except Exception as e:
                 self.logger.error(f"Error searching {platform}: {e}")
@@ -293,17 +305,22 @@ class MonitorEngine:
 
                 self.logger.info(f"Found {len(items)} items on {platform} for '{keyword_config.keyword}'")
                 
+                # Track consecutive empty results per platform
+                if len(items) == 0:
+                    self._empty_result_counter[platform] = self._empty_result_counter.get(platform, 0) + 1
+                    if self._empty_result_counter[platform] >= 3:
+                        self.logger.warning(f"{platform}: 3회 연속 빈 결과 - 플랫폼 상태 확인 필요")
+                        if self.on_error:
+                            self.on_error(f"⚠️ {platform} 스크래핑 문제 감지 (3회 연속 빈 결과)")
+                else:
+                    self._empty_result_counter[platform] = 0
+                
                 # Process items
                 platform_new = 0
-                invalid_titles = ["판매완료", "거래완료", "예약중", "No Title", "배송비포함", "제목 없음"]
                 
                 for item in items:
-                    # Validate title
+                    # Basic title validation (scrapers already filter invalid titles)
                     if not item.title or len(item.title.strip()) < 2:
-                        continue
-                        
-                    # Filter invalid titles
-                    if any(inv in item.title for inv in invalid_titles):
                         continue
                         
                     # Check fuzzy duplicate for reposts
@@ -315,6 +332,20 @@ class MonitorEngine:
                     if is_new:
                         platform_new += 1
                         self.logger.info(f"New item: {item.title}")
+                        
+                        # Auto-tagging: analyze title and add tags
+                        if self.settings.settings.auto_tagging_enabled and listing_id:
+                            tags = self.auto_tagger.analyze(item.title)
+                            if tags:
+                                self.db.add_auto_tags(listing_id, tags)
+                                self.logger.debug(f"Auto-tagged '{item.title}' with: {tags}")
+                        
+                        # Auto-detect sale status from title
+                        if listing_id:
+                            detected_status = self.db.detect_sale_status(item.title)
+                            if detected_status != 'for_sale':
+                                self.db.update_sale_status(listing_id, detected_status)
+                                self.logger.debug(f"Detected sale status '{detected_status}' for: {item.title}")
                         
                         if self.on_new_item:
                             self.on_new_item(item)
@@ -370,6 +401,16 @@ class MonitorEngine:
         Returns:
             Total number of new items found
         """
+        # Driver health check - ensure session is alive
+        if self._driver:
+            try:
+                _ = self._driver.current_url
+            except Exception as e:
+                self.logger.warning(f"Driver session expired: {e}")
+                self._update_status("브라우저 세션 복구 중...")
+                self._cleanup_driver()
+                await self.initialize_scrapers()
+        
         total_new = 0
         keywords = self.settings.settings.keywords
         
@@ -394,7 +435,10 @@ class MonitorEngine:
             
             await asyncio.sleep(2)  # Pause between keywords
         
-        # After first cycle, enable notifications for future runs
+        # After processing all platforms
+        if total_new == 0 and not self.is_first_run:
+            self._update_status("검색 결과가 없습니다. 키워드나 필터를 확인해주세요.")
+        # Reset first run flag after first cycle
         if self.is_first_run:
             self.is_first_run = False
             self.logger.info(f"Initial crawl complete. Found {total_new} items (notifications skipped for initial run)")

@@ -586,4 +586,20 @@ class ListingsWidget(QWidget):
         
         dialog = MessageDialog(listing, target_price, parent=self)
         dialog.exec()
+    
+    def closeEvent(self, event):
+        """Clean up resources on close"""
+        # Stop refresh timer
+        if hasattr(self, 'refresh_timer'):
+            self.refresh_timer.stop()
+        
+        # Close standalone database connection to prevent memory leak
+        if self._standalone_db:
+            try:
+                self._standalone_db.close()
+                self._standalone_db = None
+            except Exception:
+                pass
+        
+        super().closeEvent(event)
 

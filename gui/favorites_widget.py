@@ -116,6 +116,7 @@ class FavoritesWidget(QWidget):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)
+        self.table.setSortingEnabled(True)  # Enable column sorting
         self.table.setStyleSheet("""
             QTableWidget {
                 background-color: #1e1e2e;

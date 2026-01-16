@@ -19,25 +19,54 @@ class TelegramNotifier(BaseNotifier):
         self.chat_id = chat_id
         self.enabled = bool(token and chat_id)
     
-    async def _request(self, method: str, data: dict = None, files: dict = None) -> bool:
-        """Make API request to Telegram"""
+    async def _request(self, method: str, data: dict = None, files: dict = None, max_retries: int = 3) -> bool:
+        """Make API request to Telegram with retry logic"""
         url = f"{self.API_BASE}{self.token}/{method}"
-        try:
-            async with aiohttp.ClientSession() as session:
-                if files:
-                    form = aiohttp.FormData()
-                    for key, value in (data or {}).items():
-                        form.add_field(key, str(value))
-                    for key, value in files.items():
-                        form.add_field(key, value)
-                    async with session.post(url, data=form) as resp:
-                        return resp.status == 200
-                else:
-                    async with session.post(url, json=data) as resp:
-                        return resp.status == 200
-        except Exception as e:
-            self.logger.error(f"Telegram API error: {e}")
-            return False
+        
+        for attempt in range(max_retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    if files:
+                        form = aiohttp.FormData()
+                        for key, value in (data or {}).items():
+                            form.add_field(key, str(value))
+                        for key, value in files.items():
+                            form.add_field(key, value)
+                        async with session.post(url, data=form) as resp:
+                            if resp.status == 200:
+                                return True
+                            elif resp.status >= 500:  # Server error, retry
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(1.0 * (attempt + 1))
+                                    continue
+                            return False
+                    else:
+                        async with session.post(url, json=data) as resp:
+                            if resp.status == 200:
+                                return True
+                            elif resp.status >= 500:  # Server error, retry
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(1.0 * (attempt + 1))
+                                    continue
+                            return False
+            except asyncio.TimeoutError:
+                self.logger.warning(f"Telegram request timeout (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+                return False
+            except aiohttp.ClientError as e:
+                self.logger.warning(f"Telegram connection error (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+                return False
+            except Exception as e:
+                self.logger.error(f"Telegram API error: {e}")
+                return False
+        
+        return False
     
     async def send_message(self, text: str) -> bool:
         """Send text message"""

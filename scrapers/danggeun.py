@@ -43,8 +43,8 @@ class DanggeunScraper(SeleniumScraper):
             location: Optional location filter (e.g., "강남구", "서초동")
         """
         encoded_keyword = quote(keyword)
-        # Updated URL structure
-        url = f"https://www.daangn.com/kr/buy-sell/?search={encoded_keyword}"
+        # URL with recency sort for latest listings
+        url = f"https://www.daangn.com/kr/buy-sell/?search={encoded_keyword}&sort=recent"
         
         self.logger.info(f"Visiting {url}")
         self.driver.get(url)
@@ -182,6 +182,15 @@ class DanggeunScraper(SeleniumScraper):
                         if not self._is_valid_title(title):
                             continue
                         
+                        # Extract thumbnail from parent element
+                        thumbnail = None
+                        try:
+                            parent = el.find_element(By.XPATH, "./..")
+                            img_el = parent.find_element(By.CSS_SELECTOR, "img")
+                            thumbnail = img_el.get_attribute("src")
+                        except Exception:
+                            pass
+                        
                         item = Item(
                             platform='danggeun',
                             article_id=article_id,
@@ -189,7 +198,7 @@ class DanggeunScraper(SeleniumScraper):
                             price=price,
                             link=link,
                             keyword=keyword,
-                            thumbnail=None,
+                            thumbnail=thumbnail,
                             location="지역정보없음"
                         )
                         items.append(item)

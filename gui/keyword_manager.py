@@ -346,10 +346,36 @@ class KeywordEditDialog(QDialog):
         save_btn = QPushButton("💾 저장")
         save_btn.setObjectName("success")
         save_btn.setMinimumWidth(100)
-        save_btn.clicked.connect(self.accept)
+        save_btn.clicked.connect(self._validate_and_accept)
         button_layout.addWidget(save_btn)
         
         layout.addLayout(button_layout)
+    
+    def _validate_and_accept(self):
+        """Validate input before accepting dialog"""
+        # Check keyword is not empty
+        keyword = self.keyword_edit.text().strip()
+        if not keyword:
+            QMessageBox.warning(self, "입력 오류", "검색어를 입력해주세요.")
+            self.keyword_edit.setFocus()
+            return
+        
+        if len(keyword) < 2:
+            QMessageBox.warning(self, "입력 오류", "검색어는 최소 2자 이상이어야 합니다.")
+            self.keyword_edit.setFocus()
+            return
+        
+        # Check at least one platform is selected
+        has_platform = (
+            self.danggeun_check.isChecked() or
+            self.bunjang_check.isChecked() or
+            self.joonggonara_check.isChecked()
+        )
+        if not has_platform:
+            QMessageBox.warning(self, "입력 오류", "최소 1개 이상의 플랫폼을 선택해주세요.")
+            return
+        
+        self.accept()
     
     def load_keyword(self):
         self.keyword_edit.setText(self.keyword.keyword)

@@ -276,6 +276,7 @@ class DatabaseManager:
                 ))
                 new_id = cursor.lastrowid
                 self.conn.commit()
+                self._invalidate_cache()
                 return True, None, new_id
             except sqlite3.IntegrityError:
                 return False, None, None
@@ -289,6 +290,7 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?)
             ''', (keyword, platform, items_found, new_items))
             self.conn.commit()
+            self._invalidate_cache()
     
     # Statistics methods - all read operations also need locks if sharing connection
     def get_total_listings(self) -> int:
@@ -392,31 +394,30 @@ class DatabaseManager:
             return None
 
     def is_fuzzy_duplicate(self, item: Item, threshold: float = 0.9) -> bool:
-        """Check if item is a fuzzy duplicate of recent items"""
+        """
+        Check if item is a fuzzy duplicate of recent items.
+        Optimized with price-based pre-filtering and quick_ratio pre-check.
+        """
         with self.lock:
             cursor = self.conn.cursor()
-            # Check last 3 days, same platform
+            # Optimized: First filter by exact price match (reduces candidates significantly)
             cursor.execute('''
-                SELECT title, price, seller 
-                FROM listings 
+                SELECT title FROM listings 
                 WHERE platform = ? 
+                AND price = ?
                 AND created_at >= datetime('now', '-3 days')
-            ''', (item.platform,))
+                LIMIT 20
+            ''', (item.platform, item.price))
             
             candidates = cursor.fetchall()
             
             for row in candidates:
-                # Check price string exact match (simplest heuristics)
-                # Or price_numeric if available? 'price' field is string in DB? 
-                # DB schema has price (str) and price_numeric (int).
-                # Selecting price (str).
-                if row['price'] != item.price:
-                    continue
-                
-                # Check similarity
-                ratio = difflib.SequenceMatcher(None, item.title, row['title']).ratio()
-                if ratio >= threshold:
-                    return True
+                # Use quick_ratio first (faster approximation)
+                matcher = difflib.SequenceMatcher(None, item.title, row['title'])
+                if matcher.quick_ratio() >= threshold:
+                    # Only compute full ratio if quick_ratio passes
+                    if matcher.ratio() >= threshold:
+                        return True
             
             return False
 

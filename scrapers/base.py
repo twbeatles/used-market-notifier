@@ -13,6 +13,24 @@ class BaseScraper(ABC):
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    @staticmethod
+    def normalize_price(price_str: str) -> str:
+        """가격 문자열 정규화: '10,000원' 형식으로 통일"""
+        import re
+        if not price_str:
+            return "가격문의"
+        clean = re.sub(r'[^\d]', '', str(price_str))
+        if clean and clean != '0':
+            return f"{int(clean):,}원"
+        return "가격문의"
+    
+    @staticmethod
+    def sanitize_keyword(keyword: str) -> str:
+        """키워드 전처리: 특수문자 제거, 공백 정리"""
+        import re
+        keyword = re.sub(r'[^\w\s가-힣]', ' ', keyword)
+        return ' '.join(keyword.split())
+
     @abstractmethod
     def search(self, keyword: str, location: str = None) -> list[Item]:
         """

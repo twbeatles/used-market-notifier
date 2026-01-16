@@ -43,7 +43,8 @@ class BunjangScraper(SeleniumScraper):
             location: Not used for Bunjang (nationwide platform)
         """
         encoded_keyword = quote(keyword)
-        url = f"https://m.bunjang.co.kr/search/products?q={encoded_keyword}"
+        # URL with recency sort
+        url = f"https://m.bunjang.co.kr/search/products?q={encoded_keyword}&order=date"
         
         self.logger.info(f"Visiting {url}")
         self.driver.get(url)
@@ -114,7 +115,7 @@ class BunjangScraper(SeleniumScraper):
                         platform="bunjang",
                         article_id=pid,
                         title=title,
-                        price=str(price),
+                        price="가격문의" if price == 0 else f"{price:,}원",
                         link=link,
                         keyword=keyword,
                         thumbnail=img_url,

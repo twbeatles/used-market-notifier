@@ -26,6 +26,7 @@ from gui.log_widget import LogWidget
 from gui.listings_widget import ListingsWidget
 from settings_manager import SettingsManager
 from monitor_engine import MonitorEngine
+from backup_manager import BackupManager
 
 
 class MonitorThread(QThread):
@@ -113,8 +114,28 @@ class MainWindow(QMainWindow):
             self.hide()
             self.tray_icon.show()
         
+        # Check for auto backup on startup
+        self.backup_manager = BackupManager()
+        if self.settings_manager.settings.auto_backup_enabled:
+            self._check_auto_backup()
+        
         if self.settings_manager.settings.auto_start_monitoring:
             QTimer.singleShot(1000, self.start_monitoring)
+    
+    def _check_auto_backup(self):
+        """Check and create auto backup if needed"""
+        try:
+            backup_path = self.backup_manager.auto_backup_if_needed(
+                max_age_days=self.settings_manager.settings.auto_backup_interval_days,
+                db_path=self.settings_manager.settings.db_path
+            )
+            if backup_path:
+                self.backup_manager.cleanup_old_backups(
+                    keep_count=self.settings_manager.settings.backup_keep_count
+                )
+                print(f"Auto backup created: {backup_path}")
+        except Exception as e:
+            print(f"Auto backup failed: {e}")
     
     def setup_ui(self):
         self.setWindowTitle("🥕 중고거래 알리미")

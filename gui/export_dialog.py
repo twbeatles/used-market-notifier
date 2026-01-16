@@ -373,13 +373,13 @@ class ExportDialog(QDialog):
                 export_data.append(row)
             
             if is_excel:
-                success = ExportManager.export_to_excel(
+                success, message = ExportManager.export_to_excel(
                     export_data, 
                     file_path, 
                     [field_names.get(f, f) for f in fields]
                 )
             else:
-                success = ExportManager.export_to_csv(
+                success, message = ExportManager.export_to_csv(
                     export_data, 
                     file_path, 
                     [field_names.get(f, f) for f in fields]
@@ -391,11 +391,11 @@ class ExportDialog(QDialog):
                 QMessageBox.information(
                     self, 
                     "완료", 
-                    f"✅ {len(data)}개 항목을 내보냈습니다.\n\n파일: {file_path}"
+                    f"✅ {message}\n\n파일: {file_path}"
                 )
                 self.accept()
             else:
-                QMessageBox.critical(self, "오류", "내보내기에 실패했습니다.")
+                QMessageBox.critical(self, "오류", f"내보내기 실패: {message}")
             
         except Exception as e:
             QMessageBox.critical(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{str(e)}")
