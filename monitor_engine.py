@@ -24,10 +24,11 @@ class MonitorEngine:
     Coordinates scrapers, database, and notifications.
     """
     
-    def __init__(self, settings_manager: SettingsManager):
+    def __init__(self, settings_manager: SettingsManager, db: Optional[DatabaseManager] = None):
         self.settings = settings_manager
         self.logger = logging.getLogger("MonitorEngine")
-        self.db = DatabaseManager(self.settings.settings.db_path)
+        self.db = db or DatabaseManager(self.settings.settings.db_path)
+        self._owns_db = db is None
         
         # Selenium driver instance
         self._driver: Optional[webdriver.Chrome] = None
@@ -38,14 +39,24 @@ class MonitorEngine:
         self._task: Optional[asyncio.Task] = None
         self.is_first_run = True  # Skip notifications on initial crawl
         
-        # Thread pool for synchronous scraping
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        # Thread pool for synchronous scraping (created lazily on start()).
+        self._executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+
+        # Stop/close state for idempotent teardown
+        self._resources_closed = False
+        self._close_called = False
+        self._start_task: Optional[asyncio.Task] = None
+        self._stop_event: Optional[asyncio.Event] = None
         
         # Auto-tagger for automatic tag detection (optionally from settings.tag_rules)
         self.auto_tagger = self._create_auto_tagger_from_settings()
         
         # Consecutive empty result tracking per platform
         self._empty_result_counter = {}
+
+        # Per-cycle aggregates (set by run_cycle)
+        self._cycle_platform_raw_counts: Optional[dict] = None
+        self._cycle_platform_attempts: Optional[dict] = None
         
         # Callbacks for UI updates
         self.on_new_item: Optional[Callable[[Item], None]] = None
@@ -215,6 +226,21 @@ class MonitorEngine:
         self.logger.info(f"Initialized {active_count} scraper(s): {list(self.scrapers.keys())}")
         self._update_status(f"스크래퍼 {active_count}개 초기화 완료 (Selenium)")
     
+    async def _sleep_or_stop(self, seconds: float) -> None:
+        """Sleep unless a stop has been requested (improves responsiveness on stop/close)."""
+        if seconds <= 0:
+            return
+        ev = self._stop_event
+        if ev is None:
+            await asyncio.sleep(seconds)
+            return
+        if ev.is_set():
+            return
+        try:
+            await asyncio.wait_for(ev.wait(), timeout=seconds)
+        except asyncio.TimeoutError:
+            return
+
     def initialize_notifiers(self):
         """Initialize notification channels based on settings"""
         self.notifiers.clear()
@@ -277,339 +303,383 @@ class MonitorEngine:
                 self.logger.error(f"Notification error: {e}")
     
     async def search_keyword(self, keyword_config: SearchKeyword) -> int:
-        """
-        Search for a single keyword across all enabled platforms.
-        
+        """Search a single keyword across enabled platforms.
+
         Returns:
-            Number of new items found
+            Number of new items found.
         """
         new_count = 0
-        
+
         # Fetch blocked sellers once
         blocked_sellers = self.db.get_blocked_sellers()
         blocked_set = set()
         if blocked_sellers:
-            blocked_set = {(row['seller_name'], row['platform']) for row in blocked_sellers}
-            
-        # Execute searches sequentially
-        results = []
-        active_platforms = []
-        self._update_status(f"'{keyword_config.keyword}' 검색 중... ({', '.join(keyword_config.platforms)})")
-        
+            blocked_set = {(row["seller_name"], row["platform"]) for row in blocked_sellers}
+
+        platform_results: dict[str, list[Item]] = {}
+        active_platforms: list[str] = []
+
+        self._update_status(f"검색중: '{keyword_config.keyword}' ({', '.join(keyword_config.platforms)})")
+
         for platform in keyword_config.platforms:
             scraper = self.scrapers.get(platform)
             if not scraper:
                 continue
-            
+
             active_platforms.append(platform)
+            if self._cycle_platform_attempts is not None:
+                self._cycle_platform_attempts[platform] = self._cycle_platform_attempts.get(platform, 0) + 1
+
             try:
-                # Run search in thread pool (Selenium is synchronous)
-                import time as _time
-                start_time = _time.time()
-                
                 loop = asyncio.get_event_loop()
-                items = await loop.run_in_executor(
+                items_raw = await loop.run_in_executor(
                     self._executor,
                     scraper.safe_search,
                     keyword_config.keyword,
-                    keyword_config.location
+                    keyword_config.location,
                 )
-                
-                elapsed = _time.time() - start_time
-                self.logger.debug(f"{platform} 검색 완료: {len(items)}개, {elapsed:.2f}초")
-                results.append(items)
             except Exception as e:
                 self.logger.error(f"Error searching {platform}: {e}")
-                results.append([])
-        
-        # Process results
-        for platform, items in zip(active_platforms, results):
-            scraper = self.scrapers.get(platform)
-            try:
-                # Apply filters
-                if keyword_config.min_price or keyword_config.max_price:
-                    items = scraper.filter_by_price(
-                        items, keyword_config.min_price, keyword_config.max_price
-                    )
-                
-                if keyword_config.exclude_keywords:
-                    items = scraper.filter_by_keywords(items, keyword_config.exclude_keywords)
-                
-                # Filter blocked sellers
-                if blocked_set:
-                    items = [
-                        item for item in items 
-                        if not item.seller or (item.seller, item.platform) not in blocked_set
-                    ]
+                items_raw = []
 
-                self.logger.info(f"Found {len(items)} items on {platform} for '{keyword_config.keyword}'")
-                
-                # Track consecutive empty results per platform
-                if len(items) == 0:
-                    self._empty_result_counter[platform] = self._empty_result_counter.get(platform, 0) + 1
-                    if self._empty_result_counter[platform] >= 3:
-                        self.logger.warning(f"{platform}: 3회 연속 빈 결과 - 플랫폼 상태 확인 필요")
-                        if self.on_error:
-                            self.on_error(f"⚠️ {platform} 스크래핑 문제 감지 (3회 연속 빈 결과)")
-                else:
-                    self._empty_result_counter[platform] = 0
-                
-                # Process items
-                platform_new = 0
-                
-                for item in items:
-                    # Basic title validation (scrapers already filter invalid titles)
-                    if not item.title or len(item.title.strip()) < 2:
-                        continue
-                        
-                    # Check fuzzy duplicate for reposts
-                    if self.db.is_fuzzy_duplicate(item):
-                        continue
-
-                    is_new, price_change, listing_id = self.db.add_listing(item)
-                    
-                    if is_new:
-                        platform_new += 1
-                        self.logger.info(f"New item: {item.title}")
-                        
-                        # Auto-tagging: analyze title and add tags
-                        if self.settings.settings.auto_tagging_enabled and listing_id:
-                            tags = self.auto_tagger.analyze(item.title)
-                            if tags:
-                                self.db.add_auto_tags(listing_id, tags)
-                                self.logger.debug(f"Auto-tagged '{item.title}' with: {tags}")
-                        
-                        # Auto-detect sale status from title
-                        if listing_id:
-                            detected_status = self.db.detect_sale_status(item.title)
-                            if detected_status != 'for_sale':
-                                self.db.update_sale_status(listing_id, detected_status)
-                                self.logger.debug(f"Detected sale status '{detected_status}' for: {item.title}")
-                        
-                        if self.on_new_item:
-                            self.on_new_item(item)
-                        
-                        # Skip notifications on first run to avoid spam
-                        # Also check per-keyword notification setting
-                        if not self.is_first_run and getattr(keyword_config, 'notify_enabled', True):
-                            await self.send_notifications(item, listing_id=listing_id)
-                            await asyncio.sleep(0.5)  # Slight delay to prevent spam
-                    
-                    elif price_change:
-                        self.logger.info(f"Price change: {item.title} ({price_change['old_price']} → {price_change['new_price']})")
-                        
-                        # Check target price in favorites
-                        fav = self.db.get_favorite_details(listing_id)
-                        new_price_display = price_change['new_price']
-                        
-                        if fav and fav.get('target_price') and price_change['new_numeric']:
-                            if price_change['new_numeric'] <= fav['target_price']:
-                                new_price_display += " (🎯 목표가 도달!)"
-                                self.logger.info(f"Target price hit for {item.title}")
-                        
-                        if self.on_price_change:
-                            self.on_price_change(item, price_change['old_price'], price_change['new_price'])
-                        
-                        # Check per-keyword notification setting
-                        if getattr(keyword_config, 'notify_enabled', True):
-                            await self.send_notifications(
-                                item, is_price_change=True,
-                                old_price=price_change['old_price'],
-                                new_price=new_price_display,
-                                listing_id=listing_id
-                            )
-                            await asyncio.sleep(0.5)
-                
-                # Record stats
-                self.db.record_search_stats(
-                    keyword_config.keyword, platform, len(items), platform_new
+            if self._cycle_platform_raw_counts is not None:
+                self._cycle_platform_raw_counts[platform] = self._cycle_platform_raw_counts.get(platform, 0) + len(
+                    items_raw
                 )
-                new_count += platform_new
-                
-            except Exception as e:
-                self.logger.error(f"Error processing {platform}: {e}")
-                if self.on_error:
-                    self.on_error(f"{platform} 처리 오류: {e}")
-        
+            platform_results[platform] = items_raw
+
+        for platform in active_platforms:
+            items_raw = platform_results.get(platform) or []
+            raw_count = len(items_raw)
+
+            # Apply per-keyword filters (price/location/exclude keywords)
+            items: list[Item] = []
+            for it in items_raw:
+                if not getattr(it, "keyword", None):
+                    it.keyword = keyword_config.keyword
+                if keyword_config.matches(it):
+                    items.append(it)
+
+            if raw_count > 0 and len(items) == 0:
+                self.logger.info(
+                    f"{platform}: all {raw_count} raw items filtered out "
+                    f"(location={keyword_config.location!r}, min={keyword_config.min_price}, "
+                    f"max={keyword_config.max_price}, exclude={len(keyword_config.exclude_keywords or [])})"
+                )
+
+            # Filter blocked sellers (best-effort: only if scraper provides seller)
+            if blocked_set:
+                items = [
+                    it
+                    for it in items
+                    if not it.seller or (it.seller, it.platform) not in blocked_set
+                ]
+
+            self.logger.info(f"Found {len(items)} items on {platform} for '{keyword_config.keyword}'")
+
+            platform_new = 0
+
+            for item in items:
+                # Basic title validation (scrapers already filter invalid titles)
+                if not item.title or len(item.title.strip()) < 2:
+                    continue
+
+                # Check fuzzy duplicate for reposts
+                if self.db.is_fuzzy_duplicate(item):
+                    continue
+
+                is_new, price_change, listing_id = self.db.add_listing(item)
+
+                if is_new:
+                    platform_new += 1
+                    self.logger.info(f"New item: {item.title}")
+
+                    # Auto-tagging: analyze title and add tags
+                    if self.settings.settings.auto_tagging_enabled and listing_id:
+                        tags = self.auto_tagger.analyze(item.title)
+                        if tags:
+                            self.db.add_auto_tags(listing_id, tags)
+                            self.logger.debug(f"Auto-tagged '{item.title}' with: {tags}")
+
+                    # Auto-detect sale status from title
+                    if listing_id:
+                        detected_status = self.db.detect_sale_status(item.title)
+                        if detected_status != "for_sale":
+                            self.db.update_sale_status(listing_id, detected_status)
+                            self.logger.debug(f"Detected sale status '{detected_status}' for: {item.title}")
+
+                    if self.on_new_item:
+                        self.on_new_item(item)
+
+                    # Skip notifications on first run to avoid spam
+                    if not self.is_first_run and getattr(keyword_config, "notify_enabled", True):
+                        await self.send_notifications(item, listing_id=listing_id)
+                        await self._sleep_or_stop(0.5)
+
+                elif price_change:
+                    self.logger.info(
+                        f"Price change: {item.title} ({price_change['old_price']} -> {price_change['new_price']})"
+                    )
+
+                    # Check target price in favorites
+                    fav = self.db.get_favorite_details(listing_id)
+                    new_price_display = price_change["new_price"]
+
+                    if fav and fav.get("target_price") and price_change.get("new_numeric"):
+                        if price_change["new_numeric"] <= fav["target_price"]:
+                            new_price_display += " (target hit)"
+                            self.logger.info(f"Target price hit for {item.title}")
+
+                    if self.on_price_change:
+                        self.on_price_change(item, price_change["old_price"], price_change["new_price"])
+
+                    if getattr(keyword_config, "notify_enabled", True):
+                        await self.send_notifications(
+                            item,
+                            is_price_change=True,
+                            old_price=price_change["old_price"],
+                            new_price=new_price_display,
+                            listing_id=listing_id,
+                        )
+                        await self._sleep_or_stop(0.5)
+
+            # Record stats (items_found is the number after filters)
+            self.db.record_search_stats(keyword_config.keyword, platform, len(items), platform_new)
+            new_count += platform_new
+
         return new_count
-    
+
     async def run_cycle(self) -> int:
-        """
-        Run one complete monitoring cycle.
-        
-        Returns:
-            Total number of new items found
-        """
+        """Run one complete monitoring cycle."""
         # Driver health check - ensure session is alive
         if self._driver:
             try:
                 _ = self._driver.current_url
             except Exception as e:
                 self.logger.warning(f"Driver session expired: {e}")
-                self._update_status("브라우저 세션 복구 중...")
                 self._cleanup_driver()
                 await self.initialize_scrapers()
-        
+
         total_new = 0
         keywords = self.settings.settings.keywords
-        
-        for kw in keywords:
-            if not kw.enabled:
-                continue
-            
-            # Check custom interval (per-keyword scheduling)
-            if kw.custom_interval:
-                last_time = self.db.get_last_search_time(kw.keyword)
-                if last_time:
-                    elapsed = (datetime.now() - last_time).total_seconds() / 60
-                    if elapsed < kw.custom_interval:
-                        self.logger.info(f"Skipping '{kw.keyword}': interval {kw.custom_interval}m not passed (elapsed: {elapsed:.1f}m)")
-                        continue
-            
-            try:
-                new_count = await self.search_keyword(kw)
-                total_new += new_count
-            except Exception as e:
-                self.logger.error(f"Error processing keyword '{kw.keyword}': {e}")
-            
-            await asyncio.sleep(2)  # Pause between keywords
-        
+
+        # Aggregate raw scrape counts per platform for this cycle (reduces false positives).
+        self._cycle_platform_raw_counts = {p: 0 for p in self.scrapers.keys()}
+        self._cycle_platform_attempts = {p: 0 for p in self.scrapers.keys()}
+
+        try:
+            for kw in keywords:
+                if not kw.enabled:
+                    continue
+
+                # Check custom interval (per-keyword scheduling)
+                if kw.custom_interval:
+                    last_time = self.db.get_last_search_time(kw.keyword)
+                    if last_time:
+                        elapsed = (datetime.now() - last_time).total_seconds() / 60
+                        if elapsed < kw.custom_interval:
+                            self.logger.info(
+                                f"Skipping '{kw.keyword}': interval {kw.custom_interval}m not passed (elapsed: {elapsed:.1f}m)"
+                            )
+                            continue
+
+                try:
+                    total_new += await self.search_keyword(kw)
+                except Exception as e:
+                    self.logger.error(f"Error processing keyword '{kw.keyword}': {e}")
+
+                # Pause between keywords (interruptible on stop)
+                await self._sleep_or_stop(2)
+
+            # Evaluate platform health once per cycle (only if attempted).
+            for platform in list(self.scrapers.keys()):
+                attempts = (self._cycle_platform_attempts or {}).get(platform, 0)
+                if attempts <= 0:
+                    continue
+                raw_total = (self._cycle_platform_raw_counts or {}).get(platform, 0)
+                if raw_total == 0:
+                    self._empty_result_counter[platform] = self._empty_result_counter.get(platform, 0) + 1
+                    if self._empty_result_counter[platform] == 3:
+                        self.logger.warning(
+                            f"{platform}: 3 cycles with 0 raw results - scraper may be blocked/broken"
+                        )
+                        if self.on_error:
+                            self.on_error(f"{platform} scraper may be blocked/broken (3 cycles 0 raw results)")
+                else:
+                    self._empty_result_counter[platform] = 0
+
+        finally:
+            self._cycle_platform_raw_counts = None
+            self._cycle_platform_attempts = None
+
         # After processing all platforms
         if total_new == 0 and not self.is_first_run:
-            self._update_status("검색 결과가 없습니다. 키워드나 필터를 확인해주세요.")
+            self._update_status("검색 결과가 없습니다. 키워드/필터를 확인해주세요.")
+
         # Reset first run flag after first cycle
         if self.is_first_run:
             self.is_first_run = False
-            self.logger.info(f"Initial crawl complete. Found {total_new} items (notifications skipped for initial run)")
-            self._update_status(f"초기 크롤링 완료: {total_new}개 발견 (알림 스킵됨)")
-        
+            self.logger.info(
+                f"Initial crawl complete. Found {total_new} items (notifications skipped for initial run)"
+            )
+            self._update_status(f"초기 스크래핑 완료: 새 상품 {total_new}개 (초기 알림 스킵)")
+
         return total_new
-    
+
     async def start(self):
-        """Start the monitoring loop"""
+        """Start the monitoring loop."""
         if self.running:
             return
-        
+
+        # Ensure executor exists (may be shut down after a previous stop/close).
+        if self._executor is None:
+            self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
         self.running = True
+        self._resources_closed = False
+        self._stop_event = asyncio.Event()
+        self._start_task = asyncio.current_task()
+
         self.logger.info("Starting monitor engine...")
-        
+
         try:
             await self.initialize_scrapers()
             self.initialize_notifiers()
-        except Exception as e:
-            self.logger.error(f"Failed to initialize: {e}")
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            if self.on_error:
-                self.on_error(f"초기화 실패: {e}")
-            self.running = False
-            return
-        
-        # Check if we have any scrapers
-        if not self.scrapers:
-            self.logger.error("No scrapers initialized, cannot start monitoring")
-            if self.on_error:
-                self.on_error("스크래퍼가 없습니다. 브라우저를 확인해주세요.")
-            self.running = False
-            return
-        
-        # Send startup notification
-        for notifier in self.notifiers:
-            try:
-                await notifier.send_message("🚀 중고거래 알리미가 시작되었습니다!")
-            except Exception as e:
-                self.logger.debug(f"Startup notification failed: {e}")
-        
-        self._update_status("모니터링 시작됨")
-        
-        error_count = 0
-        max_errors = 5  # Maximum consecutive errors before stopping
-        
-        while self.running:
-            try:
-                # Validate driver before each cycle
-                if not self._ensure_driver():
-                    self.logger.warning("Driver not available, attempting to reinitialize scrapers...")
-                    try:
-                        await self.initialize_scrapers()
-                    except Exception as e:
-                        self.logger.error(f"Failed to reinitialize scrapers: {e}")
-                        error_count += 1
-                        if error_count >= max_errors:
-                            self.logger.error("Too many errors, stopping monitoring")
-                            if self.on_error:
-                                self.on_error("오류가 너무 많습니다. 모니터링 중지.")
-                            break
-                        await asyncio.sleep(30)
-                        continue
-                
-                self._update_status("검색 사이클 시작...")
-                new_items = await self.run_cycle()
-                
-                # Reset error count on success
-                error_count = 0
-                
-                interval = self.settings.settings.check_interval_seconds
-                self._update_status(f"다음 검색까지 {interval}초 대기 중... (새 상품 {new_items}개 발견)")
-                
-                await asyncio.sleep(interval)
-                
-            except asyncio.CancelledError:
-                self.logger.info("Monitor loop cancelled")
-                break
-            except Exception as e:
-                error_count += 1
-                self.logger.error(f"Error in monitoring loop (attempt {error_count}): {e}")
-                import traceback
-                self.logger.debug(traceback.format_exc())
-                
+
+            if not self.scrapers:
+                self.logger.error("No scrapers initialized, cannot start monitoring")
                 if self.on_error:
-                    self.on_error(f"모니터링 오류: {e}")
-                
-                if error_count >= max_errors:
-                    self.logger.error("Too many consecutive errors, stopping")
-                    if self.on_error:
-                        self.on_error("오류가 반복되어 모니터링을 중지합니다.")
+                    self.on_error("No scrapers initialized")
+                return
+
+            # Send startup notification (best-effort)
+            for notifier in self.notifiers:
+                try:
+                    await notifier.send_message("Used Market Notifier started")
+                except Exception:
+                    pass
+
+            self._update_status("모니터링 시작")
+
+            error_count = 0
+            max_errors = 5
+
+            while self.running:
+                try:
+                    if not self._ensure_driver():
+                        self.logger.warning("Driver not available, attempting to reinitialize scrapers...")
+                        try:
+                            await self.initialize_scrapers()
+                        except Exception as e:
+                            self.logger.error(f"Failed to reinitialize scrapers: {e}")
+                            error_count += 1
+                            if error_count >= max_errors:
+                                if self.on_error:
+                                    self.on_error("Too many errors, stopping monitoring")
+                                break
+                            await self._sleep_or_stop(30)
+                            continue
+
+                    self._update_status("검색 사이클 시작...")
+                    new_items = await self.run_cycle()
+                    error_count = 0
+
+                    interval = self.settings.settings.check_interval_seconds
+                    self._update_status(f"다음 검색까지 {interval}초 대기중... (새 상품 {new_items}개)")
+                    await self._sleep_or_stop(interval)
+
+                except asyncio.CancelledError:
+                    self.logger.info("Monitor loop cancelled")
                     break
-                
-                # Wait before retry, increasing delay with error count
-                await asyncio.sleep(min(30 * error_count, 120))
-        
-        self.running = False
-        self._update_status("모니터링 중지됨")
-    
-    async def stop(self):
-        """Stop the monitoring loop gracefully"""
-        self.running = False
-        self.logger.info("Stopping monitor engine...")
-        
-        # Close scrapers (don't close driver individually, they share it)
-        self.scrapers.clear()
-        
-        # Close shared driver with timeout
-        if self._driver:
+                except Exception as e:
+                    error_count += 1
+                    self.logger.error(f"Error in monitoring loop (attempt {error_count}): {e}")
+                    if self.on_error:
+                        self.on_error(str(e))
+                    if error_count >= max_errors:
+                        if self.on_error:
+                            self.on_error("Too many consecutive errors, stopping")
+                        break
+                    await self._sleep_or_stop(min(30 * error_count, 120))
+
+        finally:
+            self.running = False
             try:
-                loop = asyncio.get_event_loop()
-                await asyncio.wait_for(
-                    loop.run_in_executor(self._executor, self._driver.quit),
-                    timeout=10.0
-                )
-                self._driver = None
-                self.logger.info("Selenium driver closed")
-            except asyncio.TimeoutError:
-                self.logger.warning("Driver quit timed out, forcing close")
-                self._driver = None
-            except Exception as e:
-                self.logger.error(f"Error closing driver: {e}")
-                self._driver = None
-        
-        # Shutdown thread pool with wait
+                self._update_status("모니터링 중지")
+            except Exception:
+                pass
+            try:
+                await self._cleanup_resources()
+            except Exception:
+                pass
+            self._start_task = None
+            self._stop_event = None
+
+    async def stop(self):
+        """Stop the monitoring loop gracefully (idempotent)."""
+        self.running = False
+        if self._stop_event is not None:
+            try:
+                self._stop_event.set()
+            except Exception:
+                pass
+
+        # If start() is still running in this loop, wait for it to exit (or cancel).
         try:
-            self._executor.shutdown(wait=True, cancel_futures=True)
-            self.logger.info("Thread pool shut down")
-        except Exception as e:
-            self.logger.error(f"Error shutting down executor: {e}")
-    
+            loop = asyncio.get_running_loop()
+        except Exception:
+            loop = None
+
+        t = self._start_task
+        if t is not None and loop is not None:
+            try:
+                if t.get_loop() is loop and asyncio.current_task() is not t and not t.done():
+                    try:
+                        await asyncio.wait_for(t, timeout=15.0)
+                    except asyncio.TimeoutError:
+                        t.cancel()
+                        try:
+                            await asyncio.wait_for(t, timeout=5.0)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        await self._cleanup_resources()
+
+    async def _cleanup_resources(self) -> None:
+        """Idempotent resource teardown (driver + executor)."""
+        if self._resources_closed:
+            return
+        self._resources_closed = True
+
+        # Close scrapers (they share the driver)
+        try:
+            self.scrapers.clear()
+        except Exception:
+            pass
+
+        drv = self._driver
+        self._driver = None
+        if drv is not None:
+            try:
+                ex = self._executor
+                if ex is not None:
+                    loop = asyncio.get_running_loop()
+                    await asyncio.wait_for(loop.run_in_executor(ex, drv.quit), timeout=10.0)
+                else:
+                    drv.quit()
+            except Exception as e:
+                self.logger.warning(f"Driver close failed: {e}")
+
+        ex = self._executor
+        self._executor = None
+        if ex is not None:
+            try:
+                ex.shutdown(wait=True, cancel_futures=True)
+            except Exception as e:
+                self.logger.warning(f"Executor shutdown failed: {e}")
+
     def _update_status(self, status: str):
         """Update status and notify callback"""
         self.logger.info(status)
@@ -630,5 +700,15 @@ class MonitorEngine:
     
     async def close(self):
         """Clean up resources"""
-        await self.stop()
-        self.db.close()
+        if self._close_called:
+            return
+        self._close_called = True
+
+        try:
+            await self.stop()
+        finally:
+            if self._owns_db:
+                try:
+                    self.db.close()
+                except Exception:
+                    pass

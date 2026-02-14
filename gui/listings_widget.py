@@ -387,7 +387,8 @@ class ListingsWidget(QWidget):
             # Get total count (approximate when filtering)
             self.total_count = db.get_listings_count(
                 platform=platform,
-                search=self.search_text
+                search=self.search_text,
+                status=status,
             )
             
             # Update table
@@ -454,10 +455,18 @@ class ListingsWidget(QWidget):
     
     def on_row_double_click(self, row, col):
         item = self.table.item(row, 0)
-        if item:
-            url = item.data(Qt.ItemDataRole.UserRole)
-            if url:
-                QDesktopServices.openUrl(QUrl(url))
+        if not item:
+            return
+
+        payload = item.data(Qt.ItemDataRole.UserRole)
+        url = None
+        if isinstance(payload, dict):
+            url = payload.get("url") or payload.get("link")
+        elif isinstance(payload, str):
+            url = payload
+
+        if url:
+            QDesktopServices.openUrl(QUrl(str(url)))
     
     def show_context_menu(self, pos):
         row = self.table.rowAt(pos.y())
@@ -577,11 +586,17 @@ class ListingsWidget(QWidget):
         
         if not listing:
             # Fallback: construct from table data
+            payload = item.data(Qt.ItemDataRole.UserRole) if item else None
+            fallback_url = ""
+            if isinstance(payload, dict):
+                fallback_url = payload.get("url") or payload.get("link") or ""
+            elif isinstance(payload, str):
+                fallback_url = payload
             listing = {
                 'platform': self.table.item(row, 0).text() if self.table.item(row, 0) else '',
                 'title': self.table.item(row, 1).text() if self.table.item(row, 1) else '',
                 'price': self.table.item(row, 2).text() if self.table.item(row, 2) else '',
-                'url': item.data(Qt.ItemDataRole.UserRole),
+                'url': fallback_url,
                 'seller': '',
                 'location': ''
             }

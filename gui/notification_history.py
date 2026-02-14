@@ -17,6 +17,12 @@ class NotificationHistoryWidget(QWidget):
         self.engine = engine
         self.db = engine.db
         self.setup_ui()
+
+    def set_engine(self, engine):
+        """Set or update the monitor engine (and DB reference)."""
+        self.engine = engine
+        self.db = engine.db if engine else None
+        self.refresh_list()
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -95,6 +101,8 @@ class NotificationHistoryWidget(QWidget):
         self.refresh_list()
         
     def refresh_list(self):
+        if not self.db:
+            return
         logs = self.db.get_notification_logs(limit=100)
         
         # Filter

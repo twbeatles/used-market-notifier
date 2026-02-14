@@ -832,11 +832,8 @@ class SettingsDialog(QDialog):
         except Exception:
             pass
 
-        try:
-            if parent and hasattr(parent, "engine") and parent.engine and hasattr(parent.engine, "db"):
-                parent.engine.db.close()
-        except Exception:
-            pass
+        # Do not forcibly close parent.engine.db here: the app is about to quit,
+        # and the engine may be using a shared UI DB connection.
 
         s = self.settings.settings
         settings_path = str(getattr(self.settings, "settings_path", "settings.json"))

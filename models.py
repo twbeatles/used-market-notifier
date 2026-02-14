@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 from enum import Enum
 
+from price_utils import parse_price_kr
+
 
 class Platform(Enum):
     DANGGEUN = "danggeun"
@@ -44,12 +46,7 @@ class Item:
         """Extract numeric price from price string"""
         if self.price_numeric is not None:
             return self.price_numeric
-        try:
-            # Remove non-numeric characters except digits
-            cleaned = ''.join(c for c in self.price if c.isdigit())
-            self.price_numeric = int(cleaned) if cleaned else 0
-        except (ValueError, TypeError):
-            self.price_numeric = 0
+        self.price_numeric = parse_price_kr(self.price)
         return self.price_numeric
 
 

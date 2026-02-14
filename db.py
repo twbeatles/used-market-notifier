@@ -1,6 +1,7 @@
 # db.py
 """Enhanced database manager with price tracking and statistics"""
 
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timedelta
@@ -12,13 +13,16 @@ import difflib
 
 class DatabaseManager:
     """SQLite database manager with price history tracking - Thread Safe"""
-    
+
+    PRICE_PARSE_VERSION = 2
+
     def __init__(self, db_path: str = "listings.db"):
         self.db_path = db_path
         # check_same_thread=False allowed but we handle locking manually
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.lock = threading.Lock()
+        self.logger = logging.getLogger("DatabaseManager")
         
         # Stats cache with TTL (reduce redundant queries)
         self._stats_cache = {}
@@ -135,7 +139,6 @@ class DatabaseManager:
             # Composite index for duplicate checking (most frequent query)
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_platform_article ON listings(platform, article_id)')
             # Additional indexes for new features
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_sale_status ON listings(sale_status)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_listing ON favorites(listing_id)')
             
             # Search history table for keyword suggestions
@@ -147,7 +150,15 @@ class DatabaseManager:
                     last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
+            # Meta table for one-time migrations / feature flags
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            ''')
+
             # Listing notes table for user annotations
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS listing_notes (
@@ -170,7 +181,29 @@ class DatabaseManager:
                 cursor.execute('ALTER TABLE listings ADD COLUMN sale_status TEXT DEFAULT "for_sale"')
             except Exception:
                 pass  # Column already exists
-            
+
+            # Index for sale_status (must be created after column exists for older DBs)
+            try:
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_sale_status ON listings(sale_status)')
+            except Exception:
+                pass
+
+            # Migration: Add price_numeric column if not exists (older DBs)
+            try:
+                cursor.execute('ALTER TABLE listings ADD COLUMN price_numeric INTEGER DEFAULT 0')
+            except Exception:
+                pass
+
+            # Migration: Add numeric columns in price_history if not exists (older DBs)
+            try:
+                cursor.execute('ALTER TABLE price_history ADD COLUMN old_price_numeric INTEGER')
+            except Exception:
+                pass
+            try:
+                cursor.execute('ALTER TABLE price_history ADD COLUMN new_price_numeric INTEGER')
+            except Exception:
+                pass
+
             # Migration: Add auto_tags column if not exists
             try:
                 cursor.execute('ALTER TABLE listing_notes ADD COLUMN auto_tags TEXT DEFAULT "[]"')
@@ -178,6 +211,94 @@ class DatabaseManager:
                 pass  # Column already exists
             
             self.conn.commit()
+
+            # One-time migration: recompute numeric prices with the current parser.
+            try:
+                self._migrate_price_parse_version(cursor)
+            except Exception as e:
+                self.logger.warning(f"Price parse migration skipped/failed: {e}")
+
+    def _get_meta(self, cursor: sqlite3.Cursor, key: str) -> Optional[str]:
+        cursor.execute("SELECT value FROM meta WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+    def _set_meta(self, cursor: sqlite3.Cursor, key: str, value: str) -> None:
+        cursor.execute(
+            '''
+            INSERT INTO meta (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            ''',
+            (key, value),
+        )
+
+    def _migrate_price_parse_version(self, cursor: sqlite3.Cursor) -> None:
+        """
+        Recompute numeric price columns when the parsing logic changes.
+        This is intentionally best-effort and runs once per DB.
+        """
+        key = "price_parse_version"
+        current = 0
+        raw = self._get_meta(cursor, key)
+        if raw is not None:
+            try:
+                current = int(str(raw).strip() or "0")
+            except Exception:
+                current = 0
+
+        if current >= self.PRICE_PARSE_VERSION:
+            return
+
+        from price_utils import parse_price_kr
+
+        self.logger.info(
+            f"Recomputing numeric prices (version {current} -> {self.PRICE_PARSE_VERSION})..."
+        )
+
+        # listings.price_numeric
+        cursor.execute("SELECT id, price FROM listings")
+        batch = []
+        updated = 0
+        while True:
+            rows = cursor.fetchmany(500)
+            if not rows:
+                break
+            for row in rows:
+                batch.append((parse_price_kr(row["price"]), row["id"]))
+            cursor.executemany("UPDATE listings SET price_numeric = ? WHERE id = ?", batch)
+            self.conn.commit()
+            updated += len(batch)
+            batch.clear()
+
+        # price_history numeric columns (best effort; table may be empty)
+        try:
+            cursor.execute("SELECT id, old_price, new_price FROM price_history")
+            ph_batch = []
+            ph_updated = 0
+            while True:
+                rows = cursor.fetchmany(500)
+                if not rows:
+                    break
+                for row in rows:
+                    ph_batch.append(
+                        (parse_price_kr(row["old_price"]), parse_price_kr(row["new_price"]), row["id"])
+                    )
+                cursor.executemany(
+                    "UPDATE price_history SET old_price_numeric = ?, new_price_numeric = ? WHERE id = ?",
+                    ph_batch,
+                )
+                self.conn.commit()
+                ph_updated += len(ph_batch)
+                ph_batch.clear()
+        except Exception:
+            # Older DBs might not have this table or the numeric columns even after ALTER attempts.
+            ph_updated = 0
+
+        self._set_meta(cursor, key, str(self.PRICE_PARSE_VERSION))
+        self.conn.commit()
+        self.logger.info(
+            f"Numeric price migration complete. listings updated={updated}, price_history updated={ph_updated}."
+        )
     
     def is_duplicate(self, platform: str, article_id: str) -> bool:
         """Check if listing already exists"""
@@ -208,7 +329,7 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
     
-    def add_listing(self, item: Item) -> tuple[bool, Optional[dict]]:
+    def add_listing(self, item: Item) -> tuple[bool, Optional[dict], Optional[int]]:
         """
         Add or update a listing.
         
@@ -322,8 +443,8 @@ class DatabaseManager:
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
     
-    def get_listings_count(self, platform: str = None, search: str = None) -> int:
-        """Get total count of listings with filters"""
+    def get_listings_count(self, platform: str = None, search: str = None, status: str = None) -> int:
+        """Get total count of listings with filters (platform/title/sale_status)"""
         with self.lock:
             cursor = self.conn.cursor()
             query = 'SELECT COUNT(*) FROM listings WHERE 1=1'
@@ -332,6 +453,10 @@ class DatabaseManager:
             if platform:
                 query += ' AND platform = ?'
                 params.append(platform)
+
+            if status and status != "all":
+                query += ' AND sale_status = ?'
+                params.append(status)
             
             if search:
                 query += ' AND title LIKE ?'

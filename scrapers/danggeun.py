@@ -135,7 +135,9 @@ class DanggeunScraper(SeleniumScraper):
                             link=link,
                             keyword=keyword,
                             thumbnail=image_url if image_url else None,
-                            location=location if location else "지역정보없음"
+                            # Danggeun search results often don't expose reliable location without opening detail pages.
+                            # Use None so engine-level location filtering remains best-effort (unknown location passes).
+                            location=None
                         )
                         items.append(item)
                     except Exception as e:
@@ -199,7 +201,7 @@ class DanggeunScraper(SeleniumScraper):
                             link=link,
                             keyword=keyword,
                             thumbnail=thumbnail,
-                            location="지역정보없음"
+                            location=None
                         )
                         items.append(item)
                     except Exception:

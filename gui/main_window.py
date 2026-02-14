@@ -27,6 +27,7 @@ from gui.listings_widget import ListingsWidget
 from settings_manager import SettingsManager
 from monitor_engine import MonitorEngine
 from backup_manager import BackupManager
+from db import DatabaseManager
 
 
 class MonitorThread(QThread):
@@ -44,7 +45,7 @@ class MonitorThread(QThread):
         self._stop_requested = False
     
     def run(self):
-        # Windows requires ProactorEventLoop for Playwright subprocess handling
+        # Ensure a Windows-compatible event loop policy for background asyncio work.
         import sys
         if sys.platform == 'win32':
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -66,6 +67,13 @@ class MonitorThread(QThread):
                 print(f"MonitorThread error: {error_msg}")
                 self.error.emit(str(e))
         finally:
+            # Always try to close engine resources (driver/executor/db) before loop shutdown.
+            try:
+                if self.loop and not self.loop.is_closed():
+                    self.loop.run_until_complete(self.engine.close())
+            except Exception:
+                pass
+
             # Clean up pending tasks
             try:
                 pending = asyncio.all_tasks(self.loop)
@@ -86,14 +94,13 @@ class MonitorThread(QThread):
         self.engine.running = False  # Signal engine to stop
         
         if self.loop and self.loop.is_running():
-            # Schedule async stop and wait for it
-            future = asyncio.run_coroutine_threadsafe(self.engine.stop(), self.loop)
+            # Schedule async close and wait for it (ensures DB close too)
+            future = asyncio.run_coroutine_threadsafe(self.engine.close(), self.loop)
             try:
                 future.result(timeout=5.0)  # Wait max 5 seconds for stop
             except Exception:
-                pass
-            # Now stop the loop
-            self.loop.call_soon_threadsafe(self.loop.stop)
+                # If close is stuck, stop the loop to unwind run_until_complete and trigger finally cleanup.
+                self.loop.call_soon_threadsafe(self.loop.stop)
 
 
 class MaintenanceCleanupThread(QThread):
@@ -136,8 +143,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         
         self.settings_manager = SettingsManager()
-        self.engine = MonitorEngine(self.settings_manager)
+        # Shared DB connection for the UI lifetime (engine must not close this DB).
+        self.db = DatabaseManager(self.settings_manager.settings.db_path)
+        self.engine = MonitorEngine(self.settings_manager, db=self.db)
         self.monitor_thread = None
+        self._is_quitting = False
         
         self.setup_ui()
         self.setup_tray()
@@ -560,9 +570,13 @@ class MainWindow(QMainWindow):
             )
             return
         
-        self.engine = MonitorEngine(self.settings_manager)
+        self.engine = MonitorEngine(self.settings_manager, db=self.db)
         self.stats_widget.set_engine(self.engine)
         self.listings_widget.set_engine(self.engine)
+        if hasattr(self, "favorites_widget") and self.favorites_widget:
+            self.favorites_widget.set_engine(self.engine)
+        if hasattr(self, "history_widget") and self.history_widget:
+            self.history_widget.set_engine(self.engine)
         
         self.monitor_thread = MonitorThread(self.engine)
         self.monitor_thread.status_update.connect(self.on_status_update)
@@ -767,7 +781,13 @@ class MainWindow(QMainWindow):
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
     
     def quit_app(self):
+        self._is_quitting = True
         self.stop_monitoring()
+        try:
+            if hasattr(self, "db") and self.db:
+                self.db.close()
+        except Exception:
+            pass
         self.tray_icon.hide()
         QApplication.quit()
     

@@ -37,7 +37,7 @@ graph TD
     C --> I[DatabaseManager]
     C --> J[Scrapers]
     C --> K[Notifiers]
-    J --> L[PlaywrightScraper]
+    J --> L[SeleniumScraper]
     J --> M[stealth.py]
     I --> N[AutoTagger]
     H --> O[ExportManager]
@@ -69,7 +69,7 @@ class MonitorEngine:
 **핵심 메서드:**
 | 메서드 | 설명 |
 |--------|------|
-| `initialize_scrapers()` | 공유 Playwright 드라이버로 스크래퍼 초기화 |
+| `initialize_scrapers()` | 공유 Selenium 드라이버로 스크래퍼 초기화 |
 | `initialize_notifiers()` | 설정 기반 알림 채널 초기화 |
 | `search_keyword(config)` | 단일 키워드 검색 실행 |
 | `run_cycle()` | 전체 모니터링 사이클 실행 |
@@ -157,7 +157,7 @@ class MessageTemplateManager:
 
 ---
 
-> 참고: 현재 앱의 기본 실행 경로는 Selenium 기반 스크래퍼를 사용합니다. Playwright 관련 코드는 옵션/개발용으로 남아있을 수 있으며, 본 문서의 일부 Playwright 중심 설명은 구현과 다를 수 있습니다.
+> 참고: 현재 앱의 기본 실행 경로는 Selenium 기반 스크래퍼를 사용합니다. `scrapers/playwright_base.py` 등 Playwright 관련 코드는 실험/개발용으로 남아있을 수 있으며, 운영 경로는 Selenium을 기준으로 합니다.
 
 ## 📁 디렉토리별 상세 역할
 
@@ -166,7 +166,7 @@ class MessageTemplateManager:
 | 파일 | 설명 | 주요 클래스/함수 |
 |------|------|------------------|
 | `base.py` | 추상 베이스 | `BaseScraper` |
-| `playwright_base.py` | Playwright 베이스 | `PlaywrightScraper` |
+| `playwright_base.py` | (실험/옵션) Playwright 베이스 | `PlaywrightScraper` |
 | `selenium_base.py` | Selenium 베이스 | `SeleniumBaseScraper` |
 | `danggeun.py` | 당근마켓 | `DanggeunScraper` |
 | `bunjang.py` | 번개장터 | `BunjangScraper` |
@@ -631,7 +631,7 @@ A:
 ### Q: 메모리 누수?
 A:
 1. `MonitorThread.stop()` 후 `wait()` 호출 확인
-2. Playwright 컨텍스트 정리 (`scraper.close()`)
+2. Selenium 드라이버 정리 (`driver.quit()`)
 3. DB 연결 정리 (컨텍스트 매니저 사용)
 
 ---
