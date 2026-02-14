@@ -41,8 +41,8 @@ class MonitorEngine:
         # Thread pool for synchronous scraping
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         
-        # Auto-tagger for automatic tag detection
-        self.auto_tagger = AutoTagger()
+        # Auto-tagger for automatic tag detection (optionally from settings.tag_rules)
+        self.auto_tagger = self._create_auto_tagger_from_settings()
         
         # Consecutive empty result tracking per platform
         self._empty_result_counter = {}
@@ -52,6 +52,45 @@ class MonitorEngine:
         self.on_price_change: Optional[Callable[[Item, str, str], None]] = None
         self.on_status_update: Optional[Callable[[str], None]] = None
         self.on_error: Optional[Callable[[str], None]] = None
+
+    def _create_auto_tagger_from_settings(self) -> AutoTagger:
+        """
+        Build AutoTagger rules from settings.tag_rules if present.
+        Falls back to AutoTagger defaults if tag_rules is empty/invalid.
+        """
+        try:
+            tag_rules = getattr(self.settings.settings, "tag_rules", None) or []
+            if not tag_rules:
+                return AutoTagger()
+
+            rules = []
+            for tr in tag_rules:
+                # tr is expected to be models.TagRule, but accept dict-like too.
+                try:
+                    tag_name = getattr(tr, "tag_name", None) or tr.get("tag_name")
+                    keywords = getattr(tr, "keywords", None) or tr.get("keywords") or []
+                    color = getattr(tr, "color", None) or tr.get("color") or "#89b4fa"
+                    icon = getattr(tr, "icon", None) or tr.get("icon") or "🏷️"
+                    enabled = getattr(tr, "enabled", None)
+                    if enabled is None:
+                        enabled = tr.get("enabled", True) if hasattr(tr, "get") else True
+                    if not tag_name:
+                        continue
+                    rules.append(
+                        {
+                            "tag_name": tag_name,
+                            "keywords": list(keywords) if keywords else [],
+                            "color": color,
+                            "icon": icon,
+                            "enabled": bool(enabled),
+                        }
+                    )
+                except Exception:
+                    continue
+
+            return AutoTagger(custom_rules=rules) if rules else AutoTagger()
+        except Exception:
+            return AutoTagger()
     
     def _create_driver(self) -> webdriver.Chrome:
         """Create shared Chrome driver instance"""

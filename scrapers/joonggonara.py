@@ -3,7 +3,9 @@
 
 import re
 import time
+import hashlib
 from urllib.parse import quote
+from urllib.parse import urlsplit, urlunsplit, parse_qs
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -36,6 +38,57 @@ class JoonggonaraScraper(SeleniumScraper):
         if title.strip() in self.INVALID_TITLE_PATTERNS:
             return False
         return True
+
+    @staticmethod
+    def _normalize_link(link: str) -> str:
+        """
+        Normalize URL to improve deterministic ID generation.
+        Currently removes fragment only (same article, different #...).
+        """
+        if not link:
+            return ""
+        try:
+            parts = urlsplit(link)
+            # Drop fragment, keep query/path as-is.
+            return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ""))
+        except Exception:
+            return link
+
+    @staticmethod
+    def extract_article_id(link: str) -> str:
+        """
+        Extract a stable article id from a Naver cafe link.
+
+        Priority:
+        1) query param `articleid`
+        2) numeric path segment (e.g. /12345?... or /12345)
+        3) deterministic hash fallback (NOT Python's hash(), which is randomized per process)
+        """
+        if not link:
+            return "hash_000000000000"
+
+        normalized = JoonggonaraScraper._normalize_link(link)
+
+        try:
+            parts = urlsplit(normalized)
+            qs = parse_qs(parts.query or "")
+            article_ids = qs.get("articleid") or qs.get("articleId") or qs.get("articleID")
+            if article_ids and article_ids[0]:
+                m = re.search(r"(\d+)", str(article_ids[0]))
+                if m:
+                    return m.group(1)
+        except Exception:
+            pass
+
+        try:
+            m = re.search(r"/(\d+)(?:\?|$)", normalized)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+
+        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+        return f"hash_{digest}"
     
     def search(self, keyword: str, location: str = None) -> list[Item]:
         """
@@ -100,17 +153,8 @@ class JoonggonaraScraper(SeleniumScraper):
                     if "joonggonara" not in link and "cafe.naver.com" not in link:
                         continue
                     
-                    # Extract article ID from URL
-                    match = re.search(r'articleid=(\d+)', link, re.IGNORECASE)
-                    if not match:
-                        match = re.search(r'/(\d+)\?', link)
-                    if not match:
-                        match = re.search(r'/(\d+)$', link)
-                    if not match:
-                        # Generate ID from URL hash
-                        article_id = str(hash(link) % 1000000000)
-                    else:
-                        article_id = match.group(1)
+                    # Extract deterministic article ID from URL
+                    article_id = self.extract_article_id(link)
                     
                     # Clean title (remove newlines and extra spaces)
                     if '\n' in title:

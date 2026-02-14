@@ -83,7 +83,40 @@ class MessageTemplateManager:
         Args:
             custom_templates: List of custom templates (overrides defaults if provided)
         """
-        self.templates = custom_templates if custom_templates else self.DEFAULT_TEMPLATES.copy()
+        self.templates = self._normalize_templates(custom_templates) if custom_templates else self.DEFAULT_TEMPLATES.copy()
+
+    def _normalize_templates(self, templates) -> List[MessageTemplate]:
+        """
+        Normalize templates coming from settings (e.g. models.MessageTemplate) or dicts
+        into this module's MessageTemplate (which has render()).
+        """
+        normalized: List[MessageTemplate] = []
+        if not templates:
+            return normalized
+
+        for t in templates:
+            # Already our template type (has render()).
+            if hasattr(t, "render") and callable(getattr(t, "render")):
+                normalized.append(t)
+                continue
+
+            # dict-like template
+            if isinstance(t, dict):
+                name = t.get("name", "")
+                content = t.get("content", "")
+                platform = t.get("platform", "all")
+                if name and content:
+                    normalized.append(MessageTemplate(name=name, content=content, platform=platform))
+                continue
+
+            # models.MessageTemplate or other objects with attributes
+            name = getattr(t, "name", "")
+            content = getattr(t, "content", "")
+            platform = getattr(t, "platform", "all") or "all"
+            if name and content:
+                normalized.append(MessageTemplate(name=name, content=content, platform=platform))
+
+        return normalized
     
     def get_templates(self, platform: str = None) -> List[MessageTemplate]:
         """

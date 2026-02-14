@@ -29,10 +29,42 @@ class DiscordNotifier(BaseNotifier):
                     async with session.post(self.webhook_url, json=payload) as resp:
                         if resp.status in (200, 204):
                             return True
-                        elif resp.status >= 500:  # Server error, retry
-                            if attempt < max_retries - 1:
-                                await asyncio.sleep(1.0 * (attempt + 1))
+                        if resp.status == 429:
+                            retry_after = None
+                            try:
+                                ra = resp.headers.get("Retry-After")
+                                if ra:
+                                    retry_after = float(ra)
+                            except Exception:
+                                retry_after = None
+                            if retry_after is None:
+                                try:
+                                    data = await resp.json(content_type=None)
+                                    ra = data.get("retry_after")
+                                    if isinstance(ra, (int, float)):
+                                        retry_after = float(ra)
+                                except Exception:
+                                    pass
+                            if retry_after is not None and attempt < max_retries - 1:
+                                self.logger.warning(f"Discord rate limited. Retrying after {retry_after:.1f}s.")
+                                await asyncio.sleep(retry_after)
                                 continue
+                            body = ""
+                            try:
+                                body = await resp.text()
+                            except Exception:
+                                pass
+                            self.logger.warning(f"Discord webhook failed: 429. Body: {body[:300]!r}")
+                            return False
+                        body = ""
+                        try:
+                            body = await resp.text()
+                        except Exception:
+                            pass
+                        self.logger.warning(f"Discord webhook failed: {resp.status}. Body: {body[:300]!r}")
+                        if resp.status >= 500 and attempt < max_retries - 1:  # Server error, retry
+                            await asyncio.sleep(1.0 * (attempt + 1))
+                            continue
                         return False
             except asyncio.TimeoutError:
                 self.logger.warning(f"Discord request timeout (attempt {attempt + 1}/{max_retries})")

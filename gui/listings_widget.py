@@ -576,6 +576,7 @@ class ListingsWidget(QWidget):
             }
         
         from gui.message_dialog import MessageDialog
+        from settings_manager import SettingsManager
         
         # Get target price from favorites if available
         target_price = None
@@ -583,8 +584,18 @@ class ListingsWidget(QWidget):
             fav_details = db.get_favorite_details(listing_id)
             if fav_details:
                 target_price = fav_details.get('target_price')
-        
-        dialog = MessageDialog(listing, target_price, parent=self)
+
+        # Load custom message templates from settings (if available)
+        custom_templates = None
+        try:
+            if self.engine and hasattr(self.engine, "settings"):
+                custom_templates = getattr(self.engine.settings.settings, "message_templates", None)
+            if custom_templates is None:
+                custom_templates = SettingsManager().settings.message_templates
+        except Exception:
+            custom_templates = None
+
+        dialog = MessageDialog(listing, target_price, custom_templates=custom_templates, parent=self)
         dialog.exec()
     
     def closeEvent(self, event):

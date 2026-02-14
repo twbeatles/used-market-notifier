@@ -1,4 +1,7 @@
-# config.py
+# config.py (legacy)
+#
+# This module is not used by the main application anymore.
+# The app uses settings.json via SettingsManager instead.
 
 # Telegram Configuration
 # Please fill in your Telegram Bot Token and Chat ID
@@ -10,7 +13,7 @@ TELEGRAM_CHAT_ID = "YOUR_TELEGRAM_CHAT_ID_HERE"
 KEYWORDS = [
     "맥북 에어 M2 미개봉",
     "아이폰 15 프로",
-    "닌텐도 스위치 OLED"
+    "닌텐도 스위치 OLED",
 ]
 
 # Database Config
@@ -19,3 +22,4 @@ DB_PATH = "listings.db"
 # Scraper Config
 CHECK_INTERVAL_SECONDS = 300  # 5 minutes
 HEADLESS_MODE = True
+

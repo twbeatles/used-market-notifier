@@ -264,6 +264,11 @@ used_market_notifier/
 }
 ```
 
+> 참고:
+> - 리포지토리에는 `settings.example.json`만 포함됩니다. 실제 실행을 위해서는 `settings.json`을 생성해 토큰/웹훅 등을 채워주세요.
+> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/` 등은 로컬 런타임 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
+> - 과거 레거시 설정/알림 샘플 코드는 `legacy/`에 있으며, 현재 메인 앱에서는 사용하지 않습니다.
+
 ### 데이터 파일
 
 | 파일 | 설명 |
