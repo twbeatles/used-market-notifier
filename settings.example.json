@@ -1,0 +1,42 @@
+{
+  "check_interval_seconds": 300,
+  "headless_mode": true,
+  "db_path": "listings.db",
+  "minimize_to_tray": false,
+  "start_minimized": false,
+  "auto_start_monitoring": false,
+  "theme_mode": "dark",
+  "confirm_link_open": true,
+  "notifications_enabled": false,
+  "notification_schedule": {
+    "enabled": true,
+    "start_hour": 0,
+    "end_hour": 24,
+    "days": [0, 1, 2, 3, 4, 5, 6]
+  },
+  "notifiers": [
+    {
+      "type": "telegram",
+      "enabled": false,
+      "token": "",
+      "chat_id": "",
+      "webhook_url": ""
+    },
+    {
+      "type": "discord",
+      "enabled": false,
+      "token": "",
+      "chat_id": "",
+      "webhook_url": ""
+    },
+    {
+      "type": "slack",
+      "enabled": false,
+      "token": "",
+      "chat_id": "",
+      "webhook_url": ""
+    }
+  ],
+  "keywords": [],
+  "seller_filters": []
+}
