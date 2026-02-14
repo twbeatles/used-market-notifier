@@ -113,7 +113,7 @@
 
 ### 방법 1: 실행 파일 (권장)
 
-1. [Releases](https://github.com/your-repo/releases)에서 최신 버전 다운로드
+1. [Releases](https://github.com/twbeatles/used-market-notifier/releases)에서 최신 버전 다운로드
 2. `UsedMarketNotifier.exe` 실행
 3. 키워드 추가하고 모니터링 시작!
 
@@ -121,8 +121,8 @@
 
 ```bash
 # 저장소 클론
-git clone https://github.com/your-repo/used_market_notifier.git
-cd used_market_notifier
+git clone https://github.com/twbeatles/used-market-notifier.git
+cd used-market-notifier
 
 # 가상환경 생성 (선택)
 python -m venv venv
@@ -132,8 +132,9 @@ source venv/bin/activate  # macOS/Linux
 # 의존성 설치
 pip install -r requirements.txt
 
-# Playwright 브라우저 설치
-playwright install chromium
+# 브라우저 준비 (Selenium)
+# - Chrome(또는 Chromium 기반 브라우저)이 설치되어 있어야 합니다.
+# - 드라이버는 webdriver-manager가 자동으로 내려받습니다.
 
 # 실행
 python main.py
@@ -299,7 +300,7 @@ used_market_notifier/
 
 ### 데이터 정리
 
-`설정 > 백업/정리`에서:
+`설정 > 유지보수`에서:
 - 오래된 매물 자동 삭제 (기본 30일)
 - 즐겨찾기/메모 있는 매물 보호
 - 백업 보관 개수 설정
@@ -312,8 +313,8 @@ used_market_notifier/
 
 1. **네트워크 확인**: 인터넷 연결 상태 확인
 2. **브라우저 표시 모드**: `설정 > 일반 > 브라우저 표시` 활성화
-3. **Playwright 재설치**: `playwright install chromium --force`
-4. **로그 확인**: `notifier.log` 파일 확인
+3. **Chrome 업데이트/재설치**: 브라우저가 너무 오래됐으면 페이지가 깨질 수 있습니다
+4. **로그 확인**: 앱의 `로그` 탭에서 에러 메시지 확인
 
 ### 알림이 안 올 때
 
@@ -365,7 +366,7 @@ used_market_notifier/
 - ✅ **매물 비교**: 여러 매물 나란히 비교
 - ✅ **백업/복원**: 자동 백업, 이전 데이터 복원
 - ✅ **UI 개선**: 글래스모피즘, 애니메이션
-- ✅ **스크래핑 안정화**: Playwright 스텔스 모드
+- ✅ **스크래핑 안정화**: Selenium 기반 안정성 개선
 - ✅ **가격 추적**: 가격 변동 이력 및 알림
 
 ### v1.5 (2025-12)

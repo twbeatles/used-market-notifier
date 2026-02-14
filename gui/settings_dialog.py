@@ -5,12 +5,18 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QFormLayout, QLineEdit, QSpinBox, QCheckBox, QLabel,
     QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
-    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView
+    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView,
+    QTextEdit, QApplication
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from models import NotificationType, NotificationSchedule, ThemeMode
+from models import NotificationType, NotificationSchedule, ThemeMode, TagRule, MessageTemplate
 from notifiers import TelegramNotifier, DiscordNotifier, SlackNotifier
 import asyncio
+import os
+
+from auto_tagger import AutoTagger
+from backup_manager import BackupManager
+from message_templates import MessageTemplateManager
 
 
 class SettingsDialog(QDialog):
@@ -19,6 +25,9 @@ class SettingsDialog(QDialog):
     def __init__(self, settings_manager, parent=None):
         super().__init__(parent)
         self.settings = settings_manager
+        self.backup_manager = BackupManager()
+        self._tag_rules: list[TagRule] = []
+        self._message_templates: list[MessageTemplate] = []
         self.setup_ui()
         self.load_settings()
     
@@ -57,6 +66,15 @@ class SettingsDialog(QDialog):
         
         seller_widget = self.create_seller_tab()
         self.tabs.addTab(seller_widget, "🚫  차단 관리")
+
+        maintenance_widget = self.create_maintenance_tab()
+        self.tabs.addTab(maintenance_widget, "🧰  유지보수")
+
+        tag_widget = self.create_auto_tagging_tab()
+        self.tabs.addTab(tag_widget, "🏷️  자동 태깅")
+
+        templates_widget = self.create_message_templates_tab()
+        self.tabs.addTab(templates_widget, "💬  메시지 템플릿")
         
         layout.addWidget(self.tabs)
         
@@ -446,6 +464,18 @@ class SettingsDialog(QDialog):
         self.auto_start_check.setChecked(s.auto_start_monitoring)
         self.confirm_link_check.setChecked(s.confirm_link_open)
         self.notifications_enabled_check.setChecked(getattr(s, 'notifications_enabled', False))
+
+        # Maintenance (backup/cleanup)
+        if hasattr(self, "auto_backup_enabled_check"):
+            self.auto_backup_enabled_check.setChecked(getattr(s, "auto_backup_enabled", True))
+            self.auto_backup_interval_spin.setValue(getattr(s, "auto_backup_interval_days", 7))
+            self.backup_keep_count_spin.setValue(getattr(s, "backup_keep_count", 5))
+
+        if hasattr(self, "auto_cleanup_enabled_check"):
+            self.auto_cleanup_enabled_check.setChecked(getattr(s, "auto_cleanup_enabled", False))
+            self.cleanup_days_spin.setValue(getattr(s, "cleanup_days", 30))
+            self.cleanup_exclude_favorites_check.setChecked(getattr(s, "cleanup_exclude_favorites", True))
+            self.cleanup_exclude_noted_check.setChecked(getattr(s, "cleanup_exclude_noted", True))
         
         # Load theme
         idx = self.theme_combo.findData(s.theme_mode)
@@ -477,6 +507,47 @@ class SettingsDialog(QDialog):
         self.end_hour.setValue(sched.end_hour)
         for i, cb in enumerate(self.day_checks):
             cb.setChecked(i in sched.days)
+
+        # Load backups list / cleanup preview
+        try:
+            if hasattr(self, "backup_table"):
+                self.refresh_backup_list()
+            if hasattr(self, "cleanup_preview_label"):
+                self.refresh_cleanup_preview()
+        except Exception:
+            pass
+
+        # Tag rules (show defaults if empty)
+        try:
+            if s.tag_rules:
+                self._tag_rules = list(s.tag_rules)
+            else:
+                self._tag_rules = [
+                    TagRule(
+                        tag_name=r.get("tag_name", ""),
+                        keywords=list(r.get("keywords", [])),
+                        color=r.get("color", "#89b4fa"),
+                        icon=r.get("icon", "🏷️"),
+                        enabled=r.get("enabled", True),
+                    )
+                    for r in AutoTagger.DEFAULT_RULES
+                ]
+            self._refresh_tag_rules_table()
+        except Exception:
+            pass
+
+        # Message templates (show defaults if empty)
+        try:
+            if s.message_templates:
+                self._message_templates = list(s.message_templates)
+            else:
+                self._message_templates = [
+                    MessageTemplate(name=t.name, content=t.content, platform=t.platform)
+                    for t in MessageTemplateManager.DEFAULT_TEMPLATES
+                ]
+            self._refresh_message_templates_table()
+        except Exception:
+            pass
     
     def save_settings(self):
         s = self.settings.settings
@@ -489,6 +560,18 @@ class SettingsDialog(QDialog):
         s.confirm_link_open = self.confirm_link_check.isChecked()
         s.notifications_enabled = self.notifications_enabled_check.isChecked()
         s.theme_mode = self.theme_combo.currentData()
+
+        # Maintenance (backup/cleanup)
+        if hasattr(self, "auto_backup_enabled_check"):
+            s.auto_backup_enabled = self.auto_backup_enabled_check.isChecked()
+            s.auto_backup_interval_days = self.auto_backup_interval_spin.value()
+            s.backup_keep_count = self.backup_keep_count_spin.value()
+
+        if hasattr(self, "auto_cleanup_enabled_check"):
+            s.auto_cleanup_enabled = self.auto_cleanup_enabled_check.isChecked()
+            s.cleanup_days = self.cleanup_days_spin.value()
+            s.cleanup_exclude_favorites = self.cleanup_exclude_favorites_check.isChecked()
+            s.cleanup_exclude_noted = self.cleanup_exclude_noted_check.isChecked()
         
         for n in s.notifiers:
             if n.type == NotificationType.TELEGRAM:
@@ -508,9 +591,27 @@ class SettingsDialog(QDialog):
             end_hour=self.end_hour.value(),
             days=[i for i, cb in enumerate(self.day_checks) if cb.isChecked()]
         )
+
+        # Auto-tagging rules / message templates
+        try:
+            # Allow toggling enabled checkbox directly in the table.
+            if hasattr(self, "tag_rules_table") and self._tag_rules:
+                for i, r in enumerate(self._tag_rules):
+                    item = self.tag_rules_table.item(i, 0)
+                    if item:
+                        r.enabled = item.checkState() == Qt.CheckState.Checked
+        except Exception:
+            pass
+        s.tag_rules = list(self._tag_rules or [])
+        s.message_templates = list(self._message_templates or [])
         
         self.settings.save()
-        QMessageBox.information(self, "저장 완료", "설정이 저장되었습니다.")
+        QMessageBox.information(
+            self,
+            "저장 완료",
+            "설정이 저장되었습니다.\n\n"
+            "참고: 자동 태깅 규칙은 모니터링 재시작 시 적용됩니다."
+        )
         self.accept()
     
     def create_seller_tab(self) -> QWidget:
@@ -544,6 +645,487 @@ class SettingsDialog(QDialog):
         
         return widget
 
+    def create_maintenance_tab(self) -> QWidget:
+        """Backup/restore + cleanup controls"""
+        widget = QWidget()
+        outer = QVBoxLayout(widget)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+
+        # Backup group
+        backup_group = QGroupBox("💾 백업 / 복원")
+        backup_layout = QVBoxLayout(backup_group)
+        backup_layout.setSpacing(12)
+
+        self.auto_backup_enabled_check = QCheckBox("자동 백업 사용")
+        backup_layout.addWidget(self.auto_backup_enabled_check)
+
+        backup_form = QFormLayout()
+        backup_form.setSpacing(12)
+
+        self.auto_backup_interval_spin = QSpinBox()
+        self.auto_backup_interval_spin.setRange(1, 365)
+        self.auto_backup_interval_spin.setSuffix(" 일")
+        self.auto_backup_interval_spin.setMinimumHeight(34)
+        backup_form.addRow("백업 주기", self.auto_backup_interval_spin)
+
+        self.backup_keep_count_spin = QSpinBox()
+        self.backup_keep_count_spin.setRange(1, 100)
+        self.backup_keep_count_spin.setSuffix(" 개")
+        self.backup_keep_count_spin.setMinimumHeight(34)
+        backup_form.addRow("보관 개수", self.backup_keep_count_spin)
+
+        backup_layout.addLayout(backup_form)
+
+        self.backup_table = QTableWidget()
+        self.backup_table.setColumnCount(3)
+        self.backup_table.setHorizontalHeaderLabels(["파일", "날짜", "크기"])
+        self.backup_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.backup_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.backup_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        backup_layout.addWidget(self.backup_table)
+
+        backup_btns = QHBoxLayout()
+        backup_btns.addStretch()
+
+        create_btn = QPushButton("지금 백업 생성")
+        create_btn.clicked.connect(self.create_backup_now)
+        backup_btns.addWidget(create_btn)
+
+        open_btn = QPushButton("백업 폴더 열기")
+        open_btn.clicked.connect(self.open_backup_folder)
+        backup_btns.addWidget(open_btn)
+
+        restore_btn = QPushButton("선택 백업 복원")
+        restore_btn.clicked.connect(self.restore_selected_backup)
+        backup_btns.addWidget(restore_btn)
+
+        backup_layout.addLayout(backup_btns)
+
+        # Cleanup group
+        cleanup_group = QGroupBox("🧹 자동 클린업")
+        cleanup_layout = QVBoxLayout(cleanup_group)
+        cleanup_layout.setSpacing(12)
+
+        self.auto_cleanup_enabled_check = QCheckBox("앱 시작 시 1회 오래된 매물 정리 실행")
+        cleanup_layout.addWidget(self.auto_cleanup_enabled_check)
+
+        cleanup_form = QFormLayout()
+        cleanup_form.setSpacing(12)
+
+        self.cleanup_days_spin = QSpinBox()
+        self.cleanup_days_spin.setRange(1, 3650)
+        self.cleanup_days_spin.setSuffix(" 일 이전")
+        self.cleanup_days_spin.setMinimumHeight(34)
+        cleanup_form.addRow("삭제 기준", self.cleanup_days_spin)
+
+        self.cleanup_exclude_favorites_check = QCheckBox("즐겨찾기 제외")
+        cleanup_form.addRow("", self.cleanup_exclude_favorites_check)
+
+        self.cleanup_exclude_noted_check = QCheckBox("메모/태그가 있는 항목 제외")
+        cleanup_form.addRow("", self.cleanup_exclude_noted_check)
+
+        cleanup_layout.addLayout(cleanup_form)
+
+        preview_row = QHBoxLayout()
+        self.cleanup_preview_label = QLabel("미리보기: -")
+        self.cleanup_preview_label.setStyleSheet("color: #a6e3a1;")
+        preview_row.addWidget(self.cleanup_preview_label)
+        preview_row.addStretch()
+
+        refresh_preview_btn = QPushButton("미리보기 새로고침")
+        refresh_preview_btn.clicked.connect(self.refresh_cleanup_preview)
+        preview_row.addWidget(refresh_preview_btn)
+
+        cleanup_layout.addLayout(preview_row)
+
+        cleanup_btns = QHBoxLayout()
+        cleanup_btns.addStretch()
+
+        self.run_cleanup_btn = QPushButton("지금 정리 실행")
+        self.run_cleanup_btn.clicked.connect(self.run_cleanup_now)
+        cleanup_btns.addWidget(self.run_cleanup_btn)
+
+        cleanup_layout.addLayout(cleanup_btns)
+
+        layout.addWidget(backup_group)
+        layout.addWidget(cleanup_group)
+        layout.addStretch()
+
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        return widget
+
+    def refresh_backup_list(self):
+        backups = self.backup_manager.list_backups()
+        self.backup_table.setRowCount(len(backups))
+        for i, b in enumerate(backups):
+            item0 = QTableWidgetItem(b.get("filename", ""))
+            item0.setData(Qt.ItemDataRole.UserRole, b.get("path", ""))
+            self.backup_table.setItem(i, 0, item0)
+            self.backup_table.setItem(i, 1, QTableWidgetItem(b.get("date", "")))
+            self.backup_table.setItem(i, 2, QTableWidgetItem(b.get("size_str", "")))
+
+    def create_backup_now(self):
+        s = self.settings.settings
+        settings_path = str(getattr(self.settings, "settings_path", "settings.json"))
+        backup_path = self.backup_manager.create_backup(
+            db_path=getattr(s, "db_path", "listings.db"),
+            settings_path=settings_path,
+        )
+        if not backup_path:
+            QMessageBox.warning(self, "실패", "백업 생성에 실패했습니다. 로그를 확인하세요.")
+            return
+
+        try:
+            self.backup_manager.cleanup_old_backups(keep_count=self.backup_keep_count_spin.value())
+        except Exception:
+            pass
+
+        self.refresh_backup_list()
+        QMessageBox.information(self, "완료", f"백업이 생성되었습니다.\n\n{backup_path}")
+
+    def open_backup_folder(self):
+        try:
+            os.startfile(str(self.backup_manager.backup_dir.resolve()))
+        except Exception as e:
+            QMessageBox.warning(self, "오류", f"백업 폴더를 열 수 없습니다: {e}")
+
+    def restore_selected_backup(self):
+        row = self.backup_table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "알림", "복원할 백업을 선택하세요.")
+            return
+
+        item = self.backup_table.item(row, 0)
+        backup_path = item.data(Qt.ItemDataRole.UserRole) if item else ""
+        if not backup_path:
+            QMessageBox.warning(self, "오류", "백업 경로를 찾을 수 없습니다.")
+            return
+
+        if QMessageBox.question(
+            self,
+            "주의",
+            "선택한 백업으로 DB/설정 파일을 덮어씁니다.\n"
+            "복원 후 앱은 종료됩니다.\n\n계속하시겠습니까?",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        # Stop monitoring if running and close DB connection for safety.
+        parent = self.parent()
+        try:
+            if parent and hasattr(parent, "monitor_thread") and parent.monitor_thread and parent.monitor_thread.isRunning():
+                parent.stop_monitoring()
+        except Exception:
+            pass
+
+        try:
+            if parent and hasattr(parent, "engine") and parent.engine and hasattr(parent.engine, "db"):
+                parent.engine.db.close()
+        except Exception:
+            pass
+
+        s = self.settings.settings
+        settings_path = str(getattr(self.settings, "settings_path", "settings.json"))
+        ok = self.backup_manager.restore_backup(
+            backup_file=str(backup_path),
+            db_path=getattr(s, "db_path", "listings.db"),
+            settings_path=settings_path,
+        )
+        if not ok:
+            QMessageBox.warning(self, "실패", "복원에 실패했습니다. 로그를 확인하세요.")
+            return
+
+        QMessageBox.information(self, "완료", "복원이 완료되었습니다.\n데이터 일관성을 위해 앱을 종료합니다.")
+        QApplication.quit()
+
+    def refresh_cleanup_preview(self):
+        try:
+            from db import DatabaseManager
+            s = self.settings.settings
+            db = DatabaseManager(getattr(s, "db_path", "listings.db"))
+            try:
+                preview = db.get_cleanup_preview(
+                    days=self.cleanup_days_spin.value(),
+                    exclude_favorites=self.cleanup_exclude_favorites_check.isChecked(),
+                    exclude_noted=self.cleanup_exclude_noted_check.isChecked(),
+                )
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+            self.cleanup_preview_label.setText(
+                f"미리보기: {preview.get('delete_count', 0):,} / {preview.get('total_count', 0):,} 삭제 예정"
+            )
+        except Exception as e:
+            self.cleanup_preview_label.setText(f"미리보기 실패: {e}")
+
+    def run_cleanup_now(self):
+        parent = self.parent()
+        try:
+            if parent and hasattr(parent, "monitor_thread") and parent.monitor_thread and parent.monitor_thread.isRunning():
+                if QMessageBox.question(
+                    self,
+                    "확인",
+                    "모니터링이 실행 중입니다.\n정리 작업을 위해 모니터링을 중지할까요?",
+                ) == QMessageBox.StandardButton.Yes:
+                    parent.stop_monitoring()
+                else:
+                    return
+        except Exception:
+            pass
+
+        if QMessageBox.question(
+            self,
+            "확인",
+            "지금 정리를 실행하면 조건에 맞는 오래된 매물이 DB에서 삭제됩니다.\n계속하시겠습니까?",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        self.run_cleanup_btn.setEnabled(False)
+        self.cleanup_preview_label.setText("정리 실행 중...")
+
+        s = self.settings.settings
+        self._cleanup_thread = CleanupWorker(
+            db_path=getattr(s, "db_path", "listings.db"),
+            days=self.cleanup_days_spin.value(),
+            exclude_favorites=self.cleanup_exclude_favorites_check.isChecked(),
+            exclude_noted=self.cleanup_exclude_noted_check.isChecked(),
+        )
+        self._cleanup_thread.completed.connect(self._on_cleanup_done)
+        self._cleanup_thread.failed.connect(self._on_cleanup_failed)
+        self._cleanup_thread.start()
+
+    def _on_cleanup_done(self, deleted_count: int):
+        self.run_cleanup_btn.setEnabled(True)
+        self.refresh_cleanup_preview()
+        QMessageBox.information(self, "완료", f"정리가 완료되었습니다.\n삭제된 항목: {deleted_count:,}개")
+
+        # Best-effort refresh in main UI if available.
+        parent = self.parent()
+        try:
+            if parent and hasattr(parent, "stats_widget"):
+                parent.stats_widget.refresh_stats()
+            if parent and hasattr(parent, "listings_widget"):
+                parent.listings_widget.refresh_listings()
+        except Exception:
+            pass
+
+    def _on_cleanup_failed(self, error: str):
+        self.run_cleanup_btn.setEnabled(True)
+        self.cleanup_preview_label.setText(f"정리 실패: {error}")
+        QMessageBox.warning(self, "실패", f"정리 작업 실패: {error}")
+
+    def create_auto_tagging_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+
+        desc = QLabel("🏷️ 제목 키워드에 따라 자동으로 태그를 부여합니다. (모니터링 재시작 시 적용)")
+        desc.setStyleSheet("color: #89b4fa;")
+        layout.addWidget(desc)
+
+        self.tag_rules_table = QTableWidget()
+        self.tag_rules_table.setColumnCount(5)
+        self.tag_rules_table.setHorizontalHeaderLabels(["사용", "태그", "아이콘", "색상", "키워드"])
+        self.tag_rules_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.tag_rules_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.tag_rules_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.tag_rules_table)
+
+        btns = QHBoxLayout()
+        btns.addStretch()
+
+        add_btn = QPushButton("추가")
+        add_btn.clicked.connect(self.add_tag_rule)
+        btns.addWidget(add_btn)
+
+        edit_btn = QPushButton("편집")
+        edit_btn.clicked.connect(self.edit_tag_rule)
+        btns.addWidget(edit_btn)
+
+        del_btn = QPushButton("삭제")
+        del_btn.clicked.connect(self.delete_tag_rule)
+        btns.addWidget(del_btn)
+
+        reset_btn = QPushButton("기본값으로 초기화")
+        reset_btn.clicked.connect(self.reset_tag_rules_default)
+        btns.addWidget(reset_btn)
+
+        layout.addLayout(btns)
+        return widget
+
+    def _refresh_tag_rules_table(self):
+        if not hasattr(self, "tag_rules_table"):
+            return
+        rules = self._tag_rules or []
+        self.tag_rules_table.setRowCount(len(rules))
+        for i, r in enumerate(rules):
+            enabled_item = QTableWidgetItem("")
+            enabled_item.setFlags(
+                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
+            )
+            enabled_item.setCheckState(Qt.CheckState.Checked if getattr(r, "enabled", True) else Qt.CheckState.Unchecked)
+            self.tag_rules_table.setItem(i, 0, enabled_item)
+
+            self.tag_rules_table.setItem(i, 1, QTableWidgetItem(getattr(r, "tag_name", "")))
+            self.tag_rules_table.setItem(i, 2, QTableWidgetItem(getattr(r, "icon", "")))
+            self.tag_rules_table.setItem(i, 3, QTableWidgetItem(getattr(r, "color", "")))
+
+            keywords = getattr(r, "keywords", []) or []
+            self.tag_rules_table.setItem(i, 4, QTableWidgetItem(", ".join(keywords)))
+
+    def _selected_tag_rule_index(self) -> int:
+        row = self.tag_rules_table.currentRow()
+        return row if row >= 0 else -1
+
+    def add_tag_rule(self):
+        dlg = TagRuleEditDialog(parent=self)
+        if dlg.exec():
+            self._tag_rules.append(dlg.get_rule())
+            self._refresh_tag_rules_table()
+
+    def edit_tag_rule(self):
+        idx = self._selected_tag_rule_index()
+        if idx < 0 or idx >= len(self._tag_rules):
+            QMessageBox.information(self, "알림", "편집할 규칙을 선택하세요.")
+            return
+        dlg = TagRuleEditDialog(rule=self._tag_rules[idx], parent=self)
+        if dlg.exec():
+            self._tag_rules[idx] = dlg.get_rule()
+            self._refresh_tag_rules_table()
+
+    def delete_tag_rule(self):
+        idx = self._selected_tag_rule_index()
+        if idx < 0 or idx >= len(self._tag_rules):
+            QMessageBox.information(self, "알림", "삭제할 규칙을 선택하세요.")
+            return
+        if QMessageBox.question(self, "확인", "선택한 규칙을 삭제하시겠습니까?") != QMessageBox.StandardButton.Yes:
+            return
+        self._tag_rules.pop(idx)
+        self._refresh_tag_rules_table()
+
+    def reset_tag_rules_default(self):
+        if QMessageBox.question(self, "확인", "기본 태그 규칙으로 초기화하시겠습니까?") != QMessageBox.StandardButton.Yes:
+            return
+        self._tag_rules = [
+            TagRule(
+                tag_name=r.get("tag_name", ""),
+                keywords=list(r.get("keywords", [])),
+                color=r.get("color", "#89b4fa"),
+                icon=r.get("icon", "🏷️"),
+                enabled=True,
+            )
+            for r in AutoTagger.DEFAULT_RULES
+        ]
+        self._refresh_tag_rules_table()
+
+    def create_message_templates_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+
+        desc = QLabel("💬 판매자에게 보낼 메시지 템플릿을 관리합니다.")
+        desc.setStyleSheet("color: #89b4fa;")
+        layout.addWidget(desc)
+
+        self.templates_table = QTableWidget()
+        self.templates_table.setColumnCount(3)
+        self.templates_table.setHorizontalHeaderLabels(["이름", "플랫폼", "내용"])
+        self.templates_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.templates_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.templates_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.templates_table)
+
+        btns = QHBoxLayout()
+        btns.addStretch()
+
+        add_btn = QPushButton("추가")
+        add_btn.clicked.connect(self.add_template)
+        btns.addWidget(add_btn)
+
+        edit_btn = QPushButton("편집")
+        edit_btn.clicked.connect(self.edit_template)
+        btns.addWidget(edit_btn)
+
+        del_btn = QPushButton("삭제")
+        del_btn.clicked.connect(self.delete_template)
+        btns.addWidget(del_btn)
+
+        reset_btn = QPushButton("기본값으로 초기화")
+        reset_btn.clicked.connect(self.reset_templates_default)
+        btns.addWidget(reset_btn)
+
+        layout.addLayout(btns)
+        return widget
+
+    def _refresh_message_templates_table(self):
+        if not hasattr(self, "templates_table"):
+            return
+        templates = self._message_templates or []
+        self.templates_table.setRowCount(len(templates))
+        for i, t in enumerate(templates):
+            name = getattr(t, "name", "")
+            platform = getattr(t, "platform", "all") or "all"
+            content = getattr(t, "content", "")
+            preview = content.replace("\n", " ")
+            if len(preview) > 80:
+                preview = preview[:77] + "..."
+
+            self.templates_table.setItem(i, 0, QTableWidgetItem(name))
+            self.templates_table.setItem(i, 1, QTableWidgetItem(platform))
+            self.templates_table.setItem(i, 2, QTableWidgetItem(preview))
+
+    def _selected_template_index(self) -> int:
+        row = self.templates_table.currentRow()
+        return row if row >= 0 else -1
+
+    def add_template(self):
+        dlg = MessageTemplateEditDialog(parent=self)
+        if dlg.exec():
+            self._message_templates.append(dlg.get_template())
+            self._refresh_message_templates_table()
+
+    def edit_template(self):
+        idx = self._selected_template_index()
+        if idx < 0 or idx >= len(self._message_templates):
+            QMessageBox.information(self, "알림", "편집할 템플릿을 선택하세요.")
+            return
+        dlg = MessageTemplateEditDialog(template=self._message_templates[idx], parent=self)
+        if dlg.exec():
+            self._message_templates[idx] = dlg.get_template()
+            self._refresh_message_templates_table()
+
+    def delete_template(self):
+        idx = self._selected_template_index()
+        if idx < 0 or idx >= len(self._message_templates):
+            QMessageBox.information(self, "알림", "삭제할 템플릿을 선택하세요.")
+            return
+        if QMessageBox.question(self, "확인", "선택한 템플릿을 삭제하시겠습니까?") != QMessageBox.StandardButton.Yes:
+            return
+        self._message_templates.pop(idx)
+        self._refresh_message_templates_table()
+
+    def reset_templates_default(self):
+        if QMessageBox.question(self, "확인", "기본 템플릿으로 초기화하시겠습니까?") != QMessageBox.StandardButton.Yes:
+            return
+        self._message_templates = [
+            MessageTemplate(name=t.name, content=t.content, platform=t.platform)
+            for t in MessageTemplateManager.DEFAULT_TEMPLATES
+        ]
+        self._refresh_message_templates_table()
+
     def load_blocked_sellers(self):
         """Load blocked sellers from DB"""
         if not self.parent():
@@ -556,7 +1138,9 @@ class SettingsDialog(QDialog):
             for i, seller in enumerate(sellers):
                 self.seller_table.setItem(i, 0, QTableWidgetItem(seller['platform']))
                 self.seller_table.setItem(i, 1, QTableWidgetItem(seller['seller_name']))
-                self.seller_table.setItem(i, 2, QTableWidgetItem(seller['created_at'][:10]))
+                created_at = seller.get('created_at', '') or ''
+                created_str = created_at[:10] if isinstance(created_at, str) else str(created_at)
+                self.seller_table.setItem(i, 2, QTableWidgetItem(created_str))
         except Exception as e:
             print(f"Error loading sellers: {e}")
 
@@ -635,6 +1219,207 @@ class SettingsDialog(QDialog):
             QMessageBox.information(self, "성공", message)
         else:
             QMessageBox.warning(self, "실패", message)
+
+
+class CleanupWorker(QThread):
+    """Run DB cleanup in a background thread."""
+
+    completed = pyqtSignal(int)
+    failed = pyqtSignal(str)
+
+    def __init__(self, db_path: str, days: int, exclude_favorites: bool, exclude_noted: bool):
+        super().__init__()
+        self.db_path = db_path
+        self.days = days
+        self.exclude_favorites = exclude_favorites
+        self.exclude_noted = exclude_noted
+
+    def run(self):
+        try:
+            from db import DatabaseManager
+            db = DatabaseManager(self.db_path)
+            try:
+                deleted = db.cleanup_old_listings(
+                    days=self.days,
+                    exclude_favorites=self.exclude_favorites,
+                    exclude_noted=self.exclude_noted,
+                )
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+            self.completed.emit(int(deleted))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class TagRuleEditDialog(QDialog):
+    """Add/edit TagRule."""
+
+    def __init__(self, rule: TagRule | None = None, parent=None):
+        super().__init__(parent)
+        self._rule = rule
+        self._build_ui()
+        if rule:
+            self._load(rule)
+
+    def _build_ui(self):
+        self.setWindowTitle("태그 규칙 편집")
+        self.setMinimumWidth(520)
+
+        layout = QVBoxLayout(self)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+
+        self.enabled_check = QCheckBox("사용")
+        form.addRow("", self.enabled_check)
+
+        self.tag_name_edit = QLineEdit()
+        form.addRow("태그 이름*", self.tag_name_edit)
+
+        self.icon_edit = QLineEdit()
+        self.icon_edit.setPlaceholderText("예: 🏷️")
+        form.addRow("아이콘", self.icon_edit)
+
+        self.color_edit = QLineEdit()
+        self.color_edit.setPlaceholderText("예: #89b4fa")
+        form.addRow("색상", self.color_edit)
+
+        self.keywords_edit = QTextEdit()
+        self.keywords_edit.setPlaceholderText("키워드들을 줄바꿈 또는 콤마로 구분해서 입력하세요")
+        self.keywords_edit.setMinimumHeight(140)
+        form.addRow("키워드*", self.keywords_edit)
+
+        layout.addLayout(form)
+
+        btns = QHBoxLayout()
+        btns.addStretch()
+
+        cancel = QPushButton("취소")
+        cancel.clicked.connect(self.reject)
+        btns.addWidget(cancel)
+
+        ok = QPushButton("확인")
+        ok.clicked.connect(self._on_ok)
+        btns.addWidget(ok)
+
+        layout.addLayout(btns)
+
+    def _load(self, rule: TagRule):
+        self.enabled_check.setChecked(getattr(rule, "enabled", True))
+        self.tag_name_edit.setText(getattr(rule, "tag_name", ""))
+        self.icon_edit.setText(getattr(rule, "icon", ""))
+        self.color_edit.setText(getattr(rule, "color", ""))
+        self.keywords_edit.setPlainText("\n".join(getattr(rule, "keywords", []) or []))
+
+    def _on_ok(self):
+        tag_name = self.tag_name_edit.text().strip()
+        if not tag_name:
+            QMessageBox.warning(self, "오류", "태그 이름은 필수입니다.")
+            return
+
+        raw = self.keywords_edit.toPlainText().strip()
+        keywords: list[str] = []
+        if raw:
+            parts = []
+            for line in raw.splitlines():
+                parts.extend([p.strip() for p in line.split(",")])
+            keywords = [p for p in parts if p]
+
+        if not keywords:
+            QMessageBox.warning(self, "오류", "키워드는 최소 1개 이상 필요합니다.")
+            return
+
+        self._result = TagRule(
+            tag_name=tag_name,
+            keywords=keywords,
+            color=(self.color_edit.text().strip() or "#89b4fa"),
+            icon=(self.icon_edit.text().strip() or "🏷️"),
+            enabled=self.enabled_check.isChecked(),
+        )
+        self.accept()
+
+    def get_rule(self) -> TagRule:
+        return getattr(self, "_result", self._rule)  # type: ignore[return-value]
+
+
+class MessageTemplateEditDialog(QDialog):
+    """Add/edit MessageTemplate."""
+
+    def __init__(self, template: MessageTemplate | None = None, parent=None):
+        super().__init__(parent)
+        self._template = template
+        self._build_ui()
+        if template:
+            self._load(template)
+
+    def _build_ui(self):
+        self.setWindowTitle("메시지 템플릿 편집")
+        self.setMinimumWidth(560)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        form.setSpacing(12)
+
+        self.name_edit = QLineEdit()
+        form.addRow("이름*", self.name_edit)
+
+        self.platform_combo = QComboBox()
+        self.platform_combo.addItem("all", "all")
+        self.platform_combo.addItem("danggeun", "danggeun")
+        self.platform_combo.addItem("bunjang", "bunjang")
+        self.platform_combo.addItem("joonggonara", "joonggonara")
+        form.addRow("플랫폼", self.platform_combo)
+
+        self.content_edit = QTextEdit()
+        self.content_edit.setPlaceholderText("변수: {title}, {price}, {seller}, {location}, {target_price}")
+        self.content_edit.setMinimumHeight(180)
+        form.addRow("내용*", self.content_edit)
+
+        layout.addLayout(form)
+
+        btns = QHBoxLayout()
+        btns.addStretch()
+
+        cancel = QPushButton("취소")
+        cancel.clicked.connect(self.reject)
+        btns.addWidget(cancel)
+
+        ok = QPushButton("확인")
+        ok.clicked.connect(self._on_ok)
+        btns.addWidget(ok)
+
+        layout.addLayout(btns)
+
+    def _load(self, t: MessageTemplate):
+        self.name_edit.setText(getattr(t, "name", ""))
+        content = getattr(t, "content", "") or ""
+        self.content_edit.setPlainText(content)
+        platform = getattr(t, "platform", "all") or "all"
+        idx = self.platform_combo.findData(platform)
+        if idx >= 0:
+            self.platform_combo.setCurrentIndex(idx)
+
+    def _on_ok(self):
+        name = self.name_edit.text().strip()
+        content = self.content_edit.toPlainText().strip()
+        if not name:
+            QMessageBox.warning(self, "오류", "이름은 필수입니다.")
+            return
+        if not content:
+            QMessageBox.warning(self, "오류", "내용은 필수입니다.")
+            return
+        self._result = MessageTemplate(
+            name=name,
+            content=content,
+            platform=self.platform_combo.currentData(),
+        )
+        self.accept()
+
+    def get_template(self) -> MessageTemplate:
+        return getattr(self, "_result", self._template)  # type: ignore[return-value]
 
 
 class NotificationTestThread(QThread):

@@ -96,6 +96,39 @@ class MonitorThread(QThread):
             self.loop.call_soon_threadsafe(self.loop.stop)
 
 
+class MaintenanceCleanupThread(QThread):
+    """Run one-off maintenance tasks (cleanup) without blocking the UI."""
+
+    completed = pyqtSignal(int)
+    failed = pyqtSignal(str)
+
+    def __init__(self, db_path: str, days: int, exclude_favorites: bool, exclude_noted: bool):
+        super().__init__()
+        self.db_path = db_path
+        self.days = days
+        self.exclude_favorites = exclude_favorites
+        self.exclude_noted = exclude_noted
+
+    def run(self):
+        try:
+            from db import DatabaseManager
+            db = DatabaseManager(self.db_path)
+            try:
+                deleted = db.cleanup_old_listings(
+                    days=self.days,
+                    exclude_favorites=self.exclude_favorites,
+                    exclude_noted=self.exclude_noted,
+                )
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+            self.completed.emit(int(deleted))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     """Main application window"""
     
@@ -118,9 +151,77 @@ class MainWindow(QMainWindow):
         self.backup_manager = BackupManager()
         if self.settings_manager.settings.auto_backup_enabled:
             self._check_auto_backup()
-        
-        if self.settings_manager.settings.auto_start_monitoring:
+
+        # Run startup maintenance (cleanup) once after UI is shown.
+        QTimer.singleShot(0, self._run_startup_maintenance)
+
+    def _run_startup_maintenance(self):
+        s = self.settings_manager.settings
+
+        # Auto cleanup: run once on startup (user preference).
+        if getattr(s, "auto_cleanup_enabled", False):
+            try:
+                # Prevent racing with monitoring start/clicks.
+                if hasattr(self, "start_btn") and self.start_btn:
+                    self.start_btn.setEnabled(False)
+                self.status_bar.showMessage("🧹 오래된 매물 정리 중...")
+                if hasattr(self, "log_widget") and self.log_widget:
+                    self.log_widget.append_log("자동 클린업을 시작합니다...", "INFO")
+
+                self._startup_cleanup_thread = MaintenanceCleanupThread(
+                    db_path=s.db_path,
+                    days=s.cleanup_days,
+                    exclude_favorites=s.cleanup_exclude_favorites,
+                    exclude_noted=s.cleanup_exclude_noted,
+                )
+                self._startup_cleanup_thread.completed.connect(self._on_startup_cleanup_done)
+                self._startup_cleanup_thread.failed.connect(self._on_startup_cleanup_failed)
+                self._startup_cleanup_thread.start()
+                return
+            except Exception as e:
+                self._on_startup_cleanup_failed(str(e))
+
+        # No cleanup, proceed with auto-start if enabled.
+        if s.auto_start_monitoring:
             QTimer.singleShot(1000, self.start_monitoring)
+
+    def _on_startup_cleanup_done(self, deleted_count: int):
+        msg = f"🧹 클린업 완료: {deleted_count:,}개 삭제"
+        self.status_bar.showMessage(msg)
+        if hasattr(self, "log_widget") and self.log_widget:
+            self.log_widget.append_log(msg, "INFO")
+
+        # Existing engine connection may have cached stats.
+        try:
+            if hasattr(self, "engine") and self.engine and hasattr(self.engine, "db"):
+                self.engine.db._invalidate_cache()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "stats_widget") and self.stats_widget:
+                self.stats_widget.refresh_stats()
+            if hasattr(self, "listings_widget") and self.listings_widget:
+                self.listings_widget.refresh_listings()
+        except Exception:
+            pass
+
+        if hasattr(self, "start_btn") and self.start_btn:
+            self.start_btn.setEnabled(True)
+
+        if self.settings_manager.settings.auto_start_monitoring:
+            QTimer.singleShot(500, self.start_monitoring)
+
+    def _on_startup_cleanup_failed(self, error: str):
+        msg = f"⚠️ 자동 클린업 실패: {error}"
+        self.status_bar.showMessage(msg)
+        if hasattr(self, "log_widget") and self.log_widget:
+            self.log_widget.append_log(msg, "WARNING")
+        if hasattr(self, "start_btn") and self.start_btn:
+            self.start_btn.setEnabled(True)
+
+        if self.settings_manager.settings.auto_start_monitoring:
+            QTimer.singleShot(500, self.start_monitoring)
     
     def _check_auto_backup(self):
         """Check and create auto backup if needed"""
@@ -562,7 +663,8 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         dialog = SettingsDialog(self.settings_manager, self)
         if dialog.exec():
-            self.settings_manager.save_settings()
+            # SettingsDialog.save_settings() already persists via SettingsManager.save().
+            self.settings_manager.save()
             
             # Apply theme
             self.apply_theme()

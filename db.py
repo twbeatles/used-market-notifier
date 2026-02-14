@@ -600,9 +600,10 @@ class DatabaseManager:
         with self.lock:
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT seller_name, platform 
+                SELECT seller_name, platform, created_at
                 FROM seller_filters 
                 WHERE is_blocked = 1
+                ORDER BY created_at DESC
             ''')
             return [dict(row) for row in cursor.fetchall()]
 
@@ -832,6 +833,7 @@ class DatabaseManager:
             deleted_count = cursor.rowcount
             
             self.conn.commit()
+            self._invalidate_cache()
             return deleted_count
     
     # ===== Feature #28: Auto Tags =====

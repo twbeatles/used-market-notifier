@@ -5,6 +5,8 @@ import os
 import shutil
 import zipfile
 import logging
+import sqlite3
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -34,8 +36,40 @@ class BackupManager:
             with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                 # Backup database
                 if os.path.exists(db_path):
-                    zf.write(db_path, os.path.basename(db_path))
-                    self.logger.info(f"Backed up database: {db_path}")
+                    # Use SQLite backup API to get a consistent snapshot (safer with WAL/open connections).
+                    tmp_db_path = None
+                    try:
+                        suffix = Path(db_path).suffix or ".db"
+                        fd, tmp_db_path = tempfile.mkstemp(prefix="backup_snapshot_", suffix=suffix)
+                        os.close(fd)
+
+                        src = sqlite3.connect(db_path)
+                        dst = sqlite3.connect(tmp_db_path)
+                        try:
+                            src.backup(dst)
+                        finally:
+                            try:
+                                dst.close()
+                            except Exception:
+                                pass
+                            try:
+                                src.close()
+                            except Exception:
+                                pass
+
+                        zf.write(tmp_db_path, os.path.basename(db_path))
+                        self.logger.info(f"Backed up database snapshot: {db_path}")
+                    except Exception as e:
+                        # Fallback: zip the raw file if snapshot fails.
+                        self.logger.warning(f"DB snapshot backup failed, falling back to raw file: {e}")
+                        zf.write(db_path, os.path.basename(db_path))
+                        self.logger.info(f"Backed up database: {db_path}")
+                    finally:
+                        if tmp_db_path:
+                            try:
+                                os.remove(tmp_db_path)
+                            except Exception:
+                                pass
                 
                 # Backup settings
                 if os.path.exists(settings_path):
