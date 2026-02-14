@@ -157,6 +157,8 @@ class MessageTemplateManager:
 
 ---
 
+> 참고: 현재 앱의 기본 실행 경로는 Selenium 기반 스크래퍼를 사용합니다. Playwright 관련 코드는 옵션/개발용으로 남아있을 수 있으며, 본 문서의 일부 Playwright 중심 설명은 구현과 다를 수 있습니다.
+
 ## 📁 디렉토리별 상세 역할
 
 ### `/scrapers` - 플랫폼 스크래퍼

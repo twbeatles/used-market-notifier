@@ -519,6 +519,8 @@ class SettingsDialog(QDialog):
 
         # Tag rules (show defaults if empty)
         try:
+            if hasattr(self, "auto_tagging_enabled_check"):
+                self.auto_tagging_enabled_check.setChecked(getattr(s, "auto_tagging_enabled", True))
             if s.tag_rules:
                 self._tag_rules = list(s.tag_rules)
             else:
@@ -533,6 +535,8 @@ class SettingsDialog(QDialog):
                     for r in AutoTagger.DEFAULT_RULES
                 ]
             self._refresh_tag_rules_table()
+            if hasattr(self, "_on_auto_tagging_toggled"):
+                self._on_auto_tagging_toggled(self.auto_tagging_enabled_check.isChecked())
         except Exception:
             pass
 
@@ -593,6 +597,8 @@ class SettingsDialog(QDialog):
         )
 
         # Auto-tagging rules / message templates
+        if hasattr(self, "auto_tagging_enabled_check"):
+            s.auto_tagging_enabled = self.auto_tagging_enabled_check.isChecked()
         try:
             # Allow toggling enabled checkbox directly in the table.
             if hasattr(self, "tag_rules_table") and self._tag_rules:
@@ -931,6 +937,11 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
 
+        self.auto_tagging_enabled_check = QCheckBox("자동 태깅 사용")
+        self.auto_tagging_enabled_check.setToolTip("끄면 자동 태그 생성/저장이 동작하지 않습니다.")
+        self.auto_tagging_enabled_check.toggled.connect(self._on_auto_tagging_toggled)
+        layout.addWidget(self.auto_tagging_enabled_check)
+
         desc = QLabel("🏷️ 제목 키워드에 따라 자동으로 태그를 부여합니다. (모니터링 재시작 시 적용)")
         desc.setStyleSheet("color: #89b4fa;")
         layout.addWidget(desc)
@@ -946,24 +957,35 @@ class SettingsDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch()
 
-        add_btn = QPushButton("추가")
-        add_btn.clicked.connect(self.add_tag_rule)
-        btns.addWidget(add_btn)
+        self.tag_add_btn = QPushButton("추가")
+        self.tag_add_btn.clicked.connect(self.add_tag_rule)
+        btns.addWidget(self.tag_add_btn)
 
-        edit_btn = QPushButton("편집")
-        edit_btn.clicked.connect(self.edit_tag_rule)
-        btns.addWidget(edit_btn)
+        self.tag_edit_btn = QPushButton("편집")
+        self.tag_edit_btn.clicked.connect(self.edit_tag_rule)
+        btns.addWidget(self.tag_edit_btn)
 
-        del_btn = QPushButton("삭제")
-        del_btn.clicked.connect(self.delete_tag_rule)
-        btns.addWidget(del_btn)
+        self.tag_del_btn = QPushButton("삭제")
+        self.tag_del_btn.clicked.connect(self.delete_tag_rule)
+        btns.addWidget(self.tag_del_btn)
 
-        reset_btn = QPushButton("기본값으로 초기화")
-        reset_btn.clicked.connect(self.reset_tag_rules_default)
-        btns.addWidget(reset_btn)
+        self.tag_reset_btn = QPushButton("기본값으로 초기화")
+        self.tag_reset_btn.clicked.connect(self.reset_tag_rules_default)
+        btns.addWidget(self.tag_reset_btn)
 
         layout.addLayout(btns)
         return widget
+
+    def _on_auto_tagging_toggled(self, enabled: bool):
+        # Disable editing UI when feature is off (rules are still kept/saved).
+        try:
+            self.tag_rules_table.setEnabled(enabled)
+            self.tag_add_btn.setEnabled(enabled)
+            self.tag_edit_btn.setEnabled(enabled)
+            self.tag_del_btn.setEnabled(enabled)
+            self.tag_reset_btn.setEnabled(enabled)
+        except Exception:
+            pass
 
     def _refresh_tag_rules_table(self):
         if not hasattr(self, "tag_rules_table"):

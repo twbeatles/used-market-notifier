@@ -47,10 +47,21 @@ class ListingsWidget(QWidget):
         # Enter: Open selected item link
         shortcut_open = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
         shortcut_open.activated.connect(self._open_selected)
-        
+
+        # Ctrl+F: Focus search box (common convention)
+        shortcut_find = QShortcut(QKeySequence("Ctrl+F"), self)
+        shortcut_find.activated.connect(self._focus_search)
+
         # F: Add to favorites
         shortcut_fav = QShortcut(QKeySequence(Qt.Key.Key_F), self)
         shortcut_fav.activated.connect(self._add_selected_to_favorites)
+
+    def _focus_search(self):
+        try:
+            self.search_input.setFocus()
+            self.search_input.selectAll()
+        except Exception:
+            pass
     
     def _open_selected(self):
         """Open currently selected item"""

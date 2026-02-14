@@ -458,6 +458,14 @@ class MainWindow(QMainWindow):
         # Ctrl+S: Toggle monitoring
         shortcut_toggle = QShortcut(QKeySequence("Ctrl+S"), self)
         shortcut_toggle.activated.connect(self.toggle_monitoring)
+
+        # Ctrl+N: Add new keyword (switch to Keyword tab)
+        shortcut_new_keyword = QShortcut(QKeySequence("Ctrl+N"), self)
+        shortcut_new_keyword.activated.connect(self.open_add_keyword)
+
+        # Ctrl+F: Focus search in listings (switch to Listings tab)
+        shortcut_find = QShortcut(QKeySequence("Ctrl+F"), self)
+        shortcut_find.activated.connect(self.focus_listings_search)
         
         # Ctrl+, : Open settings (common convention)
         shortcut_settings = QShortcut(QKeySequence("Ctrl+,"), self)
@@ -479,6 +487,28 @@ class MainWindow(QMainWindow):
         # F5: Refresh current tab
         shortcut_refresh = QShortcut(QKeySequence("F5"), self)
         shortcut_refresh.activated.connect(self.refresh_current_tab)
+
+    def open_add_keyword(self):
+        try:
+            # Keyword tab is index 0
+            self.tabs.setCurrentIndex(0)
+            if hasattr(self, "keyword_widget") and self.keyword_widget:
+                self.keyword_widget.add_keyword()
+        except Exception:
+            pass
+
+    def focus_listings_search(self):
+        try:
+            # Listings tab is index 1
+            self.tabs.setCurrentIndex(1)
+            if hasattr(self, "listings_widget") and self.listings_widget:
+                if hasattr(self.listings_widget, "_focus_search"):
+                    self.listings_widget._focus_search()
+                elif hasattr(self.listings_widget, "search_input"):
+                    self.listings_widget.search_input.setFocus()
+                    self.listings_widget.search_input.selectAll()
+        except Exception:
+            pass
     
     def show_shortcuts_help(self):
         """Show keyboard shortcuts help dialog"""
@@ -487,6 +517,8 @@ class MainWindow(QMainWindow):
 <table>
 <tr><td><b>Ctrl+S</b></td><td>모니터링 시작/중지</td></tr>
 <tr><td><b>Ctrl+,</b></td><td>설정 열기</td></tr>
+<tr><td><b>Ctrl+N</b></td><td>새 키워드 추가</td></tr>
+<tr><td><b>Ctrl+F</b></td><td>제목 검색 (전체 매물)</td></tr>
 <tr><td><b>Ctrl+Q</b></td><td>프로그램 종료</td></tr>
 <tr><td><b>Ctrl+1~6</b></td><td>탭 전환</td></tr>
 <tr><td><b>F1</b></td><td>단축키 도움말</td></tr>

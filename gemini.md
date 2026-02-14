@@ -1,6 +1,8 @@
 # 🤖 Gemini AI 지침서 - 중고거래 알리미 (Used Market Notifier)
 
 > **이 문서는 Gemini AI가 프로젝트를 이해하고 효과적으로 지원하기 위한 포괄적인 가이드입니다.**
+>
+> 참고: 현재 앱의 기본 실행 경로는 Selenium 기반 스크래퍼를 사용합니다. Playwright 관련 코드는 옵션/개발용으로 남아있을 수 있으며, 문서의 일부 Playwright 중심 예시는 구현과 다를 수 있습니다.
 
 ---
 
@@ -14,7 +16,7 @@
 |----------|------|
 | **언어** | Python 3.10+ |
 | **GUI 프레임워크** | PyQt6 |
-| **브라우저 자동화** | Playwright (기본), Selenium (레거시) |
+| **브라우저 자동화** | Selenium (기본), Playwright (옵션/개발용) |
 | **데이터베이스** | SQLite3 (스레드 안전) |
 | **알림** | Telegram Bot API, Discord Webhook, Slack Webhook |
 | **빌드** | PyInstaller |
@@ -428,7 +430,7 @@ class NewPlatformScraper(PlaywrightScraper):
 | **언어** | Python 3.10+ |
 | **GUI** | PyQt6 + Catppuccin Mocha 테마 |
 | **DB** | SQLite3 (스레드 세이프) |
-| **스크래핑** | Playwright (스텔스 모드) |
+| **스크래핑** | Selenium (기본) / Playwright (옵션) |
 | **알림** | Telegram, Discord, Slack |
 | **수정 금지** | 스크래퍼 파싱 로직, 스텔스 기법, DB 스키마 |
 
