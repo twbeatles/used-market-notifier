@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices, QShortcut, QKeySequence
+from typing import Optional
 
 
 class ListingsWidget(QWidget):
@@ -23,12 +24,14 @@ class ListingsWidget(QWidget):
         self.current_platform = "all"
         self.search_text = ""
         self.current_status = "all"  # Status filter: all, for_sale, reserved, sold
+        self._pending_refresh = False
+        self._last_table_signature = None
         
         self.setup_ui()
         
         # Auto refresh timer
         self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.refresh_listings)
+        self.refresh_timer.timeout.connect(self._on_refresh_timer)
         self.refresh_timer.start(60000)  # Refresh every minute
         
         # Search debounce timer
@@ -62,6 +65,12 @@ class ListingsWidget(QWidget):
             self.search_input.selectAll()
         except Exception:
             pass
+
+    def _on_refresh_timer(self):
+        if not self.isVisible():
+            self._pending_refresh = True
+            return
+        self.refresh_listings()
     
     def _open_selected(self):
         """Open currently selected item"""
@@ -91,7 +100,7 @@ class ListingsWidget(QWidget):
                 from settings_manager import SettingsManager
                 settings = SettingsManager()
                 self._standalone_db = DatabaseManager(settings.settings.db_path)
-                self.refresh_listings()
+                self.refresh_listings(force=True)
             except Exception as e:
                 print(f"Could not load initial listings: {e}")
     
@@ -99,7 +108,7 @@ class ListingsWidget(QWidget):
         """Set or update the monitor engine"""
         self.engine = engine
         self._standalone_db = None  # Use engine's DB instead
-        self.refresh_listings()
+        self.refresh_listings(force=True)
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -193,7 +202,7 @@ class ListingsWidget(QWidget):
                 background-color: #585b70;
             }
         """)
-        refresh_btn.clicked.connect(self.refresh_listings)
+        refresh_btn.clicked.connect(lambda: self.refresh_listings(force=True))
         header_layout.addWidget(refresh_btn)
         
         # Compare button
@@ -332,7 +341,7 @@ class ListingsWidget(QWidget):
     
     def _do_search(self):
         """Actually perform the search after debounce"""
-        self.refresh_listings()
+        self.refresh_listings(force=True)
     
     def on_platform_changed(self, text):
         platform_map = {
@@ -343,7 +352,7 @@ class ListingsWidget(QWidget):
         }
         self.current_platform = platform_map.get(text, "all")
         self.current_page = 0
-        self.refresh_listings()
+        self.refresh_listings(force=True)
     
     def on_status_changed(self, text):
         """Handle status filter change"""
@@ -355,9 +364,33 @@ class ListingsWidget(QWidget):
         }
         self.current_status = status_map.get(text, "all")
         self.current_page = 0
-        self.refresh_listings()
+        self.refresh_listings(force=True)
     
-    def refresh_listings(self):
+    def _make_table_signature(self, listings: list[dict], platform: Optional[str], status: Optional[str], offset: int):
+        return (
+            platform,
+            status,
+            self.search_text,
+            self.current_page,
+            self.page_size,
+            self.total_count,
+            offset,
+            tuple(
+                (
+                    row.get("id"),
+                    row.get("platform"),
+                    row.get("article_id"),
+                    row.get("title"),
+                    row.get("price"),
+                    row.get("keyword"),
+                    row.get("created_at"),
+                    row.get("sale_status"),
+                )
+                for row in listings
+            ),
+        )
+
+    def refresh_listings(self, force: bool = False):
         # Get DB from engine or standalone
         db = None
         if self.engine and hasattr(self.engine, 'db'):
@@ -390,6 +423,15 @@ class ListingsWidget(QWidget):
                 search=self.search_text,
                 status=status,
             )
+
+            signature = self._make_table_signature(listings, platform, status, offset)
+            if not force and signature == self._last_table_signature:
+                total_pages = max(1, (self.total_count + self.page_size - 1) // self.page_size)
+                self.page_label.setText(f"{self.current_page + 1} / {total_pages}")
+                self.count_label.setText(f"총 {self.total_count:,}개")
+                self.prev_btn.setEnabled(self.current_page > 0)
+                self.next_btn.setEnabled(self.current_page < total_pages - 1)
+                return
             
             # Update table
             self.table.setRowCount(len(listings))
@@ -438,6 +480,8 @@ class ListingsWidget(QWidget):
             
             self.prev_btn.setEnabled(self.current_page > 0)
             self.next_btn.setEnabled(self.current_page < total_pages - 1)
+            self._last_table_signature = signature
+            self._pending_refresh = False
             
         except Exception as e:
             print(f"Error refreshing listings: {e}")
@@ -445,13 +489,18 @@ class ListingsWidget(QWidget):
     def prev_page(self):
         if self.current_page > 0:
             self.current_page -= 1
-            self.refresh_listings()
+            self.refresh_listings(force=True)
     
     def next_page(self):
         total_pages = (self.total_count + self.page_size - 1) // self.page_size
         if self.current_page < total_pages - 1:
             self.current_page += 1
-            self.refresh_listings()
+            self.refresh_listings(force=True)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._pending_refresh:
+            self.refresh_listings(force=True)
     
     def on_row_double_click(self, row, col):
         item = self.table.item(row, 0)

@@ -22,10 +22,16 @@ class StatsWidget(QWidget):
         super().__init__(parent)
         self.engine = engine
         self._standalone_db = None  # For accessing DB without engine running
+        self._pending_refresh = False
+        self._last_platform_signature = None
+        self._last_daily_signature = None
+        self._last_recent_signature = None
+        self._last_changes_signature = None
+        self._last_analysis_signature = None
         self.setup_ui()
         
         self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.refresh_stats)
+        self.refresh_timer.timeout.connect(self._on_refresh_timer)
         self.refresh_timer.start(30000)
         
         # Try to load existing data on startup
@@ -39,7 +45,7 @@ class StatsWidget(QWidget):
                 from settings_manager import SettingsManager
                 settings = SettingsManager()
                 self._standalone_db = DatabaseManager(settings.settings.db_path)
-                self.refresh_stats()
+                self.refresh_stats(force=True)
             except Exception as e:
                 print(f"Could not load initial stats: {e}")
     
@@ -47,6 +53,12 @@ class StatsWidget(QWidget):
         """Set or update the monitor engine"""
         self.engine = engine
         self._standalone_db = None  # Use engine's DB instead
+        self.refresh_stats(force=True)
+
+    def _on_refresh_timer(self):
+        if not self.isVisible():
+            self._pending_refresh = True
+            return
         self.refresh_stats()
     
     def setup_ui(self):
@@ -93,7 +105,7 @@ class StatsWidget(QWidget):
         refresh_btn = QPushButton("🔄 새로고침")
         refresh_btn.setObjectName("secondary")
         refresh_btn.setToolTip("통계 데이터를 새로 불러옵니다")
-        refresh_btn.clicked.connect(self.refresh_stats)
+        refresh_btn.clicked.connect(lambda: self.refresh_stats(force=True))
         header_layout.addWidget(refresh_btn)
         
         layout.addLayout(header_layout)
@@ -253,7 +265,45 @@ class StatsWidget(QWidget):
         scroll.setWidget(content_widget)
         main_layout.addWidget(scroll)
 
-    def refresh_stats(self):
+    def _signature_recent(self, recent: list[dict]):
+        return tuple(
+            (
+                item.get("id"),
+                item.get("platform"),
+                item.get("title"),
+                item.get("price"),
+                item.get("keyword"),
+                item.get("created_at"),
+            )
+            for item in recent
+        )
+
+    def _signature_changes(self, changes: list[dict]):
+        return tuple(
+            (
+                row.get("platform"),
+                row.get("article_id"),
+                row.get("title"),
+                row.get("old_price"),
+                row.get("new_price"),
+                row.get("changed_at"),
+            )
+            for row in changes
+        )
+
+    def _signature_analysis(self, analysis: list[dict]):
+        return tuple(
+            (
+                row.get("keyword"),
+                row.get("count"),
+                row.get("min_price"),
+                row.get("avg_price"),
+                row.get("max_price"),
+            )
+            for row in analysis
+        )
+
+    def refresh_stats(self, force: bool = False):
         """Refresh statistics"""
         # Get DB from engine or standalone
         db = None
@@ -266,9 +316,18 @@ class StatsWidget(QWidget):
             return
             
         try:
-            # Get stats directly from DB
-            total = db.get_total_listings()
-            by_platform = db.get_listings_by_platform()
+            snap = db.get_dashboard_snapshot(
+                recent_limit=20,
+                price_change_limit=20,
+                price_change_days=20,
+                daily_days=7,
+            )
+            total = snap["total"]
+            by_platform = snap["by_platform"]
+            recent = snap["recent"]
+            changes = snap["price_changes"]
+            analysis = snap["analysis"]
+            daily_stats = snap["daily_stats"]
             
             # Update cards
             self.total_card.set_value(str(total))
@@ -277,54 +336,69 @@ class StatsWidget(QWidget):
             self.joonggonara_card.set_value(str(by_platform.get('joonggonara', 0)))
             
             # Update recent table
-            recent = db.get_recent_listings(20)
-            self.recent_table.setRowCount(len(recent))
-            for i, item in enumerate(recent):
-                platform_item = QTableWidgetItem(item.get('platform', ''))
-                platform_item.setData(Qt.ItemDataRole.UserRole, item.get('url'))
-                platform_item.setData(Qt.ItemDataRole.UserRole + 1, item.get('id'))
-                platform_item.setData(Qt.ItemDataRole.UserRole + 2, item.get('seller'))
-                platform_item.setData(Qt.ItemDataRole.UserRole + 3, item.get('platform'))
-                self.recent_table.setItem(i, 0, platform_item)
-                
-                self.recent_table.setItem(i, 1, QTableWidgetItem(item.get('title', '')))
-                self.recent_table.setItem(i, 2, QTableWidgetItem(item.get('price', '')))
-                self.recent_table.setItem(i, 3, QTableWidgetItem(item.get('keyword', '')))
-                created = item.get('created_at', '')
-                self.recent_table.setItem(i, 4, QTableWidgetItem(created[11:16] if len(created) > 16 else ''))
+            recent_sig = self._signature_recent(recent)
+            if force or recent_sig != self._last_recent_signature:
+                self.recent_table.setRowCount(len(recent))
+                for i, item in enumerate(recent):
+                    platform_item = QTableWidgetItem(item.get('platform', ''))
+                    platform_item.setData(Qt.ItemDataRole.UserRole, item.get('url'))
+                    platform_item.setData(Qt.ItemDataRole.UserRole + 1, item.get('id'))
+                    platform_item.setData(Qt.ItemDataRole.UserRole + 2, item.get('seller'))
+                    platform_item.setData(Qt.ItemDataRole.UserRole + 3, item.get('platform'))
+                    self.recent_table.setItem(i, 0, platform_item)
+                    
+                    self.recent_table.setItem(i, 1, QTableWidgetItem(item.get('title', '')))
+                    self.recent_table.setItem(i, 2, QTableWidgetItem(item.get('price', '')))
+                    self.recent_table.setItem(i, 3, QTableWidgetItem(item.get('keyword', '')))
+                    created = item.get('created_at', '')
+                    self.recent_table.setItem(i, 4, QTableWidgetItem(created[11:16] if len(created) > 16 else ''))
+                self._last_recent_signature = recent_sig
             
             # Update price changes table
-            changes = db.get_price_changes(20)
-            self.price_table.setRowCount(len(changes))
-            for i, change in enumerate(changes):
-                title_item = QTableWidgetItem(change.get('title', '')[:30])
-                title_item.setData(Qt.ItemDataRole.UserRole, change.get('url'))
-                self.price_table.setItem(i, 0, title_item)
-                
-                self.price_table.setItem(i, 1, QTableWidgetItem(str(change.get('old_price', ''))))
-                self.price_table.setItem(i, 2, QTableWidgetItem(str(change.get('new_price', ''))))
-                changed_at = change.get('changed_at', '')
-                self.price_table.setItem(i, 3, QTableWidgetItem(changed_at[11:16] if len(changed_at) > 16 else ''))
+            changes_sig = self._signature_changes(changes)
+            if force or changes_sig != self._last_changes_signature:
+                self.price_table.setRowCount(len(changes))
+                for i, change in enumerate(changes):
+                    title_item = QTableWidgetItem(change.get('title', '')[:30])
+                    title_item.setData(Qt.ItemDataRole.UserRole, change.get('url'))
+                    self.price_table.setItem(i, 0, title_item)
+                    
+                    self.price_table.setItem(i, 1, QTableWidgetItem(str(change.get('old_price', ''))))
+                    self.price_table.setItem(i, 2, QTableWidgetItem(str(change.get('new_price', ''))))
+                    changed_at = change.get('changed_at', '')
+                    self.price_table.setItem(i, 3, QTableWidgetItem(changed_at[11:16] if len(changed_at) > 16 else ''))
+                self._last_changes_signature = changes_sig
 
             # Update analysis table
-            analysis = db.get_keyword_price_stats()
-            self.analysis_table.setRowCount(len(analysis))
-            for i, row in enumerate(analysis):
-                self.analysis_table.setItem(i, 0, QTableWidgetItem(row.get('keyword', '')))
-                self.analysis_table.setItem(i, 1, QTableWidgetItem(str(row.get('count', 0))))
-                
-                min_p = row.get('min_price', 0)
-                avg_p = row.get('avg_price', 0)
-                max_p = row.get('max_price', 0)
-                
-                self.analysis_table.setItem(i, 2, QTableWidgetItem(f"{min_p:,}원" if min_p else "-"))
-                self.analysis_table.setItem(i, 3, QTableWidgetItem(f"{avg_p:,}원" if avg_p else "-"))
-                self.analysis_table.setItem(i, 4, QTableWidgetItem(f"{max_p:,}원" if max_p else "-"))
+            analysis_sig = self._signature_analysis(analysis)
+            if force or analysis_sig != self._last_analysis_signature:
+                self.analysis_table.setRowCount(len(analysis))
+                for i, row in enumerate(analysis):
+                    self.analysis_table.setItem(i, 0, QTableWidgetItem(row.get('keyword', '')))
+                    self.analysis_table.setItem(i, 1, QTableWidgetItem(str(row.get('count', 0))))
+                    
+                    min_p = row.get('min_price', 0)
+                    avg_p = row.get('avg_price', 0)
+                    max_p = row.get('max_price', 0)
+                    
+                    self.analysis_table.setItem(i, 2, QTableWidgetItem(f"{min_p:,}원" if min_p else "-"))
+                    self.analysis_table.setItem(i, 3, QTableWidgetItem(f"{avg_p:,}원" if avg_p else "-"))
+                    self.analysis_table.setItem(i, 4, QTableWidgetItem(f"{max_p:,}원" if max_p else "-"))
+                self._last_analysis_signature = analysis_sig
 
             # Update charts
-            self.platform_chart.update_chart(by_platform)
-            daily_stats = db.get_daily_stats(7)
-            self.daily_chart.update_chart(daily_stats)
+            platform_sig = tuple(sorted(by_platform.items()))
+            daily_sig = tuple(
+                (d.get("date"), d.get("items_found"), d.get("new_items"))
+                for d in daily_stats
+            )
+            if force or platform_sig != self._last_platform_signature:
+                self.platform_chart.update_chart(by_platform)
+                self._last_platform_signature = platform_sig
+            if force or daily_sig != self._last_daily_signature:
+                self.daily_chart.update_chart(daily_stats)
+                self._last_daily_signature = daily_sig
+            self._pending_refresh = False
                 
         except Exception as e:
             print(f"Error refreshing stats: {e}")
@@ -445,6 +519,11 @@ class StatsWidget(QWidget):
             QMessageBox.information(self, "완료", f"✅ {message}")
         else:
             QMessageBox.critical(self, "실패", f"저장 실패: {message}")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._pending_refresh:
+            self.refresh_stats(force=True)
     
     def closeEvent(self, event):
         """Clean up resources on close"""

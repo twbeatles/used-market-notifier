@@ -140,6 +140,18 @@ class DatabaseManager:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_platform_article ON listings(platform, article_id)')
             # Additional indexes for new features
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_listing ON favorites(listing_id)')
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_search_stats_keyword_checked '
+                'ON search_stats(keyword, checked_at DESC)'
+            )
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_price_history_changed_at '
+                'ON price_history(changed_at DESC)'
+            )
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_notification_log_sent_at '
+                'ON notification_log(sent_at DESC)'
+            )
             
             # Search history table for keyword suggestions
             cursor.execute('''
@@ -185,6 +197,13 @@ class DatabaseManager:
             # Index for sale_status (must be created after column exists for older DBs)
             try:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_sale_status ON listings(sale_status)')
+            except Exception:
+                pass
+            try:
+                cursor.execute(
+                    'CREATE INDEX IF NOT EXISTS idx_listings_status_platform_created '
+                    'ON listings(sale_status, platform, created_at DESC)'
+                )
             except Exception:
                 pass
 
@@ -374,6 +393,7 @@ class DatabaseManager:
                     ''', (item.price, price_numeric, existing['id']))
                     
                     self.conn.commit()
+                    self._invalidate_cache()
                     
                     return False, {
                         'old_price': old_price,
@@ -518,6 +538,120 @@ class DatabaseManager:
                 return datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
             return None
 
+    def get_existing_article_ids(self, platform: str, article_ids: list[str], chunk_size: int = 500) -> set[str]:
+        """Get existing article IDs for a platform in chunks (SQLite variable-safe)."""
+        if not article_ids:
+            return set()
+
+        normalized = [str(aid) for aid in article_ids if aid is not None and str(aid).strip()]
+        if not normalized:
+            return set()
+
+        existing: set[str] = set()
+        with self.lock:
+            cursor = self.conn.cursor()
+            for i in range(0, len(normalized), chunk_size):
+                chunk = normalized[i:i + chunk_size]
+                placeholders = ",".join(["?"] * len(chunk))
+                query = (
+                    f"SELECT article_id FROM listings WHERE platform = ? "
+                    f"AND article_id IN ({placeholders})"
+                )
+                cursor.execute(query, [platform, *chunk])
+                existing.update(str(row["article_id"]) for row in cursor.fetchall())
+        return existing
+
+    def get_dashboard_snapshot(
+        self,
+        recent_limit: int = 20,
+        price_change_limit: int = 20,
+        price_change_days: int = 20,
+        daily_days: int = 7,
+    ) -> dict:
+        """
+        Get dashboard statistics in one call.
+        Uses TTL cache to avoid repeated read bursts from the UI.
+        """
+        cache_key = f"dashboard:{recent_limit}:{price_change_limit}:{price_change_days}:{daily_days}"
+        now = datetime.now()
+
+        with self.lock:
+            if (
+                self._cache_time is not None
+                and (now - self._cache_time).total_seconds() < self._cache_ttl
+                and cache_key in self._stats_cache
+            ):
+                return self._stats_cache[cache_key]
+
+            cursor = self.conn.cursor()
+
+            cursor.execute('SELECT COUNT(*) as count FROM listings')
+            total = cursor.fetchone()['count']
+
+            cursor.execute('''
+                SELECT platform, COUNT(*) as count 
+                FROM listings 
+                GROUP BY platform
+            ''')
+            by_platform = {row['platform']: row['count'] for row in cursor.fetchall()}
+
+            cursor.execute('''
+                SELECT * FROM listings
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (recent_limit,))
+            recent = [dict(row) for row in cursor.fetchall()]
+
+            cursor.execute('''
+                SELECT 
+                    l.platform, l.article_id, l.title, l.url, l.thumbnail,
+                    ph.old_price, ph.new_price, ph.changed_at
+                FROM price_history ph
+                JOIN listings l ON ph.listing_id = l.id
+                WHERE ph.changed_at >= datetime('now', ?)
+                ORDER BY ph.changed_at DESC
+                LIMIT ?
+            ''', (f'-{price_change_days} days', price_change_limit))
+            price_changes = [dict(row) for row in cursor.fetchall()]
+
+            cursor.execute('''
+                SELECT 
+                    keyword,
+                    COUNT(*) as count,
+                    MIN(price_numeric) as min_price,
+                    CAST(AVG(price_numeric) as INTEGER) as avg_price,
+                    MAX(price_numeric) as max_price
+                FROM listings
+                WHERE price_numeric > 0 
+                GROUP BY keyword
+                ORDER BY count DESC
+            ''')
+            analysis = [dict(row) for row in cursor.fetchall()]
+
+            cursor.execute('''
+                SELECT 
+                    DATE(checked_at) as date,
+                    SUM(items_found) as items_found,
+                    SUM(new_items) as new_items
+                FROM search_stats
+                WHERE checked_at >= datetime('now', ?)
+                GROUP BY DATE(checked_at)
+                ORDER BY date
+            ''', (f'-{daily_days} days',))
+            daily = [dict(row) for row in cursor.fetchall()]
+
+            snapshot = {
+                'total': total,
+                'by_platform': by_platform,
+                'recent': recent,
+                'price_changes': price_changes,
+                'analysis': analysis,
+                'daily_stats': daily,
+            }
+            self._stats_cache[cache_key] = snapshot
+            self._cache_time = now
+            return snapshot
+
     def is_fuzzy_duplicate(self, item: Item, threshold: float = 0.9) -> bool:
         """
         Check if item is a fuzzy duplicate of recent items.
@@ -611,6 +745,7 @@ class DatabaseManager:
                     VALUES (?, ?, ?)
                 ''', (listing_id, notes, target_price))
                 self.conn.commit()
+                self._invalidate_cache()
                 return True
             except sqlite3.IntegrityError:
                 return False
@@ -636,6 +771,7 @@ class DatabaseManager:
                 UPDATE favorites SET {", ".join(updates)} WHERE listing_id = ?
             ''', tuple(params))
             self.conn.commit()
+            self._invalidate_cache()
 
     def remove_favorite(self, listing_id: int):
         """Remove a listing from favorites"""
@@ -643,6 +779,7 @@ class DatabaseManager:
             cursor = self.conn.cursor()
             cursor.execute('DELETE FROM favorites WHERE listing_id = ?', (listing_id,))
             self.conn.commit()
+            self._invalidate_cache()
     
     def is_favorite(self, listing_id: int) -> bool:
         """Check if a listing is in favorites"""
@@ -681,6 +818,7 @@ class DatabaseManager:
                 VALUES (?, ?, ?)
             ''', (listing_id, notification_type, message[:200]))  # store preview
             self.conn.commit()
+            self._invalidate_cache()
 
     def get_notification_logs(self, limit: int = 50, offset: int = 0) -> list:
         """Get notification logs"""
@@ -709,6 +847,7 @@ class DatabaseManager:
                 created_at=CURRENT_TIMESTAMP
             ''', (seller_name, platform, is_blocked, notes))
             self.conn.commit()
+            self._invalidate_cache()
 
     def remove_seller_filter(self, seller_name: str, platform: str):
         """Remove a seller filter"""
@@ -719,6 +858,7 @@ class DatabaseManager:
                 WHERE seller_name = ? AND platform = ?
             ''', (seller_name, platform))
             self.conn.commit()
+            self._invalidate_cache()
 
     def get_blocked_sellers(self) -> list:
         """Get list of blocked sellers"""
@@ -756,6 +896,7 @@ class DatabaseManager:
                 last_used = CURRENT_TIMESTAMP
             ''', (keyword,))
             self.conn.commit()
+            self._invalidate_cache()
     
     def get_search_history(self, limit: int = 10) -> list:
         """Get recent search keywords, ordered by last used"""
@@ -775,6 +916,7 @@ class DatabaseManager:
             cursor = self.conn.cursor()
             cursor.execute('DELETE FROM search_history')
             self.conn.commit()
+            self._invalidate_cache()
     
     # Listing Notes Methods
     def add_listing_note(self, listing_id: int, note: str = "", status_tag: str = "interested") -> bool:
@@ -791,6 +933,7 @@ class DatabaseManager:
                     updated_at = CURRENT_TIMESTAMP
                 ''', (listing_id, note, status_tag))
                 self.conn.commit()
+                self._invalidate_cache()
                 return True
             except Exception:
                 return False
@@ -813,6 +956,7 @@ class DatabaseManager:
             cursor = self.conn.cursor()
             cursor.execute('DELETE FROM listing_notes WHERE listing_id = ?', (listing_id,))
             self.conn.commit()
+            self._invalidate_cache()
     
     def get_listings_with_notes(self) -> list:
         """Get all listings that have notes"""
@@ -837,6 +981,7 @@ class DatabaseManager:
                 WHERE id = ?
             ''', (status, listing_id))
             self.conn.commit()
+            self._invalidate_cache()
     
     def detect_sale_status(self, title: str) -> str:
         """Detect sale status from title text"""
@@ -984,6 +1129,7 @@ class DatabaseManager:
                 ''', (listing_id, tags_json))
             
             self.conn.commit()
+            self._invalidate_cache()
     
     def get_auto_tags(self, listing_id: int) -> list:
         """Get auto-generated tags for a listing"""

@@ -148,10 +148,15 @@ class MainWindow(QMainWindow):
         self.engine = MonitorEngine(self.settings_manager, db=self.db)
         self.monitor_thread = None
         self._is_quitting = False
+        self._live_data_dirty = {"stats": False, "listings": False}
+        self._ui_refresh_request_count = 0
         
         self.setup_ui()
         self.setup_tray()
         self.setup_shortcuts()
+        self._ui_refresh_timer = QTimer(self)
+        self._ui_refresh_timer.setSingleShot(True)
+        self._ui_refresh_timer.timeout.connect(self._flush_live_data_refresh)
         
         if self.settings_manager.settings.start_minimized:
             self.hide()
@@ -210,9 +215,10 @@ class MainWindow(QMainWindow):
 
         try:
             if hasattr(self, "stats_widget") and self.stats_widget:
-                self.stats_widget.refresh_stats()
+                self.stats_widget.refresh_stats(force=True)
             if hasattr(self, "listings_widget") and self.listings_widget:
-                self.listings_widget.refresh_listings()
+                self.listings_widget.refresh_listings(force=True)
+            self._live_data_dirty = {"stats": False, "listings": False}
         except Exception:
             pass
 
@@ -297,6 +303,7 @@ class MainWindow(QMainWindow):
         self.log_widget = LogWidget()
         self.log_widget.setup_logging()
         self.tabs.addTab(self.log_widget, "📋 로그")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         
         content_layout.addWidget(self.tabs)
         layout.addWidget(content)
@@ -538,14 +545,48 @@ class MainWindow(QMainWindow):
 </table>
         """
         QMessageBox.information(self, "단축키 도움말", help_text)
+
+    def _mark_live_data_dirty(self, reason: str = ""):
+        self._live_data_dirty["stats"] = True
+        self._live_data_dirty["listings"] = True
+        self._ui_refresh_request_count += 1
+        if self._ui_refresh_request_count % 20 == 0 and hasattr(self, "log_widget") and self.log_widget:
+            self.log_widget.append_log(
+                f"[perf] UI refresh requests={self._ui_refresh_request_count}, reason={reason or 'event'}",
+                "INFO",
+            )
+        if not self._ui_refresh_timer.isActive():
+            self._ui_refresh_timer.start(400)
+
+    def _flush_live_data_refresh(self, force: bool = False):
+        if not hasattr(self, "tabs") or not self.tabs:
+            return
+        current = self.tabs.currentIndex()
+
+        if self._live_data_dirty.get("listings") and (force or current == 1):
+            try:
+                self.listings_widget.refresh_listings(force=True)
+                self._live_data_dirty["listings"] = False
+            except Exception:
+                pass
+
+        if self._live_data_dirty.get("stats") and (force or current == 2):
+            try:
+                self.stats_widget.refresh_stats(force=True)
+                self._live_data_dirty["stats"] = False
+            except Exception:
+                pass
+
+    def _on_tab_changed(self, index: int):
+        self._flush_live_data_refresh(force=False)
     
     def refresh_current_tab(self):
         """Refresh data in current tab"""
         current = self.tabs.currentWidget()
         if hasattr(current, 'refresh_listings'):
-            current.refresh_listings()
+            current.refresh_listings(force=True)
         elif hasattr(current, 'refresh_stats'):
-            current.refresh_stats()
+            current.refresh_stats(force=True)
         elif hasattr(current, 'refresh_list'):
             current.refresh_list()
         elif hasattr(current, 'refresh'):
@@ -689,17 +730,14 @@ class MainWindow(QMainWindow):
                 f"{item.title}\n{item.price}"
             )
         
-        # Always refresh stats and listings (even during initial crawl)
-        self.stats_widget.refresh_stats()
-        self.listings_widget.refresh_listings()
+        self._mark_live_data_dirty(reason="new_item")
     
     def on_price_change(self, item, old_price: str, new_price: str):
         self.tray_icon.show_notification(
             "💰 가격 변동",
             f"{item.title}\n{old_price} → {new_price}"
         )
-        self.stats_widget.refresh_stats()
-        self.listings_widget.refresh_listings()
+        self._mark_live_data_dirty(reason="price_change")
     
     def on_error(self, error: str):
         self.status_bar.showMessage(f"⚠️ 오류: {error}")
