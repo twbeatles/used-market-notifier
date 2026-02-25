@@ -2,6 +2,7 @@
 """Danggeun Market (당근마켓) scraper using Selenium"""
 
 import json
+import re
 import time
 from urllib.parse import quote
 from selenium.webdriver.common.by import By
@@ -33,6 +34,37 @@ class DanggeunScraper(SeleniumScraper):
             if pattern.lower() in title_lower:
                 return False
         return True
+
+    @staticmethod
+    def _extract_article_id(link: str) -> str | None:
+        if not link:
+            return None
+        m = re.search(r"-(\d+)(?:/)?$", link)
+        if m:
+            return m.group(1)
+        m = re.search(r"/(\d+)(?:\?|$)", link)
+        if m:
+            return m.group(1)
+        return None
+
+    @staticmethod
+    def _extract_location(text: str) -> str | None:
+        if not text:
+            return None
+        m = re.search(
+            r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\n|,/]{0,20}",
+            text,
+        )
+        return m.group(0).strip() if m else None
+
+    @staticmethod
+    def _normalize_price_text(price: str) -> str:
+        if not price:
+            return "가격문의"
+        digits = "".join(c for c in str(price) if c.isdigit())
+        if not digits:
+            return "가격문의"
+        return f"{int(digits):,}원"
 
     def search(self, keyword: str, location: str = None) -> list[Item]:
         """
@@ -101,25 +133,18 @@ class DanggeunScraper(SeleniumScraper):
                                 price = f"{int(float(price_val))}원"
                         
                         # Extract ID from URL
-                        article_id = None
-                        if link:
-                            # Handle trailing slashes and split
-                            parts = link.rstrip('/').split('-')
-                            if len(parts) > 1:
-                                article_id = parts[-1]
-                            elif parts:
-                                article_id = parts[0].split('/')[-1]
+                        article_id = self._extract_article_id(link)
 
                         if not article_id:
                             continue
 
                         # Robust price parsing
                         try:
-                             if price != "가격문의" and price.replace('원','').replace(',','').isdigit() == False:
-                                  # Try to clean it up
-                                  p_clean = ''.join(c for c in price if c.isdigit())
-                                  if p_clean:
-                                      price = f"{int(p_clean)}원"
+                            if price != "가격문의" and not price.replace('원', '').replace(',', '').isdigit():
+                                # Try to clean it up
+                                p_clean = ''.join(c for c in price if c.isdigit())
+                                if p_clean:
+                                    price = f"{int(p_clean):,}원"
                         except Exception:
                             pass
 
@@ -135,9 +160,7 @@ class DanggeunScraper(SeleniumScraper):
                             link=link,
                             keyword=keyword,
                             thumbnail=image_url if image_url else None,
-                            # Danggeun search results often don't expose reliable location without opening detail pages.
-                            # Use None so engine-level location filtering remains best-effort (unknown location passes).
-                            location=None
+                            location=self._extract_location(desc),
                         )
                         items.append(item)
                     except Exception as e:
@@ -169,14 +192,8 @@ class DanggeunScraper(SeleniumScraper):
                                 break
                         
                         # Extract article ID
-                        article_id = None
-                        if link:
-                            parts = link.rstrip('/').split('-')
-                            if len(parts) > 1:
-                                article_id = parts[-1]
-                            elif parts:
-                                article_id = parts[0].split('/')[-1]
-                                
+                        article_id = self._extract_article_id(link)
+
                         if not article_id:
                             continue
                                 
@@ -197,11 +214,11 @@ class DanggeunScraper(SeleniumScraper):
                             platform='danggeun',
                             article_id=article_id,
                             title=title,
-                            price=price,
+                            price=self._normalize_price_text(price),
                             link=link,
                             keyword=keyword,
                             thumbnail=thumbnail,
-                            location=None
+                            location=self._extract_location(text),
                         )
                         items.append(item)
                     except Exception:

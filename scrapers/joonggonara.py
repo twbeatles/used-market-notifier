@@ -35,8 +35,10 @@ class JoonggonaraScraper(SeleniumScraper):
         """Check if title is valid (not sold out or placeholder)"""
         if not title or len(title.strip()) < 2:
             return False
-        if title.strip() in self.INVALID_TITLE_PATTERNS:
-            return False
+        title_lower = title.strip().lower()
+        for pattern in self.INVALID_TITLE_PATTERNS:
+            if pattern.lower() in title_lower:
+                return False
         return True
 
     @staticmethod

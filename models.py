@@ -80,8 +80,17 @@ class SearchKeyword:
         """Check if item location matches filter"""
         if not self.location:
             return True
+
+        item_platform = (item.platform or "").lower()
+        # Danggeun location filtering is strict: unknown location should not pass.
+        if item_platform == "danggeun":
+            if not item.location:
+                return False
+            return self.location.lower() in item.location.lower()
+
+        # Other platforms keep best-effort behavior.
         if not item.location:
-            return True  # Allow if location unknown
+            return True
         return self.location.lower() in item.location.lower()
 
     def has_excluded_words(self, item: Item) -> bool:
@@ -230,6 +239,14 @@ class AppSettings:
     # Auto-tagging settings (#28)
     auto_tagging_enabled: bool = True
     tag_rules: list[TagRule] = field(default_factory=list)
+
+    # Scraper engine strategy
+    # - playwright_primary: Playwright first, Selenium fallback
+    # - selenium_primary: Selenium first, Playwright fallback
+    # - selenium_only: Selenium only (no fallback)
+    scraper_mode: str = "playwright_primary"
+    fallback_on_empty_results: bool = True
+    max_fallback_per_cycle: int = 3
     
     # Message templates (#29)
     message_templates: list[MessageTemplate] = field(default_factory=list)

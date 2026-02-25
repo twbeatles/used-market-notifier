@@ -1,10 +1,17 @@
 # notifiers/discord_notifier.py
 """Discord webhook notification handler"""
 
-import aiohttp
 from typing import Optional
 from models import Item
 from .base import BaseNotifier
+
+try:
+    import aiohttp
+except Exception:
+    aiohttp = None
+    _AIOHTTP_CLIENT_ERROR = Exception
+else:
+    _AIOHTTP_CLIENT_ERROR = aiohttp.ClientError
 
 
 class DiscordNotifier(BaseNotifier):
@@ -18,6 +25,9 @@ class DiscordNotifier(BaseNotifier):
     async def _send_webhook(self, payload: dict, max_retries: int = 3) -> bool:
         """Send webhook request to Discord with retry logic"""
         if not self.enabled:
+            return False
+        if aiohttp is None:
+            self.logger.error("aiohttp is not installed; Discord notifier is unavailable")
             return False
         
         import asyncio
@@ -72,7 +82,7 @@ class DiscordNotifier(BaseNotifier):
                     await asyncio.sleep(1.0 * (attempt + 1))
                     continue
                 return False
-            except aiohttp.ClientError as e:
+            except _AIOHTTP_CLIENT_ERROR as e:
                 self.logger.warning(f"Discord connection error (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(1.0 * (attempt + 1))

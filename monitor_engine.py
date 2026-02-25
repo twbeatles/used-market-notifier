@@ -3,6 +3,7 @@
 
 import asyncio
 import concurrent.futures
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,7 +14,15 @@ from auto_tagger import AutoTagger
 from db import DatabaseManager
 from models import NotificationType, SearchKeyword
 from notifiers import DiscordNotifier, SlackNotifier, TelegramNotifier
-from scrapers import BunjangScraper, DanggeunScraper, Item, JoonggonaraScraper
+from scrapers import (
+    BunjangScraper,
+    DanggeunScraper,
+    Item,
+    JoonggonaraScraper,
+    PlaywrightBunjangScraper,
+    PlaywrightDanggeunScraper,
+    PlaywrightJoonggonaraScraper,
+)
 from settings_manager import SettingsManager
 
 
@@ -46,7 +55,12 @@ class MonitorEngine:
         self.db = db or DatabaseManager(self.settings.settings.db_path)
         self._owns_db = db is None
 
-        self.scrapers: dict[str, object] = {}
+        self.primary_scrapers: dict[str, object] = {}
+        self.fallback_scrapers: dict[str, object] = {}
+        self.primary_scraper_kind: dict[str, str] = {}
+        self.fallback_scraper_kind: dict[str, str] = {}
+        # Backward-compatible alias used by some UI paths.
+        self.scrapers = self.primary_scrapers
         self.notifiers: list[object] = []
         self.running = False
         self._task: Optional[asyncio.Task] = None
@@ -70,10 +84,13 @@ class MonitorEngine:
 
         # Consecutive empty result tracking per platform
         self._empty_result_counter: dict[str, int] = {}
+        self._playwright_runtime_checked = False
+        self._playwright_runtime_available = False
 
         # Per-cycle aggregates (set by run_cycle)
         self._cycle_platform_raw_counts: Optional[dict[str, int]] = None
         self._cycle_platform_attempts: Optional[dict[str, int]] = None
+        self._cycle_fallback_counts: Optional[dict[str, int]] = None
         self._cycle_blocked_set: set[tuple[str, Optional[str]]] = set()
 
         # Callbacks for UI updates
@@ -120,39 +137,115 @@ class MonitorEngine:
         except Exception:
             return AutoTagger()
 
-    def _create_scraper(self, platform: str, headless: bool):
-        """Create a scraper instance for a platform."""
-        if platform == "danggeun":
-            return DanggeunScraper(headless=headless)
-        if platform == "bunjang":
-            return BunjangScraper(headless=headless)
-        if platform == "joonggonara":
-            if headless:
-                self.logger.warning("중고나라: 헤드리스 모드에서 네이버 봇 탐지로 결과가 제한될 수 있습니다")
-            return JoonggonaraScraper(headless=headless)
-        raise ValueError(f"Unsupported platform: {platform}")
+    def _get_scraper_mode(self) -> str:
+        mode = str(getattr(self.settings.settings, "scraper_mode", "playwright_primary") or "").strip().lower()
+        if mode not in ("playwright_primary", "selenium_primary", "selenium_only"):
+            return "playwright_primary"
+        return mode
+
+    def _get_engine_order(self) -> list[str]:
+        mode = self._get_scraper_mode()
+        if mode == "selenium_only":
+            return ["selenium"]
+        if mode == "selenium_primary":
+            return ["selenium", "playwright"]
+        return ["playwright", "selenium"]
+
+    @staticmethod
+    def _probe_playwright_runtime_sync() -> bool:
+        """Check Playwright package + chromium runtime availability."""
+        from playwright.async_api import async_playwright
+
+        async def _probe():
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                try:
+                    page = await browser.new_page()
+                    await page.goto("about:blank")
+                    await page.close()
+                finally:
+                    await browser.close()
+
+        asyncio.run(_probe())
+        return True
+
+    async def _ensure_playwright_runtime(self) -> bool:
+        """Probe Playwright runtime once; cache result for this engine lifetime."""
+        if self._playwright_runtime_checked:
+            return self._playwright_runtime_available
+        self._playwright_runtime_checked = True
+
+        if self._executor is None:
+            return False
+
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(self._executor, self._probe_playwright_runtime_sync)
+            self._playwright_runtime_available = True
+        except Exception as e:
+            self._playwright_runtime_available = False
+            self.logger.warning(
+                "Playwright runtime unavailable. Falling back to Selenium where possible. "
+                f"reason={e} hint='python -m playwright install chromium'"
+            )
+        return self._playwright_runtime_available
+
+    def _create_scraper(self, platform: str, headless: bool, engine_kind: str):
+        """Create a scraper instance for a platform and engine kind."""
+        if platform not in ("danggeun", "bunjang", "joonggonara"):
+            raise ValueError(f"Unsupported platform: {platform}")
+
+        if engine_kind == "selenium":
+            if platform == "danggeun":
+                return DanggeunScraper(headless=headless)
+            if platform == "bunjang":
+                return BunjangScraper(headless=headless)
+            if platform == "joonggonara":
+                if headless:
+                    self.logger.warning("중고나라: 헤드리스 모드에서 네이버 봇 탐지로 결과가 제한될 수 있습니다")
+                return JoonggonaraScraper(headless=headless)
+
+        if engine_kind == "playwright":
+            if platform == "danggeun":
+                if PlaywrightDanggeunScraper is None:
+                    raise RuntimeError("PlaywrightDanggeunScraper unavailable")
+                return PlaywrightDanggeunScraper(headless=headless)
+            if platform == "bunjang":
+                if PlaywrightBunjangScraper is None:
+                    raise RuntimeError("PlaywrightBunjangScraper unavailable")
+                return PlaywrightBunjangScraper(headless=headless)
+            if platform == "joonggonara":
+                if PlaywrightJoonggonaraScraper is None:
+                    raise RuntimeError("PlaywrightJoonggonaraScraper unavailable")
+                return PlaywrightJoonggonaraScraper(headless=headless)
+
+        raise ValueError(f"Unsupported scraper kind: platform={platform}, kind={engine_kind}")
 
     def _close_scraper_safe(self, platform: str, scraper: object) -> None:
         """Best-effort scraper close."""
         try:
             if hasattr(scraper, "close"):
-                scraper.close()
+                result = scraper.close()
+                if inspect.isawaitable(result):
+                    asyncio.run(result)
         except Exception as e:
             self.logger.warning(f"Failed to close scraper '{platform}': {e}")
 
     def _check_scraper_health(self, scraper: object) -> bool:
         """Best-effort scraper driver health check."""
         try:
+            if hasattr(scraper, "is_healthy"):
+                return bool(scraper.is_healthy())
             drv = getattr(scraper, "driver", None)
             if drv is None:
-                return False
+                return True
             _ = drv.current_url
             return True
         except Exception:
             return False
 
     async def initialize_scrapers(self, platforms: Optional[list[str]] = None):
-        """Initialize scrapers, optionally only for target platforms."""
+        """Initialize primary/fallback scrapers, optionally only for target platforms."""
         headless = self.settings.settings.headless_mode
         targets = platforms or ["danggeun", "bunjang", "joonggonara"]
         self._update_status("스크래퍼 초기화 중...")
@@ -161,28 +254,59 @@ class MonitorEngine:
             raise RuntimeError("Executor is not initialized")
 
         loop = asyncio.get_running_loop()
+        engine_order = self._get_engine_order()
         for platform in targets:
-            old_scraper = self.scrapers.pop(platform, None)
-            if old_scraper is not None:
-                await loop.run_in_executor(self._executor, self._close_scraper_safe, platform, old_scraper)
+            old_primary = self.primary_scrapers.pop(platform, None)
+            old_fallback = self.fallback_scrapers.pop(platform, None)
+            self.primary_scraper_kind.pop(platform, None)
+            self.fallback_scraper_kind.pop(platform, None)
+            if old_primary is not None:
+                await loop.run_in_executor(self._executor, self._close_scraper_safe, platform, old_primary)
+            if old_fallback is not None and old_fallback is not old_primary:
+                await loop.run_in_executor(self._executor, self._close_scraper_safe, platform, old_fallback)
 
-            try:
-                scraper = await loop.run_in_executor(self._executor, self._create_scraper, platform, headless)
-                self.scrapers[platform] = scraper
-                self.logger.info(f"{platform} scraper initialized")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize {platform} scraper: {e}")
+            resolved: list[tuple[str, object]] = []
+            for kind in engine_order:
+                if kind == "playwright":
+                    runtime_ok = await self._ensure_playwright_runtime()
+                    if not runtime_ok:
+                        continue
 
-        active_count = len(self.scrapers)
-        self.logger.info(f"Initialized {active_count} scraper(s): {list(self.scrapers.keys())}")
+                try:
+                    scraper = await loop.run_in_executor(self._executor, self._create_scraper, platform, headless, kind)
+                    resolved.append((kind, scraper))
+                except Exception as e:
+                    self.logger.warning(f"Failed to initialize {platform} ({kind}): {e}")
+
+            if not resolved:
+                self.logger.error(f"No scraper initialized for {platform}")
+                continue
+
+            primary_kind, primary_scraper = resolved[0]
+            self.primary_scrapers[platform] = primary_scraper
+            self.primary_scraper_kind[platform] = primary_kind
+
+            if len(resolved) > 1:
+                fallback_kind, fallback_scraper = resolved[1]
+                self.fallback_scrapers[platform] = fallback_scraper
+                self.fallback_scraper_kind[platform] = fallback_kind
+
+            self.logger.info(
+                f"{platform} scraper initialized primary={self.primary_scraper_kind.get(platform)} "
+                f"fallback={self.fallback_scraper_kind.get(platform)}"
+            )
+
+        active_count = len(self.primary_scrapers)
+        self.logger.info(f"Initialized primary scraper(s)={active_count}: {list(self.primary_scrapers.keys())}")
         self._update_status(f"스크래퍼 {active_count}개 초기화 완료")
 
-    async def _ensure_scraper(self, platform: str) -> bool:
-        """Ensure platform scraper exists and its driver is healthy."""
-        scraper = self.scrapers.get(platform)
+    async def _ensure_scraper(self, platform: str, use_fallback: bool = False) -> bool:
+        """Ensure platform scraper exists and its health is acceptable."""
+        scraper_map = self.fallback_scrapers if use_fallback else self.primary_scrapers
+        scraper = scraper_map.get(platform)
         if scraper is None:
             await self.initialize_scrapers([platform])
-            scraper = self.scrapers.get(platform)
+            scraper = scraper_map.get(platform)
             if scraper is None:
                 return False
 
@@ -193,9 +317,10 @@ class MonitorEngine:
         if healthy:
             return True
 
-        self.logger.warning(f"Scraper health check failed for {platform}; reinitializing")
+        scraper_label = "fallback" if use_fallback else "primary"
+        self.logger.warning(f"{scraper_label} scraper health check failed for {platform}; reinitializing")
         await self.initialize_scrapers([platform])
-        return platform in self.scrapers
+        return platform in scraper_map
 
     async def _sleep_or_stop(self, seconds: float) -> None:
         """Sleep unless a stop has been requested (improves responsiveness on stop/close)."""
@@ -365,6 +490,50 @@ class MonitorEngine:
         if qsize >= 20:
             self.logger.warning(f"Notification queue backlog size={qsize}")
 
+    @staticmethod
+    def _dedupe_items(items: list[Item]) -> list[Item]:
+        """
+        Deduplicate merged scraper results.
+        Priority key: (platform, article_id)
+        Secondary key: URL/link
+        """
+        deduped: list[Item] = []
+        seen_id_keys: set[tuple[str, str]] = set()
+        seen_links: set[str] = set()
+
+        for item in items or []:
+            platform = str(getattr(item, "platform", "") or "")
+            article_id = str(getattr(item, "article_id", "") or "").strip()
+            link = str(getattr(item, "link", "") or "").strip()
+
+            if platform and article_id:
+                id_key = (platform, article_id)
+                if id_key in seen_id_keys:
+                    continue
+            if link and link in seen_links:
+                continue
+
+            deduped.append(item)
+            if platform and article_id:
+                seen_id_keys.add((platform, article_id))
+            if link:
+                seen_links.add(link)
+
+        return deduped
+
+    def _fallback_budget_available(self, platform: str) -> bool:
+        max_fallback = max(0, int(getattr(self.settings.settings, "max_fallback_per_cycle", 3) or 0))
+        if max_fallback <= 0:
+            return False
+        if self._cycle_fallback_counts is None:
+            return True
+        return self._cycle_fallback_counts.get(platform, 0) < max_fallback
+
+    def _increment_fallback_budget(self, platform: str) -> None:
+        if self._cycle_fallback_counts is None:
+            return
+        self._cycle_fallback_counts[platform] = self._cycle_fallback_counts.get(platform, 0) + 1
+
     async def search_keyword(self, keyword_config: SearchKeyword, blocked_set: Optional[set] = None) -> int:
         """Search a single keyword across enabled platforms and return new-item count."""
         search_start = perf_counter()
@@ -381,32 +550,88 @@ class MonitorEngine:
             if self._cycle_platform_attempts is not None:
                 self._cycle_platform_attempts[platform] = self._cycle_platform_attempts.get(platform, 0) + 1
 
-            if not await self._ensure_scraper(platform):
-                return platform, []
+            if not await self._ensure_scraper(platform, use_fallback=False):
+                return platform, [], 0, 0, False, "primary_unavailable"
 
-            scraper = self.scrapers.get(platform)
-            if scraper is None:
-                return platform, []
+            primary_scraper = self.primary_scrapers.get(platform)
+            primary_kind = self.primary_scraper_kind.get(platform, "unknown")
+            fallback_scraper = self.fallback_scrapers.get(platform)
+            fallback_kind = self.fallback_scraper_kind.get(platform, "none")
 
-            async with semaphore:
+            if primary_scraper is None:
+                return platform, [], 0, 0, False, "primary_unavailable"
+
+            async def run_scrape(scraper: object, engine_kind: str):
                 started = perf_counter()
                 try:
-                    loop = asyncio.get_running_loop()
-                    items_raw = await loop.run_in_executor(
-                        self._executor,
-                        scraper.safe_search,
-                        keyword_config.keyword,
-                        keyword_config.location,
-                    )
+                    async with semaphore:
+                        loop = asyncio.get_running_loop()
+                        items_raw = await loop.run_in_executor(
+                            self._executor,
+                            scraper.safe_search,
+                            keyword_config.keyword,
+                            keyword_config.location,
+                        )
+                    error = None
                 except Exception as e:
-                    self.logger.error(f"Error searching {platform}: {e}")
                     items_raw = []
+                    error = str(e)
                 elapsed_ms = (perf_counter() - started) * 1000
                 self.logger.info(
                     f"[perf] scrape keyword='{keyword_config.keyword}' platform={platform} "
-                    f"items={len(items_raw)} elapsed_ms={elapsed_ms:.1f}"
+                    f"engine={engine_kind} items={len(items_raw)} elapsed_ms={elapsed_ms:.1f}"
                 )
-            return platform, items_raw
+                return items_raw, error
+
+            started_total = perf_counter()
+            primary_items, primary_error = await run_scrape(primary_scraper, primary_kind)
+
+            fallback_used = False
+            fallback_reason = ""
+            fallback_items: list[Item] = []
+
+            if primary_error:
+                fallback_reason = "primary_exception"
+            elif (
+                len(primary_items) == 0
+                and bool(getattr(self.settings.settings, "fallback_on_empty_results", True))
+            ):
+                fallback_reason = "primary_empty"
+
+            if fallback_reason:
+                if fallback_scraper is None:
+                    fallback_reason = f"{fallback_reason}_no_fallback"
+                elif not self._fallback_budget_available(platform):
+                    fallback_reason = f"{fallback_reason}_budget_exceeded"
+                else:
+                    ensured = await self._ensure_scraper(platform, use_fallback=True)
+                    if ensured:
+                        # Re-read fallback scraper in case ensure() reinitialized instances.
+                        fallback_scraper = self.fallback_scrapers.get(platform)
+                        fallback_kind = self.fallback_scraper_kind.get(platform, fallback_kind)
+                        if fallback_scraper is None:
+                            fallback_reason = f"{fallback_reason}_fallback_unavailable"
+                        else:
+                            fallback_used = True
+                            self._increment_fallback_budget(platform)
+                            fallback_items, fallback_error = await run_scrape(fallback_scraper, fallback_kind)
+                            if fallback_error:
+                                self.logger.warning(
+                                    f"Fallback scrape failed: platform={platform} "
+                                    f"engine={fallback_kind} error={fallback_error}"
+                                )
+                    else:
+                        fallback_reason = f"{fallback_reason}_fallback_unavailable"
+
+            merged_items = self._dedupe_items([*primary_items, *fallback_items])
+            total_elapsed_ms = (perf_counter() - started_total) * 1000
+            self.logger.info(
+                f"[scrape] platform={platform} primary_engine={primary_kind} primary_count={len(primary_items)} "
+                f"fallback_used={fallback_used} fallback_engine={fallback_kind} fallback_count={len(fallback_items)} "
+                f"fallback_reason={fallback_reason or '-'} merged_count={len(merged_items)} "
+                f"elapsed_ms={total_elapsed_ms:.1f}"
+            )
+            return platform, merged_items, len(primary_items), len(fallback_items), fallback_used, fallback_reason
 
         scrape_tasks = []
         for platform in keyword_config.platforms:
@@ -421,7 +646,7 @@ class MonitorEngine:
                 if isinstance(result, Exception):
                     self.logger.error(f"Unexpected scraping task failure: {result}")
                     continue
-                platform, items_raw = result
+                platform, items_raw, _, _, _, _ = result
                 if self._cycle_platform_raw_counts is not None:
                     self._cycle_platform_raw_counts[platform] = self._cycle_platform_raw_counts.get(platform, 0) + len(
                         items_raw
@@ -537,6 +762,7 @@ class MonitorEngine:
 
         self._cycle_platform_raw_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
         self._cycle_platform_attempts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        self._cycle_fallback_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
         blocked_sellers = self.db.get_blocked_sellers()
         self._cycle_blocked_set = {
             (row.get("seller_name"), row.get("platform")) for row in blocked_sellers if row.get("seller_name")
@@ -583,6 +809,7 @@ class MonitorEngine:
         finally:
             self._cycle_platform_raw_counts = None
             self._cycle_platform_attempts = None
+            self._cycle_fallback_counts = None
             self._cycle_blocked_set = set()
 
         if total_new == 0 and not self.is_first_run:
@@ -613,14 +840,14 @@ class MonitorEngine:
         self._stop_event = asyncio.Event()
         self._start_task = asyncio.current_task()
 
-        self.logger.info("Starting monitor engine...")
+        self.logger.info(f"Starting monitor engine... mode={self._get_scraper_mode()}")
 
         try:
             await self.initialize_scrapers()
             self.initialize_notifiers()
             await self._start_notification_worker()
 
-            if not self.scrapers:
+            if not self.primary_scrapers:
                 self.logger.error("No scrapers initialized, cannot start monitoring")
                 if self.on_error:
                     self.on_error("No scrapers initialized")
@@ -638,10 +865,10 @@ class MonitorEngine:
 
             while self.running:
                 try:
-                    if not self.scrapers:
+                    if not self.primary_scrapers:
                         self.logger.warning("No active scrapers; attempting reinitialize...")
                         await self.initialize_scrapers()
-                        if not self.scrapers:
+                        if not self.primary_scrapers:
                             error_count += 1
                             if error_count >= max_errors:
                                 if self.on_error:
@@ -747,8 +974,31 @@ class MonitorEngine:
         except Exception as e:
             self.logger.warning(f"Notification queue cleanup failed: {e}")
 
-        scrapers = list(self.scrapers.items())
-        self.scrapers.clear()
+        close_targets: list[tuple[str, object]] = []
+        seen_obj_ids: set[int] = set()
+        for platform, scraper in self.primary_scrapers.items():
+            if scraper is None:
+                continue
+            oid = id(scraper)
+            if oid in seen_obj_ids:
+                continue
+            seen_obj_ids.add(oid)
+            close_targets.append((platform, scraper))
+        for platform, scraper in self.fallback_scrapers.items():
+            if scraper is None:
+                continue
+            oid = id(scraper)
+            if oid in seen_obj_ids:
+                continue
+            seen_obj_ids.add(oid)
+            close_targets.append((platform, scraper))
+
+        self.primary_scrapers.clear()
+        self.fallback_scrapers.clear()
+        self.primary_scraper_kind.clear()
+        self.fallback_scraper_kind.clear()
+
+        scrapers = close_targets
         if scrapers and self._executor is not None:
             try:
                 loop = asyncio.get_running_loop()

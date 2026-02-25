@@ -134,6 +134,9 @@ class SettingsManager:
             'cleanup_exclude_favorites': settings.cleanup_exclude_favorites,
             'cleanup_exclude_noted': settings.cleanup_exclude_noted,
             'auto_tagging_enabled': settings.auto_tagging_enabled,
+            'scraper_mode': getattr(settings, 'scraper_mode', 'playwright_primary'),
+            'fallback_on_empty_results': getattr(settings, 'fallback_on_empty_results', True),
+            'max_fallback_per_cycle': getattr(settings, 'max_fallback_per_cycle', 3),
             'tag_rules': [
                 {
                     'tag_name': t.tag_name,
@@ -233,6 +236,10 @@ class SettingsManager:
                 platform=m.get('platform', 'all'),
             ))
         
+        scraper_mode = data.get('scraper_mode', 'playwright_primary')
+        if scraper_mode not in ('playwright_primary', 'selenium_primary', 'selenium_only'):
+            scraper_mode = 'playwright_primary'
+
         return AppSettings(
             check_interval_seconds=data.get('check_interval_seconds', 300),
             headless_mode=data.get('headless_mode', True),
@@ -257,6 +264,9 @@ class SettingsManager:
             cleanup_exclude_favorites=data.get('cleanup_exclude_favorites', True),
             cleanup_exclude_noted=data.get('cleanup_exclude_noted', True),
             auto_tagging_enabled=data.get('auto_tagging_enabled', True),
+            scraper_mode=scraper_mode,
+            fallback_on_empty_results=data.get('fallback_on_empty_results', True),
+            max_fallback_per_cycle=data.get('max_fallback_per_cycle', 3),
             tag_rules=tag_rules,
             message_templates=message_templates,
         )

@@ -8,6 +8,9 @@
   "theme_mode": "dark",
   "confirm_link_open": true,
   "notifications_enabled": false,
+  "scraper_mode": "playwright_primary",
+  "fallback_on_empty_results": true,
+  "max_fallback_per_cycle": 3,
   "notification_schedule": {
     "enabled": true,
     "start_hour": 0,

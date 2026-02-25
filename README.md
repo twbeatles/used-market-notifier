@@ -4,6 +4,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/PyQt6-6.4+-green.svg" alt="PyQt6">
   <img src="https://img.shields.io/badge/Selenium-4.x-orange.svg" alt="Selenium">
+  <img src="https://img.shields.io/badge/Playwright-1.50+-blue.svg" alt="Playwright">
   <img src="https://img.shields.io/badge/SQLite3-DB-blueviolet.svg" alt="SQLite3">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
 </p>
@@ -133,12 +134,17 @@ source venv/bin/activate  # macOS/Linux
 # 의존성 설치
 pip install -r requirements.txt
 
-# 브라우저 준비 (Selenium)
+# 브라우저 준비 (Playwright + Selenium)
+# - Playwright Chromium 런타임 설치 (권장)
+python -m playwright install chromium
 # - Chrome(또는 Chromium 기반 브라우저)이 설치되어 있어야 합니다.
 # - 드라이버는 webdriver-manager가 자동으로 내려받습니다.
 
 # 실행
 python main.py
+
+# regression tests (team standard)
+python -m pytest -q
 ```
 
 ### CLI 모드 (백그라운드 실행)
@@ -235,10 +241,13 @@ used_market_notifier/
 │   ├── favorites_widget.py
 │   ├── stats_widget.py
 │   └── ...
-├── scrapers/            # 플랫폼 스크래퍼
+├── scrapers/            # 플랫폼 스크래퍼 (Playwright 우선 + Selenium 폴백)
 │   ├── danggeun.py      # 당근마켓
 │   ├── bunjang.py       # 번개장터
 │   ├── joonggonara.py   # 중고나라
+│   ├── playwright_danggeun.py
+│   ├── playwright_bunjang.py
+│   ├── playwright_joonggonara.py
 │   └── stealth.py       # 봇 탐지 우회
 └── notifiers/           # 알림 모듈
     ├── telegram_notifier.py
@@ -257,6 +266,9 @@ used_market_notifier/
   "check_interval_seconds": 300,
   "headless_mode": true,
   "notifications_enabled": true,
+  "scraper_mode": "playwright_primary",
+  "fallback_on_empty_results": true,
+  "max_fallback_per_cycle": 3,
   "minimize_to_tray": true,
   "auto_start_monitoring": false,
   "theme_mode": "dark",
@@ -300,6 +312,14 @@ used_market_notifier/
 
 - **Headless 모드**: 브라우저 창 숨김 (기본)
 - **브라우저 표시**: 디버깅용
+
+### 스크래퍼 모드
+
+| 모드 | 설명 |
+|------|------|
+| `playwright_primary` | Playwright 우선, 실패/빈결과 시 Selenium 폴백 |
+| `selenium_primary` | Selenium 우선, 실패/빈결과 시 Playwright 폴백 |
+| `selenium_only` | Selenium만 사용 (폴백 없음) |
 
 ### 데이터 정리
 
@@ -406,3 +426,41 @@ MIT License
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+## 2026-02 Consistency Update (Dual Engine + Packaging)
+
+This section is the current source of truth and supersedes older statements in this file when conflicts exist.
+
+- Scraper mode supports three values:
+  - `playwright_primary` (default)
+  - `selenium_primary`
+  - `selenium_only`
+- Fallback is triggered only when:
+  - primary scraper raises an exception, or
+  - primary result count is 0 and `fallback_on_empty_results=true`, and
+  - per-platform fallback count is below `max_fallback_per_cycle`.
+- Result merge dedupe key order:
+  - primary key: `(platform, article_id)`
+  - secondary key: `url/link`
+- Danggeun location policy:
+  - if location filter is set, unknown location items are excluded for `danggeun`.
+- Joonggonara title validity filter:
+  - completion keywords are checked by substring match (not exact match).
+
+### Runtime / Build Notes
+
+- Required setup for Playwright path:
+  - `python -m playwright install chromium`
+- Team-standard regression command:
+  - `python -m pytest -q`
+- PyInstaller spec (`used_market_notifier.spec`) includes Playwright Python modules.
+- Chromium runtime binaries are not bundled in the EXE.
+- If Playwright runtime is unavailable at startup, engine automatically degrades to Selenium mode with warning logs.
+
+### Quick Smoke Checklist
+
+1. Configure one keyword per platform.
+2. Run one monitoring cycle.
+3. Verify per-platform scrape log line includes:
+   - `primary_engine`, `primary_count`, `fallback_used`, `fallback_count`, `fallback_reason`, `elapsed_ms`
+4. Confirm new listings are persisted in DB.

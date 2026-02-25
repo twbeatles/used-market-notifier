@@ -2,10 +2,17 @@
 """Telegram notification handler"""
 
 import asyncio
-import aiohttp
 from typing import Optional
 from models import Item
 from .base import BaseNotifier
+
+try:
+    import aiohttp
+except Exception:
+    aiohttp = None
+    _AIOHTTP_CLIENT_ERROR = Exception
+else:
+    _AIOHTTP_CLIENT_ERROR = aiohttp.ClientError
 
 
 class TelegramNotifier(BaseNotifier):
@@ -33,7 +40,7 @@ class TelegramNotifier(BaseNotifier):
         # Leave room for ellipsis.
         return text[: max(0, limit - 1)] + "…"
 
-    async def _read_telegram_retry_after(self, resp: aiohttp.ClientResponse) -> Optional[int]:
+    async def _read_telegram_retry_after(self, resp) -> Optional[int]:
         """
         Telegram may return JSON like:
           {"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after": 3}}
@@ -50,6 +57,9 @@ class TelegramNotifier(BaseNotifier):
     
     async def _request(self, method: str, data: dict = None, files: dict = None, max_retries: int = 3) -> bool:
         """Make API request to Telegram with retry logic"""
+        if aiohttp is None:
+            self.logger.error("aiohttp is not installed; Telegram notifier is unavailable")
+            return False
         url = f"{self.API_BASE}{self.token}/{method}"
         
         for attempt in range(max_retries):
@@ -107,7 +117,7 @@ class TelegramNotifier(BaseNotifier):
                     await asyncio.sleep(1.0 * (attempt + 1))
                     continue
                 return False
-            except aiohttp.ClientError as e:
+            except _AIOHTTP_CLIENT_ERROR as e:
                 self.logger.warning(f"Telegram connection error (attempt {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(1.0 * (attempt + 1))

@@ -2,7 +2,7 @@
 
 > **이 문서는 Gemini AI가 프로젝트를 이해하고 효과적으로 지원하기 위한 포괄적인 가이드입니다.**
 >
-> 참고: 현재 앱의 기본 실행 경로는 Selenium 기반 스크래퍼를 사용합니다. Playwright 관련 코드는 옵션/개발용으로 남아있을 수 있으며, 문서의 일부 Playwright 중심 예시는 구현과 다를 수 있습니다.
+> 참고: 현재 앱은 `scraper_mode` 기반 이중 엔진(Playwright/Selenium)을 사용합니다. 기본값은 `playwright_primary`이며 런타임 문제 시 Selenium으로 자동 강등됩니다.
 
 ---
 
@@ -16,7 +16,7 @@
 |----------|------|
 | **언어** | Python 3.10+ |
 | **GUI 프레임워크** | PyQt6 |
-| **브라우저 자동화** | Selenium (기본), Playwright (옵션/개발용) |
+| **브라우저 자동화** | Playwright + Selenium (이중 엔진) |
 | **데이터베이스** | SQLite3 (스레드 안전) |
 | **알림** | Telegram Bot API, Discord Webhook, Slack Webhook |
 | **빌드** | PyInstaller |
@@ -430,10 +430,38 @@ class NewPlatformScraper(PlaywrightScraper):
 | **언어** | Python 3.10+ |
 | **GUI** | PyQt6 + Catppuccin Mocha 테마 |
 | **DB** | SQLite3 (스레드 세이프) |
-| **스크래핑** | Selenium (기본) / Playwright (옵션) |
+| **스크래핑** | `scraper_mode` 기반 이중 엔진 (Playwright/Selenium) |
 | **알림** | Telegram, Discord, Slack |
 | **수정 금지** | 스크래퍼 파싱 로직, 스텔스 기법, DB 스키마 |
 
 ---
 
 **AI 어시스턴트로서 이 프로젝트를 지원할 때, 위의 제약사항을 준수하고 기존 코드 패턴을 따르세요.**
+
+## 2026-02 Consistency Update (Dual Engine + Packaging)
+
+This section is the source of truth for current behavior and supersedes older Selenium-only/default wording in this document.
+
+- The monitor path is dual-engine, controlled by `scraper_mode`:
+  - `playwright_primary` (default)
+  - `selenium_primary`
+  - `selenium_only`
+- Fallback runs only when:
+  - primary raises an exception, or
+  - primary returns zero results and `fallback_on_empty_results=true`, and
+  - per-platform fallback budget is below `max_fallback_per_cycle`.
+- Merged results are deduped by:
+  - `(platform, article_id)` first
+  - `url/link` second
+- Danggeun location filtering is strict for unknown locations when filter is set.
+- Joonggonara completion-title filtering uses substring rules.
+
+### Runtime / Packaging
+
+- Install Playwright runtime:
+  - `python -m playwright install chromium`
+- Team regression command:
+  - `python -m pytest -q`
+- `used_market_notifier.spec` collects Playwright Python modules.
+- Chromium runtime binaries are not bundled in onefile artifacts.
+- If Playwright runtime is unavailable, engine auto-degrades to Selenium with warning logs.

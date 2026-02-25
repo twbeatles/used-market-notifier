@@ -38,6 +38,7 @@ graph TD
     C --> J[Scrapers]
     C --> K[Notifiers]
     J --> L[SeleniumScraper]
+    J --> Q[PlaywrightScraper]
     J --> M[stealth.py]
     I --> N[AutoTagger]
     H --> O[ExportManager]
@@ -69,7 +70,7 @@ class MonitorEngine:
 **핵심 메서드:**
 | 메서드 | 설명 |
 |--------|------|
-| `initialize_scrapers()` | 공유 Selenium 드라이버로 스크래퍼 초기화 |
+| `initialize_scrapers()` | 플랫폼별 primary/fallback 스크래퍼 초기화 (모드 기반) |
 | `initialize_notifiers()` | 설정 기반 알림 채널 초기화 |
 | `search_keyword(config)` | 단일 키워드 검색 실행 |
 | `run_cycle()` | 전체 모니터링 사이클 실행 |
@@ -157,7 +158,8 @@ class MessageTemplateManager:
 
 ---
 
-> 참고: 현재 앱의 기본 실행 경로는 Selenium 기반 스크래퍼를 사용합니다. `scrapers/playwright_base.py` 등 Playwright 관련 코드는 실험/개발용으로 남아있을 수 있으며, 운영 경로는 Selenium을 기준으로 합니다.
+> 참고: 현재 앱은 `scraper_mode` 설정에 따라 Playwright/Selenium 이중 엔진을 사용합니다.
+> 기본값은 `playwright_primary`이며, Playwright 런타임이 없으면 Selenium으로 자동 강등됩니다.
 
 ## 📁 디렉토리별 상세 역할
 
@@ -166,7 +168,10 @@ class MessageTemplateManager:
 | 파일 | 설명 | 주요 클래스/함수 |
 |------|------|------------------|
 | `base.py` | 추상 베이스 | `BaseScraper` |
-| `playwright_base.py` | (실험/옵션) Playwright 베이스 | `PlaywrightScraper` |
+| `playwright_base.py` | Playwright 베이스 | `PlaywrightScraper` |
+| `playwright_danggeun.py` | 당근 Playwright 구현 | `PlaywrightDanggeunScraper` |
+| `playwright_bunjang.py` | 번개장터 Playwright 구현 | `PlaywrightBunjangScraper` |
+| `playwright_joonggonara.py` | 중고나라 Playwright 구현 | `PlaywrightJoonggonaraScraper` |
 | `selenium_base.py` | Selenium 베이스 | `SeleniumBaseScraper` |
 | `danggeun.py` | 당근마켓 | `DanggeunScraper` |
 | `bunjang.py` | 번개장터 | `BunjangScraper` |
@@ -652,3 +657,40 @@ A:
 ---
 
 **이 지침을 따라 프로젝트의 안정성을 유지하면서 효과적인 지원을 제공해주세요.** 🙏
+
+## 2026-02 Consistency Update (Dual Engine + Packaging)
+
+This section is the latest baseline and overrides older text in this document if any conflict exists.
+
+- Scraping uses dual-engine orchestration by `scraper_mode`:
+  - `playwright_primary` (default)
+  - `selenium_primary`
+  - `selenium_only`
+- Fallback trigger policy is fixed:
+  - primary exception, or
+  - primary zero-result with `fallback_on_empty_results=true`, and
+  - per-platform fallback budget `< max_fallback_per_cycle`.
+- Merge/dedupe policy is fixed:
+  - key1 `(platform, article_id)`, key2 `url/link`.
+- Danggeun location filtering is strict when a location filter is set.
+- Joonggonara completion-title filtering uses substring matching.
+
+### Runtime / Packaging
+
+- Playwright runtime install command:
+  - `python -m playwright install chromium`
+- Standard test command:
+  - `python -m pytest -q`
+- `used_market_notifier.spec` now collects Playwright Python modules.
+- Chromium runtime binaries are not embedded in onefile output.
+- On runtime unavailability, monitor engine logs warning and degrades to Selenium path.
+
+### Monitoring Log Contract
+
+Per platform, keep one-line log fields:
+- `primary_engine`
+- `primary_count`
+- `fallback_used`
+- `fallback_count`
+- `fallback_reason`
+- `elapsed_ms`
