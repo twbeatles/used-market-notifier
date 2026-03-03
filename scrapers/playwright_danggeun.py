@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 from urllib.parse import quote
@@ -27,6 +28,10 @@ def _run_async(coro_factory):
 
 class PlaywrightDanggeunScraper(PlaywrightScraper):
     """Danggeun scraper with JSON-LD first and DOM fallback parsing."""
+
+    MAX_RESULTS = 120
+    CARD_SELECTOR = "a[data-gtm='search_article'][href^='/kr/buy-sell/']"
+    TIME_MARKERS = ("방금", "초 전", "분 전", "시간 전", "일 전", "주 전", "달 전", "끌올")
 
     INVALID_TITLE_PATTERNS = [
         "판매완료",
@@ -74,13 +79,17 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
     def _extract_article_id(link: str) -> str | None:
         if not link:
             return None
-        m = re.search(r"-(\d+)(?:/)?$", link)
+        m = re.search(r"-(\d+)(?:/)?(?:\?|$)", link)
         if m:
             return m.group(1)
         m = re.search(r"/(\d+)(?:\?|$)", link)
         if m:
             return m.group(1)
-        return None
+        m = re.search(r"-([a-z0-9]{8,})(?:/)?(?:\?|$)", link, flags=re.IGNORECASE)
+        if m:
+            return m.group(1).lower()
+        digest = hashlib.sha1(link.encode("utf-8")).hexdigest()[:12]
+        return f"hash_{digest}"
 
     @staticmethod
     def _extract_location(text: str) -> str | None:
@@ -107,6 +116,91 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                     pass
         return "가격문의"
 
+    @staticmethod
+    def _to_absolute_link(link: str) -> str:
+        if not link:
+            return ""
+        if link.startswith("/"):
+            return f"https://www.daangn.com{link}"
+        return link
+
+    @classmethod
+    def _looks_like_time_line(cls, text: str) -> bool:
+        s = str(text or "").strip()
+        if not s:
+            return False
+        return any(marker in s for marker in cls.TIME_MARKERS)
+
+    @classmethod
+    def _parse_card_text(cls, text: str) -> tuple[str, str, str | None]:
+        lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+        if not lines:
+            return "", "가격문의", None
+
+        title = lines[0]
+        price = "가격문의"
+        location: str | None = None
+
+        for line in lines[1:]:
+            compact = line.replace(" ", "")
+            if compact == "·":
+                continue
+
+            if price == "가격문의":
+                if "원" in line or compact.replace(",", "").isdigit():
+                    digits = "".join(ch for ch in line if ch.isdigit())
+                    if digits:
+                        price = f"{int(digits):,}원"
+                        continue
+                if "만" in line and any(ch.isdigit() for ch in line):
+                    price = line
+                    continue
+
+            if cls._looks_like_time_line(line):
+                continue
+
+            if location is None and len(line) >= 2:
+                location = line
+
+        return title, price, location
+
+    async def _build_dom_card_map(self, page) -> dict[str, dict[str, str | None]]:
+        card_map: dict[str, dict[str, str | None]] = {}
+        cards = page.locator(self.CARD_SELECTOR)
+        count = min(await cards.count(), self.MAX_RESULTS)
+
+        for i in range(count):
+            card = cards.nth(i)
+            try:
+                link = self._to_absolute_link((await card.get_attribute("href") or "").strip())
+                if not link:
+                    continue
+
+                article_id = self._extract_article_id(link)
+                if not article_id or article_id in card_map:
+                    continue
+
+                text = (await card.inner_text() or "").strip()
+                title, price, location = self._parse_card_text(text)
+
+                thumbnail = None
+                try:
+                    thumbnail = await card.locator("img").first.get_attribute("src", timeout=800)
+                except Exception:
+                    thumbnail = None
+
+                card_map[article_id] = {
+                    "title": title or None,
+                    "price": price if price != "가격문의" else None,
+                    "location": location,
+                    "thumbnail": thumbnail,
+                    "link": link,
+                }
+            except Exception:
+                continue
+
+        return card_map
+
     async def search(self, keyword: str, location: str = None) -> list[Item]:
         page = await self.get_page()
         encoded_keyword = quote(keyword)
@@ -117,6 +211,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
             return []
         await page.wait_for_timeout(1200)
 
+        dom_card_map = await self._build_dom_card_map(page)
         items: list[Item] = []
         seen_ids: set[str] = set()
 
@@ -135,23 +230,34 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                         continue
                     if node.get("@type") != "ItemList":
                         continue
-                    for entry in node.get("itemListElement", []):
+                    for entry in node.get("itemListElement", [])[: self.MAX_RESULTS]:
                         product = entry.get("item", {}) if isinstance(entry, dict) else {}
                         if not product and isinstance(entry, dict):
                             product = entry
                         if not isinstance(product, dict):
                             continue
-
-                        title = str(product.get("name", "")).strip()
-                        if not self._is_valid_title(title):
+                        if product.get("@type") not in (None, "Product"):
                             continue
 
-                        link = str(product.get("url", "")).strip()
-                        if link.startswith("/"):
-                            link = f"https://www.daangn.com{link}"
+                        link = self._to_absolute_link(str(product.get("url", "")).strip())
                         article_id = self._extract_article_id(link)
                         if not article_id or article_id in seen_ids:
                             continue
+
+                        card_data = dom_card_map.get(article_id, {})
+                        title = str(product.get("name", "")).strip() or str(card_data.get("title") or "")
+                        if not self._is_valid_title(title):
+                            continue
+
+                        price = self._normalize_price(product)
+                        if price == "가격문의" and card_data.get("price"):
+                            price = str(card_data["price"])
+
+                        location_text = self._extract_location(str(product.get("description", "")))
+                        if not location_text:
+                            location_text = str(card_data.get("location") or "") or None
+
+                        thumbnail = product.get("image") or card_data.get("thumbnail")
 
                         seen_ids.add(article_id)
                         items.append(
@@ -159,29 +265,29 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                                 platform="danggeun",
                                 article_id=article_id,
                                 title=title,
-                                price=self._normalize_price(product),
+                                price=price,
                                 link=link,
                                 keyword=keyword,
-                                thumbnail=product.get("image"),
-                                location=self._extract_location(str(product.get("description", ""))),
+                                thumbnail=thumbnail,
+                                location=location_text,
                             )
                         )
+                        if len(items) >= self.MAX_RESULTS:
+                            return items
                 if items:
                     return items
         except Exception:
             pass
 
         # 2) DOM card parsing fallback
-        cards = page.locator("a[href*='/kr/buy-sell/']")
-        count = min(await cards.count(), 80)
+        cards = page.locator(self.CARD_SELECTOR)
+        count = min(await cards.count(), self.MAX_RESULTS)
         for i in range(count):
             card = cards.nth(i)
             try:
-                link = await card.get_attribute("href")
-                if not link or "search=" in link:
+                link = self._to_absolute_link((await card.get_attribute("href") or "").strip())
+                if not link:
                     continue
-                if link.startswith("/"):
-                    link = f"https://www.daangn.com{link}"
 
                 article_id = self._extract_article_id(link)
                 if not article_id or article_id in seen_ids:
@@ -190,20 +296,13 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                 text = (await card.inner_text() or "").strip()
                 if not text:
                     continue
-                lines = [line.strip() for line in text.splitlines() if line.strip()]
-                title = lines[0] if lines else ""
+                title, price, location_text = self._parse_card_text(text)
                 if not self._is_valid_title(title):
                     continue
 
-                price = "가격문의"
-                for line in lines[1:]:
-                    if "원" in line or ("만" in line and any(ch.isdigit() for ch in line)):
-                        price = line
-                        break
-
                 thumbnail = None
                 try:
-                    thumbnail = await card.locator("img").first.get_attribute("src")
+                    thumbnail = await card.locator("img").first.get_attribute("src", timeout=800)
                 except Exception:
                     thumbnail = None
 
@@ -217,9 +316,11 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                         link=link,
                         keyword=keyword,
                         thumbnail=thumbnail,
-                        location=self._extract_location(text),
+                        location=location_text,
                     )
                 )
+                if len(items) >= self.MAX_RESULTS:
+                    break
             except Exception:
                 continue
 

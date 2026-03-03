@@ -27,6 +27,10 @@ def _run_async(coro_factory):
 class PlaywrightBunjangScraper(PlaywrightScraper):
     """Bunjang scraper with data-pid priority and link fallback."""
 
+    BADGE_LINES = {"배송비포함", "검수가능"}
+    UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
+    MAX_RESULTS = 120
+
     INVALID_TITLE_PATTERNS = [
         "\ud310\ub9e4\uc644\ub8cc",  # 판매완료
         "\uc608\uc57d\uc911",  # 예약중
@@ -79,6 +83,62 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
             return "N/A"
         return f"{int(digits):,}\uc6d0"
 
+    @classmethod
+    def _normalize_location(cls, text: str) -> str | None:
+        value = str(text or "").strip()
+        if not value:
+            return None
+        compact = value.replace(" ", "")
+        if compact in {"지역정보없음"} or value in cls.UNKNOWN_LOCATION_TEXTS:
+            return None
+        return value
+
+    @staticmethod
+    def _looks_like_time_line(text: str) -> bool:
+        s = str(text or "").strip()
+        if not s:
+            return False
+        return any(token in s for token in ("방금", "초 전", "분 전", "시간 전", "일 전", "주 전", "달 전", "끌올"))
+
+    @classmethod
+    def _parse_card_text_fallback(cls, text: str) -> tuple[str, str, str | None]:
+        lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+        cleaned = [line for line in lines if line not in cls.BADGE_LINES and line != "·"]
+
+        if not cleaned:
+            return "", "N/A", None
+
+        title = cleaned[0]
+        price = "N/A"
+        price_idx = -1
+        for idx, line in enumerate(cleaned):
+            compact = line.replace(",", "").replace(" ", "")
+            if compact.isdigit():
+                price = f"{int(compact):,}원"
+                price_idx = idx
+                break
+            if compact.endswith("원") and compact[:-1].replace(",", "").isdigit():
+                digits = "".join(ch for ch in compact if ch.isdigit())
+                if digits:
+                    price = f"{int(digits):,}원"
+                    price_idx = idx
+                    break
+
+        if price_idx > 0:
+            title = cleaned[price_idx - 1]
+
+        location_text: str | None = None
+        for line in reversed(cleaned):
+            if line == title or cls._looks_like_time_line(line):
+                continue
+            compact = line.replace(",", "").replace(" ", "")
+            if compact.isdigit() or compact.endswith("원"):
+                continue
+            location_text = cls._normalize_location(line)
+            break
+
+        return title, price, location_text
+
     @staticmethod
     def _extract_pid_from_href(href: str) -> str | None:
         if not href:
@@ -115,7 +175,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
 
         # 1) data-pid cards (preferred)
         cards = page.locator("a[data-pid]")
-        count = min(await cards.count(), 120)
+        count = min(await cards.count(), self.MAX_RESULTS)
         for i in range(count):
             card = cards.nth(i)
             try:
@@ -123,10 +183,12 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
                 if not pid or pid in seen_pids:
                     continue
 
+                raw_card_text = (await card.inner_text() or "").strip()
+                parsed_title, parsed_price, parsed_location = self._parse_card_text_fallback(raw_card_text)
+
                 title = await self._extract_first_text(card, "div:nth-of-type(2) > div:nth-of-type(1)")
                 if not title:
-                    raw_title = (await card.inner_text() or "").strip()
-                    title = " ".join(raw_title.splitlines()[0].split()) if raw_title else ""
+                    title = parsed_title
                 if not self._is_valid_title(title):
                     continue
 
@@ -134,7 +196,12 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
                     card,
                     "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)",
                 )
+                price = self._parse_price(price_text)
+                if price == "N/A":
+                    price = parsed_price
+
                 location_text = await self._extract_first_text(card, "div:nth-of-type(3)")
+                location_value = self._normalize_location(location_text) or parsed_location
 
                 thumbnail = None
                 try:
@@ -147,12 +214,12 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
                         platform="bunjang",
                         article_id=pid,
                         title=title,
-                        price=self._parse_price(price_text),
+                        price=price,
                         link=f"https://m.bunjang.co.kr/products/{pid}",
                         keyword=keyword,
                         thumbnail=thumbnail,
                         seller=None,
-                        location=location_text or None,
+                        location=location_value,
                     )
                 )
                 seen_pids.add(pid)
@@ -164,7 +231,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
 
         # 2) Product link DOM fallback
         links = page.locator("a[href*='/products/']")
-        fallback_count = min(await links.count(), 120)
+        fallback_count = min(await links.count(), self.MAX_RESULTS)
         for i in range(fallback_count):
             el = links.nth(i)
             try:
@@ -178,8 +245,8 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
                 if not pid or pid in seen_pids:
                     continue
 
-                raw_title = (await el.inner_text() or "").strip()
-                title = " ".join(raw_title.splitlines()[0].split()) if raw_title else ""
+                raw_text = (await el.inner_text() or "").strip()
+                title, price, location_text = self._parse_card_text_fallback(raw_text)
                 if not self._is_valid_title(title):
                     continue
 
@@ -188,12 +255,12 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
                         platform="bunjang",
                         article_id=pid,
                         title=title,
-                        price="N/A",
+                        price=price,
                         link=href,
                         keyword=keyword,
                         thumbnail=None,
                         seller=None,
-                        location=None,
+                        location=location_text,
                     )
                 )
                 seen_pids.add(pid)

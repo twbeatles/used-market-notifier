@@ -40,3 +40,4 @@ listings.db-*
 
 # Local dumps/backups (do not commit)
 backup/
+debug_output/

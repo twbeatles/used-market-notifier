@@ -282,7 +282,7 @@ used_market_notifier/
 
 > 참고:
 > - 리포지토리에는 `settings.example.json`만 포함됩니다. 실제 실행을 위해서는 `settings.json`을 생성해 토큰/웹훅 등을 채워주세요.
-> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/` 등은 로컬 런타임 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
+> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/`, `debug_output/` 등은 로컬 런타임 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
 > - 과거 레거시 설정/알림 샘플 코드는 `legacy/`에 있으며, 현재 메인 앱에서는 사용하지 않습니다.
 
 ### 데이터 파일
@@ -293,6 +293,7 @@ used_market_notifier/
 | `listings.db` | 매물 데이터베이스 |
 | `notifier.log` | 로그 파일 |
 | `backup/` | 자동 백업 폴더 |
+| `debug_output/` | Playwright 디버거 산출물(스크린샷/HTML/네트워크 로그) |
 
 ---
 
@@ -446,6 +447,20 @@ This section is the current source of truth and supersedes older statements in t
   - if location filter is set, unknown location items are excluded for `danggeun`.
 - Joonggonara title validity filter:
   - completion keywords are checked by substring match (not exact match).
+
+## 2026-03 Consistency Update (Danggeun/Bunjang Parser)
+
+- Danggeun parser behavior:
+  - `article_id` extraction now supports numeric IDs, slug tokens, and deterministic hash fallback.
+  - JSON-LD parsing is primary and result intake is capped at top `120` items per search.
+  - DOM fallback selector is narrowed to search-result cards only:
+    - `a[data-gtm='search_article'][href^='/kr/buy-sell/']`
+- Bunjang parser behavior:
+  - Unknown location text (`지역정보 없음` variants) is normalized to `None`.
+  - Card text fallback parser removes badge lines (`배송비포함`, `검수가능`) before title/price/location extraction.
+- Location policy impact:
+  - Danggeun remains strict when keyword location filter is set.
+  - Non-Danggeun platforms keep best-effort behavior with unknown location values.
 
 ### Runtime / Build Notes
 

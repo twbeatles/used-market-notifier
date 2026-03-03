@@ -675,6 +675,18 @@ This section is the latest baseline and overrides older text in this document if
 - Danggeun location filtering is strict when a location filter is set.
 - Joonggonara completion-title filtering uses substring matching.
 
+## 2026-03 Consistency Update (Danggeun/Bunjang Parser)
+
+- Danggeun parser updates:
+  - `article_id` now supports numeric, slug token, and deterministic hash fallback.
+  - JSON-LD-first parsing with top `120` items cap per query.
+  - DOM fallback selector narrowed to:
+    - `a[data-gtm='search_article'][href^='/kr/buy-sell/']`
+- Bunjang parser updates:
+  - unknown location text (`지역정보 없음` variants) is normalized to `None`.
+  - badge lines (`배송비포함`, `검수가능`) are removed in card-text fallback parsing.
+- `.gitignore` runtime artifacts include `debug_output/` from Playwright debugger.
+
 ### Runtime / Packaging
 
 - Playwright runtime install command:

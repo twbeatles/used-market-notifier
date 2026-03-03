@@ -1,6 +1,7 @@
 # scrapers/bunjang.py
 """Bunjang (번개장터) scraper using Selenium"""
 
+import re
 import time
 from urllib.parse import quote
 from selenium.webdriver.common.by import By
@@ -12,17 +13,20 @@ from .base import Item
 
 class BunjangScraper(SeleniumScraper):
     """Bunjang (번개장터) scraper with thumbnail and seller extraction"""
-    
+
+    BADGE_LINES = {"배송비포함", "검수가능"}
+    UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
+
     # Invalid title patterns to filter out
     INVALID_TITLE_PATTERNS = [
-        "배송비포함", "검수가능", "제목 없음", "No Title", 
+        "배송비포함", "검수가능", "제목 없음", "No Title",
         "판매완료", "예약중", "광고"
     ]
-    
-    def __init__(self, headless: bool = True, disable_images: bool = True, 
+
+    def __init__(self, headless: bool = True, disable_images: bool = True,
                  driver=None):
         super().__init__(headless, disable_images, driver)
-    
+
     def _is_valid_title(self, title: str) -> bool:
         """Check if title is valid (not sold out or placeholder)"""
         if not title or len(title.strip()) < 2:
@@ -34,10 +38,72 @@ class BunjangScraper(SeleniumScraper):
                 return False
         return True
 
+    @staticmethod
+    def _normalize_price_text(text: str) -> str:
+        digits = re.sub(r"[^\d]", "", str(text or ""))
+        if not digits:
+            return "N/A"
+        return f"{int(digits):,}원"
+
+    @classmethod
+    def _normalize_location(cls, text: str) -> str | None:
+        value = str(text or "").strip()
+        if not value:
+            return None
+        compact = value.replace(" ", "")
+        if compact in {"지역정보없음"} or value in cls.UNKNOWN_LOCATION_TEXTS:
+            return None
+        return value
+
+    @staticmethod
+    def _looks_like_time_line(text: str) -> bool:
+        s = str(text or "").strip()
+        if not s:
+            return False
+        return any(token in s for token in ("방금", "초 전", "분 전", "시간 전", "일 전", "주 전", "달 전", "끌올"))
+
+    @classmethod
+    def _parse_card_text_fallback(cls, text: str) -> tuple[str, str, str | None]:
+        lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+        cleaned = [line for line in lines if line not in cls.BADGE_LINES and line != "·"]
+        if not cleaned:
+            return "제목 없음", "N/A", None
+
+        title = cleaned[0]
+        price = "N/A"
+        price_idx = -1
+        for idx, line in enumerate(cleaned):
+            compact = line.replace(",", "").replace(" ", "")
+            if compact.isdigit():
+                price = f"{int(compact):,}원"
+                price_idx = idx
+                break
+            if compact.endswith("원") and compact[:-1].replace(",", "").isdigit():
+                digits = "".join(ch for ch in compact if ch.isdigit())
+                if digits:
+                    price = f"{int(digits):,}원"
+                    price_idx = idx
+                    break
+
+        if price_idx > 0:
+            title = cleaned[price_idx - 1]
+
+        location_text: str | None = None
+        for line in reversed(cleaned):
+            if line == title or cls._looks_like_time_line(line):
+                continue
+            compact = line.replace(",", "").replace(" ", "")
+            if compact.isdigit() or compact.endswith("원"):
+                continue
+            location_text = cls._normalize_location(line)
+            break
+
+        return title, price, location_text
+
     def search(self, keyword: str, location: str = None) -> list[Item]:
         """
         Search Bunjang for keyword.
-        
+
         Args:
             keyword: Search term
             location: Not used for Bunjang (nationwide platform)
@@ -45,10 +111,10 @@ class BunjangScraper(SeleniumScraper):
         encoded_keyword = quote(keyword)
         # URL with recency sort
         url = f"https://m.bunjang.co.kr/search/products?q={encoded_keyword}&order=date"
-        
+
         self.logger.info(f"Visiting {url}")
         self.driver.get(url)
-        
+
         items = []
         try:
             # Wait for items to load (using data-pid selector which targets legitimate product items)
@@ -62,7 +128,7 @@ class BunjangScraper(SeleniumScraper):
                 return []
 
             product_links = self.driver.find_elements(By.CSS_SELECTOR, "a[data-pid]")
-            
+
             for link_el in product_links:
                 try:
                     # 1. Extract ID and Link
@@ -71,33 +137,41 @@ class BunjangScraper(SeleniumScraper):
                         continue
                     link = f"https://m.bunjang.co.kr/products/{pid}"
 
+                    raw_card_text = (link_el.text or "").strip()
+                    parsed_title, parsed_price, parsed_location = self._parse_card_text_fallback(raw_card_text)
+
                     # 2. Extract Title (2nd div -> 1st div)
                     try:
                         title_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(2) > div:nth-of-type(1)")
-                        title = title_el.text.strip() if title_el else "제목 없음"
+                        title = title_el.text.strip() if title_el else parsed_title
                     except Exception:
-                        title = "제목 없음"
+                        title = parsed_title
 
                     # 3. Extract Price (2nd div -> 2nd div -> 1st div)
+                    price = "N/A"
                     try:
-                        price_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)")
+                        price_el = link_el.find_element(
+                            By.CSS_SELECTOR,
+                            "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)"
+                        )
                         if price_el:
-                            price_text = price_el.text.replace(',', '').replace('원', '').strip()
-                            price = int(price_text) if price_text.isdigit() else 0
-                        else:
-                            price = 0
+                            price = self._normalize_price_text(price_el.text)
                     except Exception:
-                        price = 0
+                        price = "N/A"
+                    if price == "N/A":
+                        price = parsed_price
 
                     # 4. Extract Location (3rd div)
-                    location_text = ""
+                    location_value: str | None = None
                     try:
                         loc_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(3)")
                         if loc_el:
-                            location_text = loc_el.text.strip()
+                            location_value = self._normalize_location(loc_el.text.strip())
                     except Exception:
                         pass
-                    
+                    if location_value is None:
+                        location_value = parsed_location
+
                     # 5. Extract Image (1st div -> img)
                     img_url = ""
                     try:
@@ -115,12 +189,12 @@ class BunjangScraper(SeleniumScraper):
                         platform="bunjang",
                         article_id=pid,
                         title=title,
-                        price="가격문의" if price == 0 else f"{price:,}원",
+                        price=price,
                         link=link,
                         keyword=keyword,
                         thumbnail=img_url,
                         seller=None,
-                        location=location_text
+                        location=location_value,
                     )
                     items.append(item)
 
@@ -131,6 +205,6 @@ class BunjangScraper(SeleniumScraper):
 
         except Exception as e:
             self.logger.error(f"Error parsing Bunjang items: {e}")
-        
+
         self.logger.info(f"Found {len(items)} items on Bunjang for '{keyword}'")
         return items
