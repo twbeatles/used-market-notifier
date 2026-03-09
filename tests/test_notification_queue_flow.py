@@ -38,11 +38,13 @@ class TestNotificationQueueFlow(unittest.IsolatedAsyncioTestCase):
             try:
                 settings = _SettingsWrapper()
                 engine = MonitorEngine(settings, db=db)
-                engine.notifiers = [_FlakyNotifier()]
+                notifier = _FlakyNotifier()
+                engine.notifiers = [notifier]
                 engine._notification_queue = asyncio.Queue()
                 engine._stop_event = asyncio.Event()
 
-                async def _no_sleep(_: float) -> None:
+                async def _no_sleep(seconds: float) -> None:
+                    _ = seconds
                     return
 
                 engine._sleep_or_stop = _no_sleep  # speed up retry path in tests
@@ -58,11 +60,12 @@ class TestNotificationQueueFlow(unittest.IsolatedAsyncioTestCase):
                 )
                 _, _, listing_id = db.add_listing(item)
                 self.assertIsNotNone(listing_id)
+                assert listing_id is not None
 
                 await engine.send_notifications(item, listing_id=listing_id)
                 await asyncio.wait_for(engine._notification_queue.join(), timeout=3.0)
 
-                self.assertGreaterEqual(engine.notifiers[0].calls, 2)
+                self.assertGreaterEqual(notifier.calls, 2)
                 logs = db.get_notification_logs(limit=10)
                 self.assertGreaterEqual(len(logs), 1)
 

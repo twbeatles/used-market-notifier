@@ -441,7 +441,7 @@ class DatabaseManager:
             cursor.execute('SELECT COUNT(*) FROM listings')
             return cursor.fetchone()[0]
     
-    def get_listings_paginated(self, platform: str = None, search: str = None, 
+    def get_listings_paginated(self, platform: str | None = None, search: str | None = None, 
                                 limit: int = 50, offset: int = 0) -> list:
         """Get listings with pagination and filtering"""
         with self.lock:
@@ -463,7 +463,12 @@ class DatabaseManager:
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
     
-    def get_listings_count(self, platform: str = None, search: str = None, status: str = None) -> int:
+    def get_listings_count(
+        self,
+        platform: str | None = None,
+        search: str | None = None,
+        status: str | None = None,
+    ) -> int:
         """Get total count of listings with filters (platform/title/sale_status)"""
         with self.lock:
             cursor = self.conn.cursor()
@@ -735,7 +740,7 @@ class DatabaseManager:
             row = cursor.fetchone()
             return row['id'] if row else None
 
-    def add_favorite(self, listing_id: int, notes: str = "", target_price: int = None) -> bool:
+    def add_favorite(self, listing_id: int, notes: str = "", target_price: int | None = None) -> bool:
         """Add a listing to favorites"""
         with self.lock:
             try:
@@ -750,7 +755,12 @@ class DatabaseManager:
             except sqlite3.IntegrityError:
                 return False
 
-    def update_favorite(self, listing_id: int, notes: str = None, target_price: int = None):
+    def update_favorite(
+        self,
+        listing_id: int,
+        notes: str | None = None,
+        target_price: int | None = None,
+    ) -> None:
         """Update favorite details"""
         with self.lock:
             cursor = self.conn.cursor()
@@ -992,8 +1002,14 @@ class DatabaseManager:
             return "reserved"
         return "for_sale"
     
-    def get_listings_by_status(self, status: str = None, platform: str = None, 
-                                search: str = None, limit: int = 50, offset: int = 0) -> list:
+    def get_listings_by_status(
+        self,
+        status: str | None = None,
+        platform: str | None = None,
+        search: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list:
         """Get listings filtered by sale status"""
         with self.lock:
             cursor = self.conn.cursor()
@@ -1147,9 +1163,15 @@ class DatabaseManager:
     
     # ===== Feature #16: Enhanced Export =====
     
-    def get_listings_for_export(self, platform: str = None, search: str = None,
-                                 status: str = None, date_from: str = None,
-                                 date_to: str = None, include_sold: bool = True) -> list:
+    def get_listings_for_export(
+        self,
+        platform: str | None = None,
+        search: str | None = None,
+        status: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_sold: bool = True,
+    ) -> list:
         """Get listings with all filters for export"""
         with self.lock:
             cursor = self.conn.cursor()

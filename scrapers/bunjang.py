@@ -100,7 +100,7 @@ class BunjangScraper(SeleniumScraper):
 
         return title, price, location_text
 
-    def search(self, keyword: str, location: str = None) -> list[Item]:
+    def search(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Search Bunjang for keyword.
 

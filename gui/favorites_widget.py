@@ -12,7 +12,7 @@ from db import DatabaseManager
 
 class FavoritesEditDialog(QDialog):
     """Dialog to edit favorite notes and target price"""
-    def __init__(self, notes: str, target_price: int, parent=None):
+    def __init__(self, notes: str, target_price: int | None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("즐겨찾기 수정")
         self.setFixedWidth(300)
@@ -115,13 +115,17 @@ class FavoritesWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["플랫폼", "제목", "가격", "목표가", "메모", "등록일"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        h_header = self.table.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         
         # Table style
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.verticalHeader().setVisible(False)
+        v_header = self.table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self.table.setSortingEnabled(True)  # Enable column sorting
         self.table.setStyleSheet("""
             QTableWidget {
@@ -171,6 +175,11 @@ class FavoritesWidget(QWidget):
         self.refresh_list()
         
     def refresh_list(self):
+        if self.db is None:
+            self.table.setRowCount(0)
+            self.table.hide()
+            self.empty_state.show()
+            return
         favorites = self.db.get_favorites()
         self.table.setRowCount(len(favorites))
         
@@ -226,7 +235,8 @@ class FavoritesWidget(QWidget):
                 if confirm != QMessageBox.StandardButton.Yes:
                     return
                     
-            QDesktopServices.openUrl(QUrl(url))
+            if url is not None:
+                QDesktopServices.openUrl(QUrl(str(url)))
             
     def on_double_click(self, row, col):
         if col == 1: # Title -> Open Link
@@ -244,7 +254,10 @@ class FavoritesWidget(QWidget):
         edit_action = menu.addAction("✏️ 수정 (메모/목표가)")
         delete_action = menu.addAction("🗑️ 삭제")
         
-        action = menu.exec(self.table.viewport().mapToGlobal(pos))
+        viewport = self.table.viewport()
+        if viewport is None:
+            return
+        action = menu.exec(viewport.mapToGlobal(pos))
         
         if action == open_action:
             self.open_link(row)
@@ -255,22 +268,33 @@ class FavoritesWidget(QWidget):
             
     def edit_favorite(self, row):
         title_item = self.table.item(row, 1)
+        if title_item is None:
+            return
         listing_id = title_item.data(Qt.ItemDataRole.UserRole + 1)
+        if listing_id is None:
+            return
         
         # Get current values
-        tp_text = self.table.item(row, 3).text().replace("원", "").replace(",", "").replace("-", "")
+        tp_item = self.table.item(row, 3)
+        notes_item = self.table.item(row, 4)
+        tp_text = tp_item.text().replace("원", "").replace(",", "").replace("-", "") if tp_item else ""
         target_price = int(tp_text) if tp_text else None
-        notes = self.table.item(row, 4).text()
+        notes = notes_item.text() if notes_item else ""
         
         dialog = FavoritesEditDialog(notes, target_price, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
-            self.db.update_favorite(listing_id, data['notes'], data['target_price'])
-            self.refresh_list()
+            if self.db is not None:
+                self.db.update_favorite(int(listing_id), data['notes'], data['target_price'])
+                self.refresh_list()
             
     def delete_favorite(self, row):
         title_item = self.table.item(row, 1)
+        if title_item is None:
+            return
         listing_id = title_item.data(Qt.ItemDataRole.UserRole + 1)
+        if listing_id is None:
+            return
         title = title_item.text()
         
         confirm = QMessageBox.question(
@@ -280,5 +304,6 @@ class FavoritesWidget(QWidget):
         )
         
         if confirm == QMessageBox.StandardButton.Yes:
-            self.db.remove_favorite(listing_id)
-            self.refresh_list()
+            if self.db is not None:
+                self.db.remove_favorite(int(listing_id))
+                self.refresh_list()

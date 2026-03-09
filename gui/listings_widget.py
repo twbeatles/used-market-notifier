@@ -249,7 +249,9 @@ class ListingsWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["플랫폼", "제목", "가격", "키워드", "등록일", "링크"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        h_header = self.table.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setColumnWidth(0, 80)
         self.table.setColumnWidth(2, 100)
         self.table.setColumnWidth(3, 100)
@@ -259,7 +261,9 @@ class ListingsWidget(QWidget):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)  # Allow multi-select
-        self.table.verticalHeader().setVisible(False)
+        v_header = self.table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self.table.cellDoubleClicked.connect(self.on_row_double_click)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
@@ -497,8 +501,8 @@ class ListingsWidget(QWidget):
             self.current_page += 1
             self.refresh_listings(force=True)
 
-    def showEvent(self, event):
-        super().showEvent(event)
+    def showEvent(self, a0):
+        super().showEvent(a0)
         if self._pending_refresh:
             self.refresh_listings(force=True)
     
@@ -528,7 +532,10 @@ class ListingsWidget(QWidget):
         note_action = menu.addAction("📝 메모 추가/편집")
         message_action = menu.addAction("📨 판매자에게 메시지")
         
-        action = menu.exec(self.table.viewport().mapToGlobal(pos))
+        viewport = self.table.viewport()
+        if viewport is None:
+            return
+        action = menu.exec(viewport.mapToGlobal(pos))
         
         if action == open_action:
             self.on_row_double_click(row, 0)
@@ -641,10 +648,13 @@ class ListingsWidget(QWidget):
                 fallback_url = payload.get("url") or payload.get("link") or ""
             elif isinstance(payload, str):
                 fallback_url = payload
+            platform_item = self.table.item(row, 0)
+            title_item = self.table.item(row, 1)
+            price_item = self.table.item(row, 2)
             listing = {
-                'platform': self.table.item(row, 0).text() if self.table.item(row, 0) else '',
-                'title': self.table.item(row, 1).text() if self.table.item(row, 1) else '',
-                'price': self.table.item(row, 2).text() if self.table.item(row, 2) else '',
+                'platform': platform_item.text() if platform_item else '',
+                'title': title_item.text() if title_item else '',
+                'price': price_item.text() if price_item else '',
                 'url': fallback_url,
                 'seller': '',
                 'location': ''
@@ -658,7 +668,8 @@ class ListingsWidget(QWidget):
         if db.is_favorite(listing_id):
             fav_details = db.get_favorite_details(listing_id)
             if fav_details:
-                target_price = fav_details.get('target_price')
+                target_price_raw = fav_details.get('target_price')
+                target_price = target_price_raw if isinstance(target_price_raw, int) else None
 
         # Load custom message templates from settings (if available)
         custom_templates = None
@@ -673,7 +684,7 @@ class ListingsWidget(QWidget):
         dialog = MessageDialog(listing, target_price, custom_templates=custom_templates, parent=self)
         dialog.exec()
     
-    def closeEvent(self, event):
+    def closeEvent(self, a0):
         """Clean up resources on close"""
         # Stop refresh timer
         if hasattr(self, 'refresh_timer'):
@@ -687,5 +698,5 @@ class ListingsWidget(QWidget):
             except Exception:
                 pass
         
-        super().closeEvent(event)
+        super().closeEvent(a0)
 

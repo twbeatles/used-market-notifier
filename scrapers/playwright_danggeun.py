@@ -53,10 +53,10 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
         # This scraper uses one-shot sessions per search.
         return True
 
-    def safe_search(self, keyword: str, location: str = None) -> list[Item]:
+    def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
         return _run_async(lambda: self._safe_search_session(keyword, location))
 
-    async def _safe_search_session(self, keyword: str, location: str = None) -> list[Item]:
+    async def _safe_search_session(self, keyword: str, location: str | None = None) -> list[Item]:
         from playwright.async_api import async_playwright
 
         async with async_playwright() as pw:
@@ -65,7 +65,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                 self._context = await self._create_context(browser)
                 self._owned_context = True
                 self._page = None
-                return await super().safe_search(keyword, location)
+                return await super()._safe_search_async(keyword, location)
             finally:
                 try:
                     await self.close()
@@ -201,7 +201,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
 
         return card_map
 
-    async def search(self, keyword: str, location: str = None) -> list[Item]:
+    async def search(self, keyword: str, location: str | None = None) -> list[Item]:
         page = await self.get_page()
         encoded_keyword = quote(keyword)
         url = f"https://www.daangn.com/kr/buy-sell/?search={encoded_keyword}&sort=recent"

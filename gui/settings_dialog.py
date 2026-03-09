@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QApplication
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from typing import Any
 from models import NotificationType, NotificationSchedule, ThemeMode, TagRule, MessageTemplate
 from notifiers import TelegramNotifier, DiscordNotifier, SlackNotifier
 import asyncio
@@ -30,6 +31,13 @@ class SettingsDialog(QDialog):
         self._message_templates: list[MessageTemplate] = []
         self.setup_ui()
         self.load_settings()
+
+    def _get_parent_db(self):
+        parent = self.parent()
+        if parent is None:
+            return None
+        engine = getattr(parent, "engine", None)
+        return getattr(engine, "db", None)
     
     def setup_ui(self):
         self.setWindowTitle("설정")
@@ -634,7 +642,9 @@ class SettingsDialog(QDialog):
         self.seller_table = QTableWidget()
         self.seller_table.setColumnCount(3)
         self.seller_table.setHorizontalHeaderLabels(["플랫폼", "판매자명", "차단일"])
-        self.seller_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        seller_h_header = self.seller_table.horizontalHeader()
+        if seller_h_header is not None:
+            seller_h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.seller_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.seller_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.seller_table)
@@ -693,7 +703,9 @@ class SettingsDialog(QDialog):
         self.backup_table = QTableWidget()
         self.backup_table.setColumnCount(3)
         self.backup_table.setHorizontalHeaderLabels(["파일", "날짜", "크기"])
-        self.backup_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        backup_h_header = self.backup_table.horizontalHeader()
+        if backup_h_header is not None:
+            backup_h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.backup_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.backup_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         backup_layout.addWidget(self.backup_table)
@@ -827,8 +839,12 @@ class SettingsDialog(QDialog):
         # Stop monitoring if running and close DB connection for safety.
         parent = self.parent()
         try:
-            if parent and hasattr(parent, "monitor_thread") and parent.monitor_thread and parent.monitor_thread.isRunning():
-                parent.stop_monitoring()
+            monitor_thread = getattr(parent, "monitor_thread", None) if parent is not None else None
+            is_running = getattr(monitor_thread, "isRunning", None)
+            if callable(is_running) and is_running():
+                stop_monitoring = getattr(parent, "stop_monitoring", None)
+                if callable(stop_monitoring):
+                    stop_monitoring()
         except Exception:
             pass
 
@@ -875,13 +891,17 @@ class SettingsDialog(QDialog):
     def run_cleanup_now(self):
         parent = self.parent()
         try:
-            if parent and hasattr(parent, "monitor_thread") and parent.monitor_thread and parent.monitor_thread.isRunning():
+            monitor_thread = getattr(parent, "monitor_thread", None) if parent is not None else None
+            is_running = getattr(monitor_thread, "isRunning", None)
+            if callable(is_running) and is_running():
                 if QMessageBox.question(
                     self,
                     "확인",
                     "모니터링이 실행 중입니다.\n정리 작업을 위해 모니터링을 중지할까요?",
                 ) == QMessageBox.StandardButton.Yes:
-                    parent.stop_monitoring()
+                    stop_monitoring = getattr(parent, "stop_monitoring", None)
+                    if callable(stop_monitoring):
+                        stop_monitoring()
                 else:
                     return
         except Exception:
@@ -916,10 +936,14 @@ class SettingsDialog(QDialog):
         # Best-effort refresh in main UI if available.
         parent = self.parent()
         try:
-            if parent and hasattr(parent, "stats_widget"):
-                parent.stats_widget.refresh_stats()
-            if parent and hasattr(parent, "listings_widget"):
-                parent.listings_widget.refresh_listings()
+            stats_widget = getattr(parent, "stats_widget", None) if parent is not None else None
+            listings_widget = getattr(parent, "listings_widget", None) if parent is not None else None
+            refresh_stats = getattr(stats_widget, "refresh_stats", None)
+            refresh_listings = getattr(listings_widget, "refresh_listings", None)
+            if callable(refresh_stats):
+                refresh_stats()
+            if callable(refresh_listings):
+                refresh_listings()
         except Exception:
             pass
 
@@ -946,7 +970,9 @@ class SettingsDialog(QDialog):
         self.tag_rules_table = QTableWidget()
         self.tag_rules_table.setColumnCount(5)
         self.tag_rules_table.setHorizontalHeaderLabels(["사용", "태그", "아이콘", "색상", "키워드"])
-        self.tag_rules_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        tag_h_header = self.tag_rules_table.horizontalHeader()
+        if tag_h_header is not None:
+            tag_h_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.tag_rules_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tag_rules_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.tag_rules_table)
@@ -1062,7 +1088,9 @@ class SettingsDialog(QDialog):
         self.templates_table = QTableWidget()
         self.templates_table.setColumnCount(3)
         self.templates_table.setHorizontalHeaderLabels(["이름", "플랫폼", "내용"])
-        self.templates_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        template_h_header = self.templates_table.horizontalHeader()
+        if template_h_header is not None:
+            template_h_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.templates_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.templates_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.templates_table)
@@ -1147,11 +1175,11 @@ class SettingsDialog(QDialog):
 
     def load_blocked_sellers(self):
         """Load blocked sellers from DB"""
-        if not self.parent():
+        db = self._get_parent_db()
+        if db is None:
             return
             
         try:
-            db = self.parent().engine.db
             sellers = db.get_blocked_sellers()
             self.seller_table.setRowCount(len(sellers))
             for i, seller in enumerate(sellers):
@@ -1169,13 +1197,19 @@ class SettingsDialog(QDialog):
         if row < 0:
             QMessageBox.information(self, "알림", "차단 해제할 판매자를 선택하세요.")
             return
-            
-        platform = self.seller_table.item(row, 0).text()
-        seller = self.seller_table.item(row, 1).text()
+        platform_item = self.seller_table.item(row, 0)
+        seller_item = self.seller_table.item(row, 1)
+        if platform_item is None or seller_item is None:
+            QMessageBox.warning(self, "오류", "선택한 행 데이터가 올바르지 않습니다.")
+            return
+        platform = platform_item.text()
+        seller = seller_item.text()
         
         if QMessageBox.question(self, "확인", f"'{seller}' 판매자의 차단을 해제하시겠습니까?") == QMessageBox.StandardButton.Yes:
             try:
-                db = self.parent().engine.db
+                db = self._get_parent_db()
+                if db is None:
+                    raise RuntimeError("데이터베이스 연결을 찾을 수 없습니다.")
                 db.remove_seller_filter(seller, platform)
                 self.load_blocked_sellers()
                 QMessageBox.information(self, "완료", "차단이 해제되었습니다.")
@@ -1456,9 +1490,11 @@ class NotificationTestThread(QThread):
             asyncio.set_event_loop(loop)
             
             if self.notifier_type == NotificationType.TELEGRAM:
+                token = str(self.kwargs.get('token') or "")
+                chat_id = str(self.kwargs.get('chat_id') or "")
                 notifier = TelegramNotifier(
-                    self.kwargs.get('token'), 
-                    self.kwargs.get('chat_id')
+                    token, 
+                    chat_id
                 )
                 success = loop.run_until_complete(
                     notifier.send_message("🔔 [테스트] 중고거래 알리미 알림 테스트입니다.")
@@ -1469,7 +1505,8 @@ class NotificationTestThread(QThread):
                     self.finished.emit(False, "알림 전송 실패. 설정(토큰/ID)을 확인하세요.")
                     
             elif self.notifier_type == NotificationType.DISCORD:
-                notifier = DiscordNotifier(self.kwargs.get('url'))
+                url = str(self.kwargs.get('url') or "")
+                notifier = DiscordNotifier(url)
                 success = loop.run_until_complete(
                     notifier.send_message("🔔 [테스트] 중고거래 알리미 알림 테스트입니다.")
                 )
@@ -1479,7 +1516,8 @@ class NotificationTestThread(QThread):
                     self.finished.emit(False, "알림 전송 실패. Webhook URL을 확인하세요.")
             
             elif self.notifier_type == NotificationType.SLACK:
-                notifier = SlackNotifier(self.kwargs.get('url'))
+                url = str(self.kwargs.get('url') or "")
+                notifier = SlackNotifier(url)
                 success = loop.run_until_complete(
                     notifier.send_message("🔔 [테스트] 중고거래 알리미 알림 테스트입니다.")
                 )

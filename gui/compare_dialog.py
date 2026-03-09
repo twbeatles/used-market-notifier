@@ -224,8 +224,12 @@ class CompareDialog(QDialog):
             self.table.setItem(7, col, link_item)
         
         # Style
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setDefaultSectionSize(45)
+        h_header = self.table.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        v_header = self.table.verticalHeader()
+        if v_header is not None:
+            v_header.setDefaultSectionSize(45)
         self.table.setStyleSheet("""
             QTableWidget {
                 background-color: #1e1e2e;
@@ -327,6 +331,9 @@ class CompareDialog(QDialog):
         """Copy comparison to clipboard"""
         text = self._generate_comparison_text()
         clipboard = QApplication.clipboard()
+        if clipboard is None:
+            QMessageBox.warning(self, "오류", "클립보드를 사용할 수 없습니다.")
+            return
         clipboard.setText(text)
         QMessageBox.information(self, "복사 완료", "📋 비교 내용이 클립보드에 복사되었습니다.")
     

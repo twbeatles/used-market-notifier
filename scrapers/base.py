@@ -1,6 +1,4 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Optional
 import logging
 
 # Import Item from models - single source of truth
@@ -32,7 +30,7 @@ class BaseScraper(ABC):
         return ' '.join(keyword.split())
 
     @abstractmethod
-    def search(self, keyword: str, location: str = None) -> list[Item]:
+    def search(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Search for the keyword on the platform and return a list of Items.
         
@@ -45,7 +43,7 @@ class BaseScraper(ABC):
         """
         pass
 
-    def safe_search(self, keyword: str, location: str = None) -> list[Item]:
+    def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Safe wrapper around search that handles exceptions gracefully.
         Returns empty list on error instead of raising.
@@ -60,7 +58,12 @@ class BaseScraper(ABC):
         """Clean up resources (drivers, etc.)"""
         pass
     
-    def filter_by_price(self, items: list[Item], min_price: int = None, max_price: int = None) -> list[Item]:
+    def filter_by_price(
+        self,
+        items: list[Item],
+        min_price: int | None = None,
+        max_price: int | None = None,
+    ) -> list[Item]:
         """Filter items by price range"""
         result = []
         for item in items:
@@ -75,7 +78,11 @@ class BaseScraper(ABC):
             result.append(item)
         return result
     
-    def filter_by_keywords(self, items: list[Item], exclude_keywords: list[str] = None) -> list[Item]:
+    def filter_by_keywords(
+        self,
+        items: list[Item],
+        exclude_keywords: list[str] | None = None,
+    ) -> list[Item]:
         """Filter out items containing excluded keywords"""
         if not exclude_keywords:
             return items

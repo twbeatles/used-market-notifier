@@ -75,7 +75,9 @@ def run_cli():
     
     try:
         if sys.platform.startswith('win'):
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+            if selector_policy is not None:
+                asyncio.set_event_loop_policy(selector_policy())
         asyncio.run(engine.start())
     except KeyboardInterrupt:
         logger.info("Stopping...")

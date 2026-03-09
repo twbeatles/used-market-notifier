@@ -210,7 +210,7 @@ class MessageTemplateManager:
 | `listings_widget.py` | 매물 브라우저 | `ListingsWidget` |
 | `favorites_widget.py` | 즐겨찾기 | `FavoritesWidget`, `FavoritesEditDialog` |
 | `stats_widget.py` | 통계 대시보드 | `StatsWidget` |
-| `components.py` | 재사용 컴포넌트 | `GlassCard`, `StatCard`, `PlatformBadge`, `ToastNotification` |
+| `components.py` | 재사용 컴포넌트 | `GlassCard`, `StatCard`, `PlatformBadge`, `SectionHeader`, `EmptyState`, `Toast`, `StatusBadge` |
 | `charts.py` | 차트 위젯 | `PlatformChart`, `DailyChart` |
 | `compare_dialog.py` | 매물 비교 | `CompareDialog` |
 | `export_dialog.py` | 내보내기 | `ExportDialog` |
@@ -233,8 +233,8 @@ class StatCard(QFrame):
 class PlatformBadge(QLabel):
     # 플랫폼별 색상 + 이모지
 
-# ToastNotification - 토스트 알림
-class ToastNotification(QFrame):
+# Toast - 토스트 알림
+class Toast(QFrame):
     # show(message, duration) 메서드
     # 자동 페이드 아웃
 ```
@@ -360,12 +360,18 @@ card.setObjectName("glassCard")
 ### 비동기 패턴
 
 ```python
-# ✅ Windows에서 asyncio 정책 설정
-if sys.platform.startswith('win'):
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# ✅ Windows에서 asyncio 정책 설정 (버전 호환)
+if sys.platform == "win32":
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is not None:
+        asyncio.set_event_loop_policy(selector_policy())
 
 # ✅ QThread 내 asyncio 실행
 def run(self):
+    if sys.platform == "win32":
+        proactor_policy = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+        if proactor_policy is not None:
+            asyncio.set_event_loop_policy(proactor_policy())
     self.loop = asyncio.new_event_loop()
     asyncio.set_event_loop(self.loop)
     try:
@@ -693,9 +699,23 @@ This section is the latest baseline and overrides older text in this document if
   - `python -m playwright install chromium`
 - Standard test command:
   - `python -m pytest -q`
+- Type-check command:
+  - `pyright .`
 - `used_market_notifier.spec` now collects Playwright Python modules.
+- PyInstaller onefile build intentionally excludes `matplotlib`; chart widgets fall back to placeholder mode.
 - Chromium runtime binaries are not embedded in onefile output.
 - On runtime unavailability, monitor engine logs warning and degrades to Selenium path.
+
+## 2026-03 Consistency Update (Type Safety + Encoding)
+
+- Repository type baseline is pinned via `pyrightconfig.json`:
+  - `pythonVersion=3.10`
+  - `typeCheckingMode=standard`
+- Optional/nullability handling is standardized across GUI/engine interfaces to satisfy Pylance/Pyright.
+- UTF-8 hygiene gate:
+  - strict UTF-8 decode failures must be `0`
+  - `U+FFFD` occurrences must be `0`
+  - C1 control chars (`0x80-0x9F`) must be `0`
 
 ### Monitoring Log Contract
 

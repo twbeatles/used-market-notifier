@@ -48,7 +48,9 @@ class MonitorThread(QThread):
         # Ensure a Windows-compatible event loop policy for background asyncio work.
         import sys
         if sys.platform == 'win32':
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+            proactor_policy = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+            if proactor_policy is not None:
+                asyncio.set_event_loop_policy(proactor_policy())
         
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -583,14 +585,22 @@ class MainWindow(QMainWindow):
     def refresh_current_tab(self):
         """Refresh data in current tab"""
         current = self.tabs.currentWidget()
-        if hasattr(current, 'refresh_listings'):
-            current.refresh_listings(force=True)
-        elif hasattr(current, 'refresh_stats'):
-            current.refresh_stats(force=True)
-        elif hasattr(current, 'refresh_list'):
-            current.refresh_list()
-        elif hasattr(current, 'refresh'):
-            current.refresh()
+        if current is None:
+            self.status_bar.showMessage("새로고침 완료")
+            return
+        refresh_listings = getattr(current, "refresh_listings", None)
+        refresh_stats = getattr(current, "refresh_stats", None)
+        refresh_list = getattr(current, "refresh_list", None)
+        refresh = getattr(current, "refresh", None)
+
+        if callable(refresh_listings):
+            refresh_listings(force=True)
+        elif callable(refresh_stats):
+            refresh_stats(force=True)
+        elif callable(refresh_list):
+            refresh_list()
+        elif callable(refresh):
+            refresh()
         self.status_bar.showMessage("새로고침 완료")
     
     def toggle_monitoring(self):
@@ -792,8 +802,9 @@ class MainWindow(QMainWindow):
              central.setStyleSheet(f"background-color: {'#1e1e2e' if is_dark else '#f2f2f7'};")
              
         # Optional: Update StatsWidget if method exists
-        if hasattr(self, 'stats_widget') and hasattr(self.stats_widget, 'update_theme'):
-            self.stats_widget.update_theme(is_dark)
+        update_theme = getattr(getattr(self, "stats_widget", None), "update_theme", None)
+        if callable(update_theme):
+            update_theme(is_dark)
     
     def _detect_system_dark_mode(self) -> bool:
         """Detect Windows system dark mode setting"""
@@ -829,9 +840,11 @@ class MainWindow(QMainWindow):
         self.tray_icon.hide()
         QApplication.quit()
     
-    def closeEvent(self, event: QCloseEvent):
+    def closeEvent(self, a0: QCloseEvent | None):
+        if a0 is None:
+            return
         if self.settings_manager.settings.minimize_to_tray:
-            event.ignore()
+            a0.ignore()
             self.hide()
             self.tray_icon.show_notification(
                 "중고거래 알리미",

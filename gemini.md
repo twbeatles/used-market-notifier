@@ -212,8 +212,10 @@ list_backups()            # 백업 목록 조회
 | `PulsingDot` | 상태 표시 점멸 인디케이터 |
 | `StatCard` | 통계 표시 카드 (그라디언트) |
 | `PlatformBadge` | 플랫폼 아이콘 뱃지 |
-| `ToastNotification` | 토스트 알림 |
-| `ProgressRing` | 원형 진행률 표시 |
+| `SectionHeader` | 섹션 헤더 라벨 |
+| `EmptyState` | 빈 상태 안내 뷰 |
+| `Toast` | 토스트 알림 |
+| `StatusBadge` | 판매 상태 배지 |
 
 ### 스타일 상수 (`gui/styles.py`)
 
@@ -305,12 +307,18 @@ class MonitorThread(QThread):
 
 ### 비동기 + QThread 패턴
 ```python
-# Windows에서 asyncio 정책 설정
-if sys.platform.startswith('win'):
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# Windows에서 asyncio 정책 설정 (버전 호환)
+if sys.platform == "win32":
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is not None:
+        asyncio.set_event_loop_policy(selector_policy())
 
 # QThread 내 asyncio 실행
 def run(self):
+    if sys.platform == "win32":
+        proactor_policy = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+        if proactor_policy is not None:
+            asyncio.set_event_loop_policy(proactor_policy())
     self.loop = asyncio.new_event_loop()
     asyncio.set_event_loop(self.loop)
     try:
@@ -474,6 +482,20 @@ This section is the source of truth for current behavior and supersedes older Se
   - `python -m playwright install chromium`
 - Team regression command:
   - `python -m pytest -q`
+- Type-check command:
+  - `pyright .`
 - `used_market_notifier.spec` collects Playwright Python modules.
+- PyInstaller onefile build intentionally excludes `matplotlib`; chart widgets fall back to placeholder mode.
 - Chromium runtime binaries are not bundled in onefile artifacts.
 - If Playwright runtime is unavailable, engine auto-degrades to Selenium with warning logs.
+
+## 2026-03 Consistency Update (Type Safety + Encoding)
+
+- Repository type baseline is fixed by `pyrightconfig.json`:
+  - `pythonVersion=3.10`
+  - `typeCheckingMode=standard`
+- Optional/nullability guards were aligned across GUI + engine + tests for Pylance/Pyright `0` errors.
+- UTF-8 hygiene gate:
+  - strict decode failures must be `0`
+  - `U+FFFD` occurrences must be `0`
+  - C1 control chars (`0x80-0x9F`) must be `0`

@@ -5,7 +5,7 @@ import asyncio
 import logging
 import functools
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Awaitable, Callable, Literal, Optional, TypeVar
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
 
 # Import Item from models - single source of truth
@@ -22,13 +22,16 @@ from .stealth import (
 )
 from .debug import ScraperDebugger, capture_on_error
 
+WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
+T = TypeVar("T")
+
 
 def async_retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
     """Async retry decorator with exponential backoff and logging"""
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(self, *args, **kwargs):
-            last_exception = None
+            last_exception: Exception | None = None
             current_delay = delay
             for attempt in range(max_attempts):
                 try:
@@ -45,7 +48,9 @@ def async_retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0)
             
             # All attempts failed
             self.logger.error(f"All {max_attempts} attempts failed for {func.__name__}")
-            raise last_exception
+            if last_exception is not None:
+                raise last_exception
+            raise RuntimeError(f"{func.__name__} failed without capturing an exception")
         return wrapper
     return decorator
 
@@ -78,7 +83,7 @@ class PlaywrightScraper(ABC):
         self, 
         headless: bool = True, 
         disable_images: bool = True,
-        context: BrowserContext = None,
+        context: BrowserContext | None = None,
         use_stealth: bool = False,
         debug_mode: bool = False,
         debug_level: str = "info",
@@ -113,7 +118,11 @@ class PlaywrightScraper(ABC):
         # Track bot detection status
         self._bot_detection_passed = None
         
-    async def initialize(self, playwright: Playwright = None, browser: Browser = None):
+    async def initialize(
+        self,
+        playwright: Playwright | None = None,
+        browser: Browser | None = None,
+    ):
         """
         Initialize browser context.
         
@@ -211,7 +220,7 @@ class PlaywrightScraper(ABC):
     async def navigate_with_retry(
         self, 
         url: str, 
-        wait_until: str = "domcontentloaded",
+        wait_until: WaitUntil = "domcontentloaded",
         max_retries: int = 3
     ) -> bool:
         """
@@ -284,7 +293,7 @@ class PlaywrightScraper(ABC):
         )
     
     @abstractmethod
-    async def search(self, keyword: str, location: str = None) -> list[Item]:
+    async def search(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Search for the keyword on the platform and return a list of Items.
         
@@ -297,8 +306,26 @@ class PlaywrightScraper(ABC):
         """
         pass
     
+    @staticmethod
+    def _run_async(coro_factory: Callable[[], Awaitable[T]]) -> T:
+        async def _await_factory() -> T:
+            return await coro_factory()
+
+        try:
+            return asyncio.run(_await_factory())
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(_await_factory())
+            finally:
+                loop.close()
+
+    def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
+        """Synchronous entrypoint used by MonitorEngine's thread executor."""
+        return self._run_async(lambda: self._safe_search_async(keyword, location))
+
     @async_retry(max_attempts=3, delay=1.0)
-    async def safe_search(self, keyword: str, location: str = None) -> list[Item]:
+    async def _safe_search_async(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Safe wrapper around search with debugging and auto-retry.
         """
@@ -368,7 +395,12 @@ class PlaywrightScraper(ABC):
                 return False
         return True
     
-    def filter_by_price(self, items: list[Item], min_price: int = None, max_price: int = None) -> list[Item]:
+    def filter_by_price(
+        self,
+        items: list[Item],
+        min_price: int | None = None,
+        max_price: int | None = None,
+    ) -> list[Item]:
         """Filter items by price range"""
         result = []
         for item in items:
@@ -383,7 +415,11 @@ class PlaywrightScraper(ABC):
             result.append(item)
         return result
     
-    def filter_by_keywords(self, items: list[Item], exclude_keywords: list[str] = None) -> list[Item]:
+    def filter_by_keywords(
+        self,
+        items: list[Item],
+        exclude_keywords: list[str] | None = None,
+    ) -> list[Item]:
         """Filter out items containing excluded keywords"""
         if not exclude_keywords:
             return items
@@ -394,7 +430,7 @@ class PlaywrightScraper(ABC):
                 result.append(item)
         return result
     
-    async def take_screenshot(self, filename: str = None) -> bytes:
+    async def take_screenshot(self, filename: str | None = None) -> bytes | None:
         """Take a screenshot for debugging"""
         if not self._page:
             return None

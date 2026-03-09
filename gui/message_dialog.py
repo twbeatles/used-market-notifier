@@ -7,18 +7,24 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
+from typing import Mapping, Sequence
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from message_templates import MessageTemplateManager, MessageTemplate
+from message_templates import MessageTemplateManager
 
 
 class MessageDialog(QDialog):
     """Dialog for generating seller messages from templates"""
     
-    def __init__(self, listing: dict, target_price: int = None, 
-                 custom_templates: list = None, parent=None):
+    def __init__(
+        self,
+        listing: Mapping[str, object],
+        target_price: int | None = None,
+        custom_templates: Sequence[object] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.listing = listing
         self.target_price = target_price
@@ -64,9 +70,11 @@ class MessageDialog(QDialog):
             'bunjang': '⚡ 번개장터',
             'joonggonara': '🛒 중고나라'
         }
+        platform_key_raw = self.listing.get('platform', '')
+        platform_key = platform_key_raw if isinstance(platform_key_raw, str) else str(platform_key_raw or "")
         platform_display = platform_icons.get(
-            self.listing.get('platform', ''), 
-            self.listing.get('platform', '')
+            platform_key,
+            platform_key,
         )
         
         info_text = QLabel(f"""
@@ -88,7 +96,8 @@ class MessageDialog(QDialog):
         template_layout.addWidget(template_label)
         
         self.template_combo = QComboBox()
-        platform = self.listing.get('platform', 'all')
+        platform_raw = self.listing.get('platform', 'all')
+        platform = platform_raw if isinstance(platform_raw, str) else "all"
         templates = self.manager.get_templates(platform)
         for t in templates:
             self.template_combo.addItem(t.name)
@@ -199,7 +208,8 @@ class MessageDialog(QDialog):
     
     def _on_template_changed(self, index):
         """Update message when template changes"""
-        platform = self.listing.get('platform', 'all')
+        platform_raw = self.listing.get('platform', 'all')
+        platform = platform_raw if isinstance(platform_raw, str) else "all"
         templates = self.manager.get_templates(platform)
         
         if 0 <= index < len(templates):
@@ -226,7 +236,7 @@ class MessageDialog(QDialog):
         
         url = self.listing.get('url') or self.listing.get('link')
         if url:
-            QDesktopServices.openUrl(QUrl(url))
+            QDesktopServices.openUrl(QUrl(str(url)))
             QMessageBox.information(
                 self,
                 "메시지 복사됨",

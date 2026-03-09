@@ -92,7 +92,7 @@ class JoonggonaraScraper(SeleniumScraper):
         digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
         return f"hash_{digest}"
     
-    def search(self, keyword: str, location: str = None) -> list[Item]:
+    def search(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Search Joonggonara via Naver Search cafe tab.
         This works better than direct cafe access which often requires captcha.

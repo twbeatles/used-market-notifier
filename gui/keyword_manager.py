@@ -182,26 +182,26 @@ class KeywordCard(QFrame):
             self.shadow.setOffset(0, 6)
         super().enterEvent(event)
     
-    def leaveEvent(self, event):
+    def leaveEvent(self, a0):
         """Reset card on leave"""
         if not self.selected:
             self.shadow.setBlurRadius(15)
             self.shadow.setOffset(0, 4)
-        super().leaveEvent(event)
+        super().leaveEvent(a0)
     
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, a0):
         self.clicked.emit(self.index)
-        super().mousePressEvent(event)
+        super().mousePressEvent(a0)
     
-    def mouseDoubleClickEvent(self, event):
+    def mouseDoubleClickEvent(self, a0):
         self.double_clicked.emit(self.index)
-        super().mouseDoubleClickEvent(event)
+        super().mouseDoubleClickEvent(a0)
 
 
 class KeywordEditDialog(QDialog):
     """Modern dialog for editing keyword configuration"""
     
-    def __init__(self, keyword: SearchKeyword = None, settings_manager=None, parent=None):
+    def __init__(self, keyword: SearchKeyword | None = None, settings_manager=None, parent=None):
         super().__init__(parent)
         self.keyword = keyword or SearchKeyword(keyword="")
         self.settings_manager = settings_manager
@@ -600,6 +600,8 @@ class KeywordManagerWidget(QWidget):
         # Remove stretch and other widgets
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
+            if item is None:
+                continue
             widget = item.widget()
             if widget:
                 widget.hide()

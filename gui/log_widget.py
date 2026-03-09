@@ -193,5 +193,7 @@ class LogWidget(QWidget):
         )
         
         # Update line count
-        count = self.log_text.document().blockCount()
-        self.line_count.setText(f"{count:,} 줄")
+        doc = self.log_text.document()
+        if doc is not None:
+            count = doc.blockCount()
+            self.line_count.setText(f"{count:,} 줄")

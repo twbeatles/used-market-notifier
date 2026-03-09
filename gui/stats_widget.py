@@ -170,7 +170,9 @@ class StatsWidget(QWidget):
         self.recent_table = QTableWidget()
         self.recent_table.setColumnCount(5)
         self.recent_table.setHorizontalHeaderLabels(["플랫폼", "제목", "가격", "키워드", "시간"])
-        self.recent_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        recent_h_header = self.recent_table.horizontalHeader()
+        if recent_h_header is not None:
+            recent_h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.recent_table.setColumnWidth(0, 80)
         self.recent_table.setColumnWidth(2, 100)
         self.recent_table.setColumnWidth(3, 100)
@@ -178,7 +180,9 @@ class StatsWidget(QWidget):
         self.recent_table.setAlternatingRowColors(True)
         self.recent_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.recent_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.recent_table.verticalHeader().setVisible(False)
+        recent_v_header = self.recent_table.verticalHeader()
+        if recent_v_header is not None:
+            recent_v_header.setVisible(False)
         self.recent_table.setMinimumHeight(220)
         self.recent_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.recent_table.setStyleSheet("""
@@ -223,14 +227,18 @@ class StatsWidget(QWidget):
         self.price_table = QTableWidget()
         self.price_table.setColumnCount(4)
         self.price_table.setHorizontalHeaderLabels(["상품", "이전가격", "현재가격", "시간"])
-        self.price_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        price_h_header = self.price_table.horizontalHeader()
+        if price_h_header is not None:
+            price_h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.price_table.setColumnWidth(1, 100)
         self.price_table.setColumnWidth(2, 100)
         self.price_table.setColumnWidth(3, 60)
         self.price_table.setAlternatingRowColors(True)
         self.price_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.price_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.price_table.verticalHeader().setVisible(False)
+        price_v_header = self.price_table.verticalHeader()
+        if price_v_header is not None:
+            price_v_header.setVisible(False)
         self.price_table.setStyleSheet(self.recent_table.styleSheet())
         self.price_table.cellDoubleClicked.connect(self.on_table_double_click)
         
@@ -245,7 +253,9 @@ class StatsWidget(QWidget):
         self.analysis_table = QTableWidget()
         self.analysis_table.setColumnCount(5)
         self.analysis_table.setHorizontalHeaderLabels(["키워드", "매물수", "최저가", "평균가", "최고가"])
-        self.analysis_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        analysis_h_header = self.analysis_table.horizontalHeader()
+        if analysis_h_header is not None:
+            analysis_h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.analysis_table.setColumnWidth(1, 60)
         self.analysis_table.setColumnWidth(2, 100)
         self.analysis_table.setColumnWidth(3, 100)
@@ -253,7 +263,9 @@ class StatsWidget(QWidget):
         self.analysis_table.setAlternatingRowColors(True)
         self.analysis_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.analysis_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.analysis_table.verticalHeader().setVisible(False)
+        analysis_v_header = self.analysis_table.verticalHeader()
+        if analysis_v_header is not None:
+            analysis_v_header.setVisible(False)
         self.analysis_table.setStyleSheet(self.recent_table.styleSheet())
         
         analysis_layout.addWidget(self.analysis_table)
@@ -408,10 +420,10 @@ class StatsWidget(QWidget):
     def on_table_double_click(self, row, col):
         sender = self.sender()
         url = None
-        if sender == self.recent_table:
+        if sender is self.recent_table:
              item = self.recent_table.item(row, 0)
              if item: url = item.data(Qt.ItemDataRole.UserRole)
-        elif sender == self.price_table:
+        elif sender is self.price_table:
              item = self.price_table.item(row, 0)
              if item: url = item.data(Qt.ItemDataRole.UserRole)
              
@@ -419,7 +431,7 @@ class StatsWidget(QWidget):
              self.open_url(url)
 
     def open_url(self, url):
-        if hasattr(self.engine, 'settings') and self.engine.settings.settings.confirm_link_open:
+        if self.engine and hasattr(self.engine, 'settings') and self.engine.settings.settings.confirm_link_open:
                 confirm = QMessageBox.question(
                     self, "링크 열기",
                     f"다음 링크로 이동하시겠습니까?\n{url}",
@@ -439,7 +451,10 @@ class StatsWidget(QWidget):
         fav_action = menu.addAction("⭐ 즐겨찾기 추가")
         block_action = menu.addAction("🚫 판매자 차단")
         
-        action = menu.exec(self.recent_table.viewport().mapToGlobal(pos))
+        viewport = self.recent_table.viewport()
+        if viewport is None:
+            return
+        action = menu.exec(viewport.mapToGlobal(pos))
         
         if action == fav_action:
             self.add_to_favorites(row)
@@ -449,6 +464,8 @@ class StatsWidget(QWidget):
     def block_seller(self, row):
         """Block the seller of the selected item"""
         item = self.recent_table.item(row, 0)
+        if item is None:
+            return
         seller = item.data(Qt.ItemDataRole.UserRole + 2)
         platform = item.data(Qt.ItemDataRole.UserRole + 3)
         
@@ -462,7 +479,7 @@ class StatsWidget(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
-        if confirm == QMessageBox.StandardButton.Yes:
+        if confirm == QMessageBox.StandardButton.Yes and self.engine:
             self.engine.db.add_seller_filter(seller, platform, is_blocked=True)
             QMessageBox.information(self, "완료", "판매자가 차단되었습니다.")
 
@@ -473,7 +490,7 @@ class StatsWidget(QWidget):
             return
             
         listing_id = item.data(Qt.ItemDataRole.UserRole + 1)
-        if listing_id:
+        if listing_id and self.engine:
             if self.engine.db.add_favorite(listing_id):
                  QMessageBox.information(self, "성공", "즐겨찾기에 추가되었습니다.")
             else:
@@ -482,6 +499,8 @@ class StatsWidget(QWidget):
     def show_export_menu(self):
         """Show export options menu"""
         btn = self.sender()
+        if not isinstance(btn, QWidget):
+            return
         menu = QMenu(self)
         csv_action = menu.addAction("CSV로 저장 (최근 100개)")
         excel_action = menu.addAction("Excel로 저장 (최근 100개)")
@@ -520,12 +539,12 @@ class StatsWidget(QWidget):
         else:
             QMessageBox.critical(self, "실패", f"저장 실패: {message}")
 
-    def showEvent(self, event):
-        super().showEvent(event)
+    def showEvent(self, a0):
+        super().showEvent(a0)
         if self._pending_refresh:
             self.refresh_stats(force=True)
     
-    def closeEvent(self, event):
+    def closeEvent(self, a0):
         """Clean up resources on close"""
         # Stop refresh timer
         if hasattr(self, 'refresh_timer'):
@@ -539,4 +558,4 @@ class StatsWidget(QWidget):
             except Exception:
                 pass
         
-        super().closeEvent(event)
+        super().closeEvent(a0)

@@ -2,7 +2,7 @@
 """Telegram notification handler"""
 
 import asyncio
-from typing import Optional
+from typing import Any, Mapping, Optional
 from models import Item
 from .base import BaseNotifier
 
@@ -55,7 +55,13 @@ class TelegramNotifier(BaseNotifier):
             return None
         return None
     
-    async def _request(self, method: str, data: dict = None, files: dict = None, max_retries: int = 3) -> bool:
+    async def _request(
+        self,
+        method: str,
+        data: Mapping[str, Any] | None = None,
+        files: Mapping[str, Any] | None = None,
+        max_retries: int = 3,
+    ) -> bool:
         """Make API request to Telegram with retry logic"""
         if aiohttp is None:
             self.logger.error("aiohttp is not installed; Telegram notifier is unavailable")

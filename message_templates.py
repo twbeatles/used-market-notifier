@@ -2,7 +2,7 @@
 """Message template system for quick seller communication"""
 
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import Mapping, Sequence
 import re
 
 
@@ -13,7 +13,7 @@ class MessageTemplate:
     content: str
     platform: str = "all"  # "all", "danggeun", "bunjang", "joonggonara"
     
-    def render(self, context: Dict[str, str]) -> str:
+    def render(self, context: Mapping[str, object]) -> str:
         """
         Render template with context variables.
         
@@ -76,49 +76,52 @@ class MessageTemplateManager:
         ),
     ]
     
-    def __init__(self, custom_templates: List[MessageTemplate] = None):
+    def __init__(self, custom_templates: Sequence[object] | None = None):
         """
         Initialize with optional custom templates.
         
         Args:
             custom_templates: List of custom templates (overrides defaults if provided)
         """
-        self.templates = self._normalize_templates(custom_templates) if custom_templates else self.DEFAULT_TEMPLATES.copy()
+        self.templates = (
+            self._normalize_templates(custom_templates)
+            if custom_templates
+            else self.DEFAULT_TEMPLATES.copy()
+        )
 
-    def _normalize_templates(self, templates) -> List[MessageTemplate]:
+    def _normalize_templates(self, templates: Sequence[object] | None) -> list[MessageTemplate]:
         """
         Normalize templates coming from settings (e.g. models.MessageTemplate) or dicts
         into this module's MessageTemplate (which has render()).
         """
-        normalized: List[MessageTemplate] = []
+        normalized: list[MessageTemplate] = []
         if not templates:
             return normalized
 
         for t in templates:
-            # Already our template type (has render()).
-            if hasattr(t, "render") and callable(getattr(t, "render")):
+            if isinstance(t, MessageTemplate):
                 normalized.append(t)
                 continue
 
             # dict-like template
             if isinstance(t, dict):
-                name = t.get("name", "")
-                content = t.get("content", "")
-                platform = t.get("platform", "all")
+                name = str(t.get("name", "") or "")
+                content = str(t.get("content", "") or "")
+                platform = str(t.get("platform", "all") or "all")
                 if name and content:
                     normalized.append(MessageTemplate(name=name, content=content, platform=platform))
                 continue
 
             # models.MessageTemplate or other objects with attributes
-            name = getattr(t, "name", "")
-            content = getattr(t, "content", "")
-            platform = getattr(t, "platform", "all") or "all"
+            name = str(getattr(t, "name", "") or "")
+            content = str(getattr(t, "content", "") or "")
+            platform = str(getattr(t, "platform", "all") or "all")
             if name and content:
                 normalized.append(MessageTemplate(name=name, content=content, platform=platform))
 
         return normalized
     
-    def get_templates(self, platform: str = None) -> List[MessageTemplate]:
+    def get_templates(self, platform: str | None = None) -> list[MessageTemplate]:
         """
         Get templates, optionally filtered by platform.
         
@@ -136,7 +139,7 @@ class MessageTemplateManager:
             if t.platform == "all" or t.platform == platform
         ]
     
-    def render_template(self, template_name: str, context: Dict[str, str]) -> Optional[str]:
+    def render_template(self, template_name: str, context: Mapping[str, object]) -> str | None:
         """
         Render a template by name with the given context.
         
@@ -160,7 +163,12 @@ class MessageTemplateManager:
             platform=platform
         ))
     
-    def update_template(self, name: str, content: str = None, platform: str = None):
+    def update_template(
+        self,
+        name: str,
+        content: str | None = None,
+        platform: str | None = None,
+    ) -> None:
         """Update an existing template"""
         for template in self.templates:
             if template.name == name:
@@ -174,7 +182,7 @@ class MessageTemplateManager:
         """Remove a template by name"""
         self.templates = [t for t in self.templates if t.name != name]
     
-    def get_available_variables(self) -> List[str]:
+    def get_available_variables(self) -> list[str]:
         """Get list of available template variables"""
         return [
             "{title} - 상품 제목",
@@ -198,6 +206,8 @@ class MessageTemplateManager:
             from PyQt6.QtGui import QClipboard
             
             clipboard = QApplication.clipboard()
+            if clipboard is None:
+                return False
             clipboard.setText(text)
             return True
         except Exception:
@@ -210,7 +220,11 @@ class MessageTemplateManager:
                 pass
         return False
     
-    def create_context_from_listing(self, listing: dict, target_price: int = None) -> Dict[str, str]:
+    def create_context_from_listing(
+        self,
+        listing: Mapping[str, object],
+        target_price: int | None = None,
+    ) -> dict[str, str]:
         """
         Create a context dict from a listing dict.
         
@@ -227,13 +241,23 @@ class MessageTemplateManager:
             'joonggonara': '중고나라'
         }
         
+        platform_key_raw = listing.get('platform', '')
+        platform_key = platform_key_raw if isinstance(platform_key_raw, str) else str(platform_key_raw or "")
+
+        def _as_text(value: object, default: str = "") -> str:
+            if isinstance(value, str):
+                return value
+            if value is None:
+                return default
+            return str(value)
+
         return {
-            'title': listing.get('title', ''),
-            'price': listing.get('price', ''),
-            'seller': listing.get('seller', ''),
-            'location': listing.get('location', ''),
-            'platform': platform_names.get(listing.get('platform', ''), listing.get('platform', '')),
-            'target_price': f"{target_price:,}원" if target_price else '',
+            'title': _as_text(listing.get('title', '')),
+            'price': _as_text(listing.get('price', '')),
+            'seller': _as_text(listing.get('seller', '')),
+            'location': _as_text(listing.get('location', '')),
+            'platform': platform_names.get(platform_key, platform_key),
+            'target_price': f"{target_price:,}원" if target_price is not None else '',
         }
 
 

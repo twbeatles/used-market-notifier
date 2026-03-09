@@ -20,12 +20,12 @@ class _SettingsWrapper:
 
 
 class _FakeScraper:
-    def __init__(self, items=None, exc: Exception = None):
+    def __init__(self, items=None, exc: Exception | None = None):
         self.items = list(items or [])
         self.exc = exc
         self.calls = 0
 
-    def safe_search(self, keyword: str, location: str = None):
+    def safe_search(self, keyword: str, location: str | None = None):
         self.calls += 1
         if self.exc is not None:
             raise self.exc
@@ -87,7 +87,8 @@ class TestDualEngineFallback(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(new_count, 1)
         self.assertEqual(primary.calls, 1)
         self.assertEqual(fallback.calls, 0)
-        engine._executor.shutdown(wait=True, cancel_futures=True)
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
 
     async def test_primary_exception_fallback_success(self):
         engine = await self._make_engine()
@@ -105,7 +106,8 @@ class TestDualEngineFallback(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(new_count, 1)
         self.assertEqual(primary.calls, 1)
         self.assertEqual(fallback.calls, 1)
-        engine._executor.shutdown(wait=True, cancel_futures=True)
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
 
     async def test_primary_empty_fallback_success(self):
         engine = await self._make_engine()
@@ -123,7 +125,8 @@ class TestDualEngineFallback(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(new_count, 1)
         self.assertEqual(primary.calls, 1)
         self.assertEqual(fallback.calls, 1)
-        engine._executor.shutdown(wait=True, cancel_futures=True)
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
 
     def test_dedupe_by_article_id_then_url(self):
         rows = [

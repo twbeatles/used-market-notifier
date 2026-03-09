@@ -468,9 +468,23 @@ This section is the current source of truth and supersedes older statements in t
   - `python -m playwright install chromium`
 - Team-standard regression command:
   - `python -m pytest -q`
+- Type-check gate command:
+  - `pyright .`
+- Type-check baseline is pinned in `pyrightconfig.json`:
+  - `pythonVersion=3.10`
+  - `typeCheckingMode=standard`
 - PyInstaller spec (`used_market_notifier.spec`) includes Playwright Python modules.
+- PyInstaller onefile build intentionally excludes `matplotlib`; chart widgets fall back gracefully when unavailable.
 - Chromium runtime binaries are not bundled in the EXE.
 - If Playwright runtime is unavailable at startup, engine automatically degrades to Selenium mode with warning logs.
+
+### Encoding Hygiene Gate
+
+- Track only UTF-8 text files for source/docs.
+- Validation target:
+  - strict UTF-8 decode failures: `0`
+  - `U+FFFD` replacement char occurrences: `0`
+  - C1 control chars (`0x80-0x9F`): `0`
 
 ### Quick Smoke Checklist
 

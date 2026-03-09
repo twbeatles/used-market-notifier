@@ -1,11 +1,15 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt6.QtCore import Qt
+from typing import Any
 import warnings
+
+FigureCanvas: Any = None
+Figure: Any = None
 
 try:
     import matplotlib
     matplotlib.use('Qt5Agg')
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
     import matplotlib.pyplot as plt
     
@@ -29,7 +33,7 @@ class PlatformChart(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        if HAS_MATPLOTLIB:
+        if HAS_MATPLOTLIB and Figure is not None and FigureCanvas is not None:
             self.figure = Figure(figsize=(4, 3), facecolor='#1e1e2e')
             self.canvas = FigureCanvas(self.figure)
             self.canvas.setStyleSheet("background-color: transparent;")
@@ -42,6 +46,8 @@ class PlatformChart(QWidget):
             layout.addWidget(label)
     
     def _draw_empty(self):
+        if not hasattr(self, "figure") or not hasattr(self, "canvas"):
+            return
         self.figure.clear()
         ax = self.figure.add_subplot(111)
         ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
@@ -52,7 +58,7 @@ class PlatformChart(QWidget):
         self.canvas.draw()
     
     def update_chart(self, data: dict):
-        if not HAS_MATPLOTLIB:
+        if not HAS_MATPLOTLIB or not hasattr(self, "figure") or not hasattr(self, "canvas"):
             return
         
         if not data or all(v == 0 for v in data.values()):
@@ -73,12 +79,13 @@ class PlatformChart(QWidget):
         values = list(filtered.values())
         colors = ['#ff9e64', '#bb9af7', '#9ece6a'][:len(labels)]
         
-        wedges, texts, autotexts = ax.pie(
+        pie_result = ax.pie(
             values, labels=labels, autopct='%1.1f%%',
             colors=colors, 
             textprops={'color': '#c0caf5', 'fontsize': 10},
             wedgeprops={'linewidth': 2, 'edgecolor': '#1e1e2e'}
         )
+        autotexts = pie_result[2] if len(pie_result) > 2 else []
         
         for autotext in autotexts:
             autotext.set_fontweight('bold')
@@ -104,7 +111,7 @@ class DailyChart(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        if HAS_MATPLOTLIB:
+        if HAS_MATPLOTLIB and Figure is not None and FigureCanvas is not None:
             self.figure = Figure(figsize=(6, 3), facecolor='#1e1e2e')
             self.canvas = FigureCanvas(self.figure)
             self.canvas.setStyleSheet("background-color: transparent;")
@@ -117,6 +124,8 @@ class DailyChart(QWidget):
             layout.addWidget(label)
     
     def _draw_empty(self):
+        if not hasattr(self, "figure") or not hasattr(self, "canvas"):
+            return
         self.figure.clear()
         ax = self.figure.add_subplot(111)
         ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
@@ -127,8 +136,8 @@ class DailyChart(QWidget):
         self.canvas.draw()
     
     def update_chart(self, data: list):
-        if not HAS_MATPLOTLIB or not data:
-            if HAS_MATPLOTLIB:
+        if not HAS_MATPLOTLIB or not hasattr(self, "figure") or not hasattr(self, "canvas") or not data:
+            if HAS_MATPLOTLIB and hasattr(self, "figure") and hasattr(self, "canvas"):
                 self._draw_empty()
             return
         

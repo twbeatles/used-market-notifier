@@ -157,7 +157,7 @@ class DanggeunScraper(SeleniumScraper):
 
         return card_map
 
-    def search(self, keyword: str, location: str = None) -> list[Item]:
+    def search(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Search Danggeun Market for keyword.
         
@@ -191,6 +191,8 @@ class DanggeunScraper(SeleniumScraper):
             for script in scripts:
                 try:
                     script_content = script.get_attribute('innerHTML')
+                    if not script_content:
+                        continue
                     data = json.loads(script_content)
                     if data.get('@type') == 'ItemList' and 'itemListElement' in data:
                         json_items.extend(data['itemListElement'])

@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import (
     Qt, QPropertyAnimation, QEasingCurve, 
-    QParallelAnimationGroup, pyqtProperty, QTimer
+    QTimer
 )
 from PyQt6.QtGui import QColor, QFont
 
@@ -39,10 +39,10 @@ class GlassCard(QFrame):
         self._animate_shadow(self._hover_shadow_blur, -2)
         super().enterEvent(event)
     
-    def leaveEvent(self, event):
+    def leaveEvent(self, a0):
         """Reset shadow on leave"""
         self._animate_shadow(self._base_shadow_blur, 4)
-        super().leaveEvent(event)
+        super().leaveEvent(a0)
     
     def _animate_shadow(self, blur: int, offset_y: int):
         """Animate shadow properties"""
@@ -66,13 +66,13 @@ class AnimatedButton(QPushButton):
         self.press_anim.setDuration(100)
         self.press_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
     
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, e):
         """Slight scale down on press"""
-        super().mousePressEvent(event)
+        super().mousePressEvent(e)
     
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, e):
         """Scale back up on release"""
-        super().mouseReleaseEvent(event)
+        super().mouseReleaseEvent(e)
 
 
 class PulsingDot(QLabel):
@@ -274,14 +274,14 @@ class EmptyState(QWidget):
         icon: str = "📭", 
         title: str = "데이터가 없습니다",
         message: str = "",
-        action_text: str = None,
+        action_text: str | None = None,
         parent=None
     ):
         super().__init__(parent)
         self.action_callback = None
         self._setup_ui(icon, title, message, action_text)
     
-    def _setup_ui(self, icon: str, title: str, message: str, action_text: str):
+    def _setup_ui(self, icon: str, title: str, message: str, action_text: str | None):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(16)

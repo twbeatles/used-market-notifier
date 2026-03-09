@@ -9,9 +9,13 @@ Notes:
 - This spec bundles Python modules for both Selenium and Playwright paths.
 - Playwright Chromium runtime binaries are not bundled in the EXE.
   Install them on target machines with: `python -m playwright install chromium`.
+- `matplotlib` is intentionally excluded to keep onefile size small.
+  Chart widgets degrade gracefully to a fallback label when matplotlib is unavailable.
 - Scraper parser updates (2026-03) such as Danggeun slug/hash article IDs
   and Bunjang unknown-location normalization are runtime logic changes only
   and do not require additional PyInstaller hidden imports.
+- Static typing / encoding hygiene updates (2026-03) are source-level changes only
+  and do not require PyInstaller hidden import adjustments.
 """
 
 import sys

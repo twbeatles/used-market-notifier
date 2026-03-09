@@ -3,15 +3,18 @@
 
 import csv
 import logging
-from typing import List, Dict, Any, Tuple
-from datetime import datetime
+from typing import Any, Mapping, Sequence
 
 
 class ExportManager:
     """Manages data export to various formats"""
     
     @staticmethod
-    def export_to_csv(data: List[Dict[str, Any]], filename: str, fields: List[str] = None) -> Tuple[bool, str]:
+    def export_to_csv(
+        data: Sequence[Mapping[str, Any]],
+        filename: str,
+        fields: Sequence[str] | None = None,
+    ) -> tuple[bool, str]:
         """
         Export list of dicts to CSV.
         
@@ -22,15 +25,14 @@ class ExportManager:
             return False, "내보낼 데이터가 없습니다."
             
         try:
-            if not fields:
-                fields = list(data[0].keys())
+            field_names = list(fields) if fields else list(data[0].keys())
                 
             with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
-                writer = csv.DictWriter(f, fieldnames=fields)
+                writer = csv.DictWriter(f, fieldnames=field_names)
                 writer.writeheader()
                 for row in data:
                     # Filter row to only include requested fields
-                    filtered = {k: row.get(k) for k in fields}
+                    filtered = {k: row.get(k) for k in field_names}
                     writer.writerow(filtered)
             return True, f"{len(data):,}개 항목을 저장했습니다."
         except PermissionError:
@@ -47,7 +49,11 @@ class ExportManager:
             return False, msg
 
     @staticmethod
-    def export_to_excel(data: List[Dict[str, Any]], filename: str, fields: List[str] = None) -> Tuple[bool, str]:
+    def export_to_excel(
+        data: Sequence[Mapping[str, Any]],
+        filename: str,
+        fields: Sequence[str] | None = None,
+    ) -> tuple[bool, str]:
         """
         Export list of dicts to Excel.
         
@@ -55,7 +61,8 @@ class ExportManager:
             Tuple of (success: bool, message: str)
         """
         try:
-            import openpyxl
+            from openpyxl import Workbook
+            from openpyxl.utils import get_column_letter
         except ImportError:
             msg = "openpyxl 패키지가 설치되어 있지 않습니다. 'pip install openpyxl'을 실행하세요."
             logging.error(msg)
@@ -65,29 +72,30 @@ class ExportManager:
             return False, "내보낼 데이터가 없습니다."
             
         try:
-            wb = openpyxl.Workbook()
+            wb = Workbook()
             ws = wb.active
+            if ws is None:
+                return False, "내보내기 실패: 워크시트를 생성하지 못했습니다."
             ws.title = "매물 목록"
             
-            if not fields:
-                fields = list(data[0].keys())
+            field_names = list(fields) if fields else list(data[0].keys())
             
             # Header with styling
-            ws.append(fields)
+            ws.append(field_names)
             
             # Data
             for row in data:
-                values = [row.get(k) for k in fields]
+                values = [row.get(k) for k in field_names]
                 ws.append(values)
             
             # Auto-adjust column widths (approximate)
-            for i, field in enumerate(fields, 1):
+            for i, field in enumerate(field_names, 1):
                 max_length = len(str(field))
                 for row in data[:50]:  # Check first 50 rows for performance
                     cell_value = str(row.get(field, ''))
                     if len(cell_value) > max_length:
                         max_length = min(len(cell_value), 50)  # Cap at 50 chars
-                ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = max_length + 2
+                ws.column_dimensions[get_column_letter(i)].width = max_length + 2
             
             wb.save(filename)
             return True, f"{len(data):,}개 항목을 저장했습니다."

@@ -8,11 +8,11 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional, Protocol, cast
 
 from auto_tagger import AutoTagger
 from db import DatabaseManager
-from models import NotificationType, SearchKeyword
+from models import AppSettings, NotificationType, SearchKeyword
 from notifiers import DiscordNotifier, SlackNotifier, TelegramNotifier
 from scrapers import (
     BunjangScraper,
@@ -24,6 +24,29 @@ from scrapers import (
     PlaywrightJoonggonaraScraper,
 )
 from settings_manager import SettingsManager
+
+
+class SettingsProvider(Protocol):
+    settings: AppSettings
+
+
+class ScraperProtocol(Protocol):
+    def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
+        ...
+
+    def close(self) -> object:
+        ...
+
+
+class NotifierProtocol(Protocol):
+    async def send_message(self, text: str) -> bool:
+        ...
+
+    async def send_item(self, item: Item, with_image: bool = True) -> bool:
+        ...
+
+    async def send_price_change(self, item: Item, old_price: str, new_price: str) -> bool:
+        ...
 
 
 @dataclass
@@ -49,19 +72,19 @@ class MonitorEngine:
     NOTIFICATION_MAX_RETRIES = 3
     NOTIFICATION_DRAIN_TIMEOUT = 20.0
 
-    def __init__(self, settings_manager: SettingsManager, db: Optional[DatabaseManager] = None):
+    def __init__(self, settings_manager: SettingsProvider, db: Optional[DatabaseManager] = None):
         self.settings = settings_manager
         self.logger = logging.getLogger("MonitorEngine")
         self.db = db or DatabaseManager(self.settings.settings.db_path)
         self._owns_db = db is None
 
-        self.primary_scrapers: dict[str, object] = {}
-        self.fallback_scrapers: dict[str, object] = {}
+        self.primary_scrapers: dict[str, ScraperProtocol] = {}
+        self.fallback_scrapers: dict[str, ScraperProtocol] = {}
         self.primary_scraper_kind: dict[str, str] = {}
         self.fallback_scraper_kind: dict[str, str] = {}
         # Backward-compatible alias used by some UI paths.
         self.scrapers = self.primary_scrapers
-        self.notifiers: list[object] = []
+        self.notifiers: list[NotifierProtocol] = []
         self.running = False
         self._task: Optional[asyncio.Task] = None
         self.is_first_run = True  # Skip notifications on initial crawl
@@ -190,7 +213,7 @@ class MonitorEngine:
             )
         return self._playwright_runtime_available
 
-    def _create_scraper(self, platform: str, headless: bool, engine_kind: str):
+    def _create_scraper(self, platform: str, headless: bool, engine_kind: str) -> ScraperProtocol:
         """Create a scraper instance for a platform and engine kind."""
         if platform not in ("danggeun", "bunjang", "joonggonara"):
             raise ValueError(f"Unsupported platform: {platform}")
@@ -221,21 +244,29 @@ class MonitorEngine:
 
         raise ValueError(f"Unsupported scraper kind: platform={platform}, kind={engine_kind}")
 
-    def _close_scraper_safe(self, platform: str, scraper: object) -> None:
+    @staticmethod
+    async def _await_awaitable(awaitable: Awaitable[object]) -> object:
+        return await awaitable
+
+    def _close_scraper_safe(self, platform: str, scraper: ScraperProtocol) -> None:
         """Best-effort scraper close."""
         try:
-            if hasattr(scraper, "close"):
-                result = scraper.close()
-                if inspect.isawaitable(result):
-                    asyncio.run(result)
+            close_fn = getattr(scraper, "close", None)
+            if close_fn is None:
+                return
+            result = close_fn()
+            if inspect.isawaitable(result):
+                awaitable = cast(Awaitable[object], result)
+                asyncio.run(self._await_awaitable(awaitable))
         except Exception as e:
             self.logger.warning(f"Failed to close scraper '{platform}': {e}")
 
     def _check_scraper_health(self, scraper: object) -> bool:
         """Best-effort scraper driver health check."""
         try:
-            if hasattr(scraper, "is_healthy"):
-                return bool(scraper.is_healthy())
+            is_healthy_fn = getattr(scraper, "is_healthy", None)
+            if callable(is_healthy_fn):
+                return bool(is_healthy_fn())
             drv = getattr(scraper, "driver", None)
             if drv is None:
                 return True
@@ -265,7 +296,7 @@ class MonitorEngine:
             if old_fallback is not None and old_fallback is not old_primary:
                 await loop.run_in_executor(self._executor, self._close_scraper_safe, platform, old_fallback)
 
-            resolved: list[tuple[str, object]] = []
+            resolved: list[tuple[str, ScraperProtocol]] = []
             for kind in engine_order:
                 if kind == "playwright":
                     runtime_ok = await self._ensure_playwright_runtime()
@@ -431,7 +462,11 @@ class MonitorEngine:
         for notifier in self.notifiers:
             try:
                 if job.is_price_change:
-                    success = await notifier.send_price_change(job.item, job.old_price, job.new_price)
+                    success = await notifier.send_price_change(
+                        job.item,
+                        job.old_price or "",
+                        job.new_price or "",
+                    )
                 else:
                     success = await notifier.send_item(job.item, with_image=True)
 
@@ -456,10 +491,10 @@ class MonitorEngine:
         self,
         item: Item,
         is_price_change: bool = False,
-        old_price: str = None,
-        new_price: str = None,
-        listing_id: int = None,
-    ):
+        old_price: str | None = None,
+        new_price: str | None = None,
+        listing_id: int | None = None,
+    ) -> None:
         """Queue notifications so the search loop is never blocked by network I/O."""
         if not self.settings.settings.notifications_enabled:
             return
@@ -561,7 +596,7 @@ class MonitorEngine:
             if primary_scraper is None:
                 return platform, [], 0, 0, False, "primary_unavailable"
 
-            async def run_scrape(scraper: object, engine_kind: str):
+            async def run_scrape(scraper: ScraperProtocol, engine_kind: str):
                 started = perf_counter()
                 try:
                     async with semaphore:
@@ -643,7 +678,7 @@ class MonitorEngine:
         if scrape_tasks:
             results = await asyncio.gather(*scrape_tasks, return_exceptions=True)
             for result in results:
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     self.logger.error(f"Unexpected scraping task failure: {result}")
                     continue
                 platform, items_raw, _, _, _, _ = result
@@ -722,7 +757,7 @@ class MonitorEngine:
                     self.logger.info(
                         f"Price change: {item.title} ({price_change['old_price']} -> {price_change['new_price']})"
                     )
-                    fav = self.db.get_favorite_details(listing_id)
+                    fav = self.db.get_favorite_details(listing_id) if listing_id is not None else None
                     new_price_display = price_change["new_price"]
 
                     if fav and fav.get("target_price") and price_change.get("new_numeric"):
@@ -974,7 +1009,7 @@ class MonitorEngine:
         except Exception as e:
             self.logger.warning(f"Notification queue cleanup failed: {e}")
 
-        close_targets: list[tuple[str, object]] = []
+        close_targets: list[tuple[str, ScraperProtocol]] = []
         seen_obj_ids: set[int] = set()
         for platform, scraper in self.primary_scrapers.items():
             if scraper is None:

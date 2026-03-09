@@ -16,6 +16,9 @@ class TestPlaywrightDanggeunParser(unittest.TestCase):
         url = "https://example.com/no/article/id/here?foo=bar"
         id1 = PlaywrightDanggeunScraper._extract_article_id(url)
         id2 = PlaywrightDanggeunScraper._extract_article_id(url)
+        self.assertIsNotNone(id1)
+        self.assertIsNotNone(id2)
+        assert id1 is not None and id2 is not None
         self.assertEqual(id1, id2)
         self.assertTrue(id1.startswith("hash_"))
         self.assertEqual(len(id1), len("hash_") + 12)

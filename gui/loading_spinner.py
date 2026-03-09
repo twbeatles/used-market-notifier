@@ -71,14 +71,14 @@ class EmptyStateWidget(QWidget):
         icon: str = "📭", 
         title: str = "데이터 없음",
         message: str = "표시할 항목이 없습니다.",
-        action_text: str = None,
+        action_text: str | None = None,
         action_callback=None,
         parent=None
     ):
         super().__init__(parent)
         self._setup_ui(icon, title, message, action_text, action_callback)
     
-    def _setup_ui(self, icon, title, message, action_text, action_callback):
+    def _setup_ui(self, icon: str, title: str, message: str, action_text: str | None, action_callback):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setContentsMargins(40, 60, 40, 60)

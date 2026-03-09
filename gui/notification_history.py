@@ -56,7 +56,9 @@ class NotificationHistoryWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["시간", "플랫폼", "유형", "제목", "미리보기"])
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        h_header = self.table.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.table.setColumnWidth(0, 150)
         self.table.setColumnWidth(1, 100)
         self.table.setColumnWidth(2, 100)
@@ -66,7 +68,9 @@ class NotificationHistoryWidget(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.verticalHeader().setVisible(False)
+        v_header = self.table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self.table.setStyleSheet("""
             QTableWidget {
                 background-color: #1e1e2e;
@@ -153,4 +157,4 @@ class NotificationHistoryWidget(QWidget):
                      if confirm != QMessageBox.StandardButton.Yes:
                          return
                 
-                QDesktopServices.openUrl(QUrl(url))
+                QDesktopServices.openUrl(QUrl(str(url)))

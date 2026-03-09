@@ -1,9 +1,8 @@
 # auto_tagger.py
 """Automatic tagging system for listings based on title keywords"""
 
-from dataclasses import dataclass, field
-from typing import List, Optional
-import re
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -19,7 +18,7 @@ class AutoTagger:
     """Analyzes listing titles and generates automatic tags"""
     
     # Default tag rules - can be customized via settings
-    DEFAULT_RULES = [
+    DEFAULT_RULES: list[dict[str, Any]] = [
         {
             "tag_name": "A급",
             "keywords": ["A급", "에이급", "상태좋음", "매우깨끗", "최상", "S급"],
@@ -70,7 +69,7 @@ class AutoTagger:
         }
     ]
     
-    def __init__(self, custom_rules: List[dict] = None):
+    def __init__(self, custom_rules: list[dict[str, Any]] | None = None):
         """
         Initialize AutoTagger with optional custom rules.
         
@@ -79,7 +78,7 @@ class AutoTagger:
         """
         self.rules = custom_rules if custom_rules else self.DEFAULT_RULES
     
-    def analyze(self, title: str) -> List[str]:
+    def analyze(self, title: str) -> list[str]:
         """
         Analyze title and return list of matching tag names.
         
@@ -106,7 +105,7 @@ class AutoTagger:
         
         return matched_tags
     
-    def analyze_detailed(self, title: str) -> List[TagResult]:
+    def analyze_detailed(self, title: str) -> list[TagResult]:
         """
         Analyze title and return detailed tag results.
         
@@ -150,7 +149,7 @@ class AutoTagger:
                 return (rule.get('icon', '🏷️'), rule.get('color', '#89b4fa'))
         return ('🏷️', '#89b4fa')
     
-    def format_tags_html(self, tags: List[str]) -> str:
+    def format_tags_html(self, tags: list[str]) -> str:
         """
         Format tags as HTML badges for display.
         
@@ -173,11 +172,11 @@ class AutoTagger:
         
         return ''.join(badges)
     
-    def update_rules(self, new_rules: List[dict]):
+    def update_rules(self, new_rules: list[dict[str, Any]]) -> None:
         """Update the tagging rules"""
         self.rules = new_rules
     
-    def add_rule(self, tag_name: str, keywords: List[str], 
+    def add_rule(self, tag_name: str, keywords: list[str], 
                  color: str = "#89b4fa", icon: str = "🏷️"):
         """Add a new tagging rule"""
         self.rules.append({
@@ -194,7 +193,7 @@ class AutoTagger:
 
 
 # Convenience function for quick tagging
-def auto_tag(title: str) -> List[str]:
+def auto_tag(title: str) -> list[str]:
     """Quick function to get tags for a title"""
     tagger = AutoTagger()
     return tagger.analyze(title)

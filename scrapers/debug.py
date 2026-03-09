@@ -269,7 +269,7 @@ class ScraperDebugger:
         self.session.items_found = count
         self.logger.info(f"📦 Found {count} items for '{self.keyword}' on {self.platform}")
     
-    def log_error(self, message: str, exception: Exception = None):
+    def log_error(self, message: str, exception: Exception | None = None):
         """Log an error"""
         full_message = message
         if exception:

@@ -2,7 +2,7 @@
 """System tray icon with context menu"""
 
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
 from PyQt6.QtCore import pyqtSignal, QObject
 
 
@@ -54,25 +54,29 @@ class SystemTrayIcon(QSystemTrayIcon):
         
         # Status indicator
         self.status_action = menu.addAction("⏹️ 대기 중")
-        self.status_action.setEnabled(False)
+        if self.status_action is not None:
+            self.status_action.setEnabled(False)
         
         menu.addSeparator()
         
         # Show window
         show_action = menu.addAction("📱 창 열기")
-        show_action.triggered.connect(self.show_window_requested.emit)
+        if show_action is not None:
+            show_action.triggered.connect(self.show_window_requested.emit)
         
         menu.addSeparator()
         
         # Toggle monitoring
         self.toggle_action = menu.addAction("▶️ 모니터링 시작")
-        self.toggle_action.triggered.connect(self.toggle_monitoring)
+        if self.toggle_action is not None:
+            self.toggle_action.triggered.connect(self.toggle_monitoring)
         
         menu.addSeparator()
         
         # Quit
         quit_action = menu.addAction("🚪 종료")
-        quit_action.triggered.connect(self.quit_requested.emit)
+        if quit_action is not None:
+            quit_action.triggered.connect(self.quit_requested.emit)
         
         self.setContextMenu(menu)
     
@@ -93,12 +97,16 @@ class SystemTrayIcon(QSystemTrayIcon):
         self.is_monitoring = is_running
         
         if is_running:
-            self.status_action.setText("🟢 모니터링 중")
-            self.toggle_action.setText("⏹️ 모니터링 중지")
+            if self.status_action is not None:
+                self.status_action.setText("🟢 모니터링 중")
+            if self.toggle_action is not None:
+                self.toggle_action.setText("⏹️ 모니터링 중지")
             self.setToolTip("중고거래 알리미 - 모니터링 중")
         else:
-            self.status_action.setText("⏹️ 대기 중")
-            self.toggle_action.setText("▶️ 모니터링 시작")
+            if self.status_action is not None:
+                self.status_action.setText("⏹️ 대기 중")
+            if self.toggle_action is not None:
+                self.toggle_action.setText("▶️ 모니터링 시작")
             self.setToolTip("중고거래 알리미 - 대기 중")
     
     def show_notification(self, title: str, message: str, icon=None):

@@ -30,6 +30,7 @@ class TestBackupManager(unittest.TestCase):
             mgr = BackupManager(backup_dir=backup_dir)
             backup_path = mgr.create_backup(db_path=db_path, settings_path=settings_path)
             self.assertIsNotNone(backup_path)
+            assert backup_path is not None
             self.assertTrue(os.path.exists(backup_path))
 
             with zipfile.ZipFile(backup_path, "r") as zf:

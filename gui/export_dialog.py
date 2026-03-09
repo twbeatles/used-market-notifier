@@ -8,12 +8,13 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QDate
 from datetime import datetime
+from typing import Mapping
 
 
 class ExportDialog(QDialog):
     """Dialog for configuring and executing data export"""
     
-    def __init__(self, db, current_filters: dict = None, parent=None):
+    def __init__(self, db, current_filters: Mapping[str, object] | None = None, parent=None):
         super().__init__(parent)
         self.db = db
         self.current_filters = current_filters or {}
@@ -114,14 +115,18 @@ class ExportDialog(QDialog):
         self.date_from.setDate(QDate.currentDate().addMonths(-1))
         self.date_from.setEnabled(False)
         self.date_from.setStyleSheet(self._date_style())
-        date_layout.addWidget(QLabel("부터", styleSheet="color: #a6adc8;"))
+        from_label = QLabel("부터")
+        from_label.setStyleSheet("color: #a6adc8;")
+        date_layout.addWidget(from_label)
         date_layout.addWidget(self.date_from)
         
         self.date_to = QDateEdit()
         self.date_to.setDate(QDate.currentDate())
         self.date_to.setEnabled(False)
         self.date_to.setStyleSheet(self._date_style())
-        date_layout.addWidget(QLabel("까지", styleSheet="color: #a6adc8;"))
+        to_label = QLabel("까지")
+        to_label.setStyleSheet("color: #a6adc8;")
+        date_layout.addWidget(to_label)
         date_layout.addWidget(self.date_to)
         
         date_layout.addStretch()
@@ -241,8 +246,8 @@ class ExportDialog(QDialog):
         self.date_from.setEnabled(enabled)
         self.date_to.setEnabled(enabled)
     
-    def _get_selected_fields(self) -> list:
-        fields = []
+    def _get_selected_fields(self) -> list[str]:
+        fields: list[str] = []
         field_map = {
             'title': self.col_title,
             'price': self.col_price,
@@ -336,10 +341,10 @@ class ExportDialog(QDialog):
             
             # Export
             from export_manager import ExportManager
-            fields = self._get_selected_fields()
+            fields: list[str] = self._get_selected_fields()
             
             # Map Korean field names
-            field_names = {
+            field_names: dict[str, str] = {
                 'title': '제목',
                 'price': '가격',
                 'platform': '플랫폼',

@@ -3,8 +3,7 @@
 
 import time
 import functools
-import logging
-from typing import Optional, List
+from typing import List
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -20,7 +19,7 @@ def retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            last_exception = None
+            last_exception: Exception | None = None
             current_delay = delay
             for attempt in range(max_attempts):
                 try:
@@ -30,7 +29,9 @@ def retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
                     if attempt < max_attempts - 1:
                         time.sleep(current_delay)
                         current_delay *= backoff
-            raise last_exception
+            if last_exception is not None:
+                raise last_exception
+            raise RuntimeError(f"{func.__name__} failed without capturing an exception")
         return wrapper
     return decorator
 
@@ -38,8 +39,12 @@ def retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
 class SeleniumScraper(BaseScraper):
     """Base class for Selenium-based scrapers"""
     
-    def __init__(self, headless: bool = True, disable_images: bool = True, 
-                 driver: webdriver.Chrome = None):
+    def __init__(
+        self,
+        headless: bool = True,
+        disable_images: bool = True,
+        driver: webdriver.Chrome | None = None,
+    ):
         super().__init__()
         self._owned_driver = False
         if driver:
@@ -95,7 +100,7 @@ class SeleniumScraper(BaseScraper):
             self.logger.error(f"Failed to initialize Chrome driver: {e}")
             raise e
     
-    def search(self, keyword: str, location: str = None) -> List[Item]:
+    def search(self, keyword: str, location: str | None = None) -> List[Item]:
         """
         Abstract search method - must be implemented by subclasses.
         
@@ -109,7 +114,7 @@ class SeleniumScraper(BaseScraper):
         raise NotImplementedError("Subclasses must implement search()")
     
     @retry(max_attempts=3, delay=1.0)
-    def safe_search(self, keyword: str, location: str = None) -> List[Item]:
+    def safe_search(self, keyword: str, location: str | None = None) -> List[Item]:
         """Search with automatic retry on failure"""
         return self.search(keyword, location)
     
