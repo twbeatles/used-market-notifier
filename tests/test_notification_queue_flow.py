@@ -13,33 +13,71 @@ class _SettingsWrapper:
         self.settings = AppSettings(notifications_enabled=True)
 
 
-class _FlakyNotifier:
+class TelegramNotifier:
     def __init__(self):
         self.calls = 0
+        self._last_delivery_result = {"success": False, "error_message": None, "rate_limited": False}
 
     async def send_message(self, text: str) -> bool:
+        _ = text
+        self._last_delivery_result = {"success": True, "error_message": None, "rate_limited": False}
         return True
 
     async def send_item(self, item: Item, with_image: bool = True) -> bool:
+        _ = (item, with_image)
         self.calls += 1
-        # Fail once, then succeed.
-        return self.calls >= 2
+        self._last_delivery_result = {"success": True, "error_message": None, "rate_limited": False}
+        return True
 
     async def send_price_change(self, item: Item, old_price: str, new_price: str) -> bool:
+        _ = (item, old_price, new_price)
         self.calls += 1
+        self._last_delivery_result = {"success": True, "error_message": None, "rate_limited": False}
         return True
+
+    def get_last_delivery_result(self) -> dict:
+        return dict(self._last_delivery_result)
+
+
+class DiscordNotifier:
+    def __init__(self):
+        self.calls = 0
+        self._last_delivery_result = {"success": False, "error_message": None, "rate_limited": False}
+
+    async def send_message(self, text: str) -> bool:
+        _ = text
+        self._last_delivery_result = {"success": True, "error_message": None, "rate_limited": False}
+        return True
+
+    async def send_item(self, item: Item, with_image: bool = True) -> bool:
+        _ = (item, with_image)
+        self.calls += 1
+        success = self.calls >= 2
+        self._last_delivery_result = {
+            "success": success,
+            "error_message": None if success else "temporary failure",
+            "rate_limited": False,
+        }
+        return success
+
+    async def send_price_change(self, item: Item, old_price: str, new_price: str) -> bool:
+        _ = (item, old_price, new_price)
+        return await self.send_item(item)
+
+    def get_last_delivery_result(self) -> dict:
+        return dict(self._last_delivery_result)
 
 
 class TestNotificationQueueFlow(unittest.IsolatedAsyncioTestCase):
-    async def test_queue_retry_and_drain(self):
+    async def test_partial_channel_retry_and_delivery_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = os.path.join(tmp, "test.db")
             db = DatabaseManager(db_path)
             try:
-                settings = _SettingsWrapper()
-                engine = MonitorEngine(settings, db=db)
-                notifier = _FlakyNotifier()
-                engine.notifiers = [notifier]
+                engine = MonitorEngine(_SettingsWrapper(), db=db)
+                telegram = TelegramNotifier()
+                discord = DiscordNotifier()
+                engine.notifiers = [telegram, discord]
                 engine._notification_queue = asyncio.Queue()
                 engine._stop_event = asyncio.Event()
 
@@ -47,27 +85,36 @@ class TestNotificationQueueFlow(unittest.IsolatedAsyncioTestCase):
                     _ = seconds
                     return
 
-                engine._sleep_or_stop = _no_sleep  # speed up retry path in tests
+                engine._sleep_or_stop = _no_sleep
                 engine._notification_worker_task = asyncio.create_task(engine._notification_worker())
 
                 item = Item(
                     platform="danggeun",
                     article_id="a1",
-                    title="테스트 상품",
+                    title="test item",
                     price="10,000원",
                     link="https://example.com/a1",
-                    keyword="테스트",
+                    keyword="test",
                 )
                 _, _, listing_id = db.add_listing(item)
-                self.assertIsNotNone(listing_id)
                 assert listing_id is not None
 
                 await engine.send_notifications(item, listing_id=listing_id)
                 await asyncio.wait_for(engine._notification_queue.join(), timeout=3.0)
 
-                self.assertGreaterEqual(notifier.calls, 2)
-                logs = db.get_notification_logs(limit=10)
-                self.assertGreaterEqual(len(logs), 1)
+                self.assertEqual(telegram.calls, 1)
+                self.assertEqual(discord.calls, 2)
+
+                success_logs = db.get_notification_logs(limit=10)
+                self.assertEqual(len(success_logs), 2)
+                self.assertEqual({row["notification_type"] for row in success_logs}, {"telegram", "discord"})
+
+                summary = db.get_notification_delivery_summary(days=7)
+                self.assertEqual(summary["telegram"]["success_count"], 1)
+                self.assertEqual(summary["telegram"]["failed_count"], 0)
+                self.assertEqual(summary["discord"]["success_count"], 1)
+                self.assertEqual(summary["discord"]["failed_count"], 1)
+                self.assertEqual(summary["discord"]["last_failure_message"], "temporary failure")
 
                 engine._stop_event.set()
                 await engine._drain_notification_queue()

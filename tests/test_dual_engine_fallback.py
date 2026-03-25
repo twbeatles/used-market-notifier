@@ -10,11 +10,11 @@ from monitor_engine import MonitorEngine
 
 
 class _SettingsWrapper:
-    def __init__(self):
+    def __init__(self, fallback_on_empty_results: bool = True):
         self.settings = AppSettings(
             notifications_enabled=False,
             scraper_mode="playwright_primary",
-            fallback_on_empty_results=True,
+            fallback_on_empty_results=fallback_on_empty_results,
             max_fallback_per_cycle=3,
         )
 
@@ -30,6 +30,9 @@ class _FakeScraper:
         if self.exc is not None:
             raise self.exc
         return list(self.items)
+
+    def enrich_item(self, item: Item):
+        return item
 
     def is_healthy(self):
         return True
@@ -71,6 +74,16 @@ class TestDualEngineFallback(unittest.IsolatedAsyncioTestCase):
         engine._ensure_scraper = _always_ready
         return engine
 
+    async def _make_engine_with_settings(self, settings_wrapper: _SettingsWrapper) -> MonitorEngine:
+        engine = MonitorEngine(settings_wrapper, db=self.db)
+        engine._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+        async def _always_ready(platform: str, use_fallback: bool = False):
+            return True
+
+        engine._ensure_scraper = _always_ready
+        return engine
+
     async def test_primary_success_no_fallback(self):
         engine = await self._make_engine()
         primary = _FakeScraper(items=[_item("danggeun", "a1", "아이폰", "https://e/a1")])
@@ -101,6 +114,25 @@ class TestDualEngineFallback(unittest.IsolatedAsyncioTestCase):
         engine.fallback_scraper_kind["danggeun"] = "selenium"
 
         kw = SearchKeyword(keyword="아이폰", platforms=["danggeun"])
+        new_count = await engine.search_keyword(kw, blocked_set=set())
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(fallback.calls, 1)
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
+
+    async def test_primary_exception_fallback_even_when_empty_fallback_disabled(self):
+        engine = await self._make_engine_with_settings(_SettingsWrapper(fallback_on_empty_results=False))
+        primary = _FakeScraper(exc=RuntimeError("primary failed"))
+        fallback = _FakeScraper(items=[_item("danggeun", "a11", "item", "https://e/a11")])
+
+        engine.primary_scrapers["danggeun"] = primary
+        engine.primary_scraper_kind["danggeun"] = "playwright"
+        engine.fallback_scrapers["danggeun"] = fallback
+        engine.fallback_scraper_kind["danggeun"] = "selenium"
+
+        kw = SearchKeyword(keyword="item", platforms=["danggeun"])
         new_count = await engine.search_keyword(kw, blocked_set=set())
 
         self.assertEqual(new_count, 1)

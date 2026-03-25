@@ -324,6 +324,10 @@ class PlaywrightScraper(ABC):
         """Synchronous entrypoint used by MonitorEngine's thread executor."""
         return self._run_async(lambda: self._safe_search_async(keyword, location))
 
+    def enrich_item(self, item: Item) -> Item:
+        """Default Playwright enrichment hook; subclasses can override."""
+        return item
+
     @async_retry(max_attempts=3, delay=1.0)
     async def _safe_search_async(self, keyword: str, location: str | None = None) -> list[Item]:
         """
@@ -349,8 +353,7 @@ class PlaywrightScraper(ABC):
             if self.debug_mode and self.debugger and self._page:
                 await capture_on_error(self._page, self.debugger, e, f"search_{keyword}")
                 await self.debugger.finalize("failed")
-            
-            return []
+            raise
     
     async def wait_and_check(
         self, 

@@ -11,11 +11,18 @@ Notes:
   Install them on target machines with: `python -m playwright install chromium`.
 - `matplotlib` is intentionally excluded to keep onefile size small.
   Chart widgets degrade gracefully to a fallback label when matplotlib is unavailable.
+- Runtime-local recovery artifacts such as `settings.broken-*.json`, `backup/`,
+  `notifier.log*`, and `debug_output/` are not bundled and remain local-only.
+- Session-only CLI overrides such as `python main.py --headless` do not mutate
+  packaged default settings; they only affect the current process.
 - Scraper parser updates (2026-03) such as Danggeun slug/hash article IDs
   and Bunjang unknown-location normalization are runtime logic changes only
   and do not require additional PyInstaller hidden imports.
 - Static typing / encoding hygiene updates (2026-03) are source-level changes only
   and do not require PyInstaller hidden import adjustments.
+- Data-integrity features added in 2026-03 (metadata enrichment, delivery logs,
+  sale-status history, settings recovery) are source/database changes only and
+  do not require extra PyInstaller hidden imports.
 """
 
 import sys
@@ -160,6 +167,10 @@ a = Analysis(
         "jupyter",
         "notebook",
         "debugpy",
+
+        # Local-only source trees
+        "tests",
+        "legacy",
     ],
     noarchive=False,
     optimize=2,

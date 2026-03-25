@@ -8,9 +8,18 @@
   "theme_mode": "dark",
   "confirm_link_open": true,
   "notifications_enabled": false,
+  "metadata_enrichment_enabled": false,
   "scraper_mode": "playwright_primary",
   "fallback_on_empty_results": true,
   "max_fallback_per_cycle": 3,
+  "auto_backup_enabled": true,
+  "auto_backup_interval_days": 7,
+  "backup_keep_count": 5,
+  "auto_cleanup_enabled": false,
+  "cleanup_days": 30,
+  "cleanup_exclude_favorites": true,
+  "cleanup_exclude_noted": true,
+  "auto_tagging_enabled": true,
   "notification_schedule": {
     "enabled": true,
     "start_hour": 0,
@@ -41,5 +50,8 @@
     }
   ],
   "keywords": [],
-  "seller_filters": []
+  "seller_filters": [],
+  "keyword_presets": [],
+  "tag_rules": [],
+  "message_templates": []
 }

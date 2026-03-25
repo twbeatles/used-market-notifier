@@ -3,8 +3,10 @@
 
 import json
 import os
+import shutil
+import zipfile
+from datetime import datetime
 from pathlib import Path
-from dataclasses import asdict
 from typing import Optional
 from models import (
     AppSettings, SearchKeyword, NotifierConfig, 
@@ -20,20 +22,40 @@ class SettingsManager:
     
     def __init__(self, settings_path: Optional[str] = None):
         self.settings_path = Path(settings_path or SETTINGS_FILE)
+        self.load_recovery_state: dict[str, object] = {
+            "used_default": False,
+            "recovered_from_backup": False,
+            "broken_settings_path": None,
+            "recovered_backup_path": None,
+            "error": None,
+        }
+        self.last_recovered_backup: Optional[str] = None
         self.settings = self.load()
+
+    def _reset_load_recovery_state(self) -> None:
+        self.load_recovery_state = {
+            "used_default": False,
+            "recovered_from_backup": False,
+            "broken_settings_path": None,
+            "recovered_backup_path": None,
+            "error": None,
+        }
+        self.last_recovered_backup = None
     
     def load(self) -> AppSettings:
         """Load settings from JSON file"""
         if not self.settings_path.exists():
+            self._reset_load_recovery_state()
             return self._create_default()
         
         try:
             with open(self.settings_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            self._reset_load_recovery_state()
             return self._from_dict(data)
         except Exception as e:
             print(f"Error loading settings: {e}")
-            return self._create_default()
+            return self._recover_from_broken_settings(e)
     
     def save(self) -> bool:
         """Save settings to JSON file"""
@@ -134,6 +156,7 @@ class SettingsManager:
             'cleanup_exclude_favorites': settings.cleanup_exclude_favorites,
             'cleanup_exclude_noted': settings.cleanup_exclude_noted,
             'auto_tagging_enabled': settings.auto_tagging_enabled,
+            'metadata_enrichment_enabled': getattr(settings, 'metadata_enrichment_enabled', False),
             'scraper_mode': getattr(settings, 'scraper_mode', 'playwright_primary'),
             'fallback_on_empty_results': getattr(settings, 'fallback_on_empty_results', True),
             'max_fallback_per_cycle': getattr(settings, 'max_fallback_per_cycle', 3),
@@ -264,12 +287,77 @@ class SettingsManager:
             cleanup_exclude_favorites=data.get('cleanup_exclude_favorites', True),
             cleanup_exclude_noted=data.get('cleanup_exclude_noted', True),
             auto_tagging_enabled=data.get('auto_tagging_enabled', True),
+            metadata_enrichment_enabled=data.get('metadata_enrichment_enabled', False),
             scraper_mode=scraper_mode,
             fallback_on_empty_results=data.get('fallback_on_empty_results', True),
             max_fallback_per_cycle=data.get('max_fallback_per_cycle', 3),
             tag_rules=tag_rules,
             message_templates=message_templates,
         )
+
+    def _recover_from_broken_settings(self, error: Exception) -> AppSettings:
+        """Quarantine a broken settings file and restore from backup when possible."""
+        broken_path: Optional[Path] = None
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        try:
+            broken_path = self.settings_path.with_name(
+                f"{self.settings_path.stem}.broken-{timestamp}{self.settings_path.suffix}"
+            )
+            shutil.move(str(self.settings_path), str(broken_path))
+        except Exception:
+            broken_path = None
+
+        self.load_recovery_state = {
+            "used_default": False,
+            "recovered_from_backup": False,
+            "broken_settings_path": str(broken_path) if broken_path else None,
+            "recovered_backup_path": None,
+            "error": str(error),
+        }
+
+        recovered = self._restore_settings_from_backup()
+        if recovered is not None:
+            self.load_recovery_state["recovered_from_backup"] = True
+            self.load_recovery_state["recovered_backup_path"] = self.last_recovered_backup
+            return recovered
+
+        self.load_recovery_state["used_default"] = True
+        return self._create_default()
+
+    def _restore_settings_from_backup(self) -> Optional[AppSettings]:
+        """Restore settings from the newest valid backup archive."""
+        backup_dir = self.settings_path.parent / "backup"
+        if not backup_dir.exists():
+            return None
+
+        settings_name = self.settings_path.name
+        candidates = sorted(backup_dir.glob("backup_*.zip"), reverse=True)
+        for archive_path in candidates:
+            try:
+                with zipfile.ZipFile(archive_path, "r") as zf:
+                    if settings_name not in zf.namelist():
+                        if SETTINGS_FILE not in zf.namelist():
+                            continue
+                        member_name = SETTINGS_FILE
+                    else:
+                        member_name = settings_name
+
+                    raw = zf.read(member_name)
+                    data = json.loads(raw.decode("utf-8"))
+            except Exception:
+                continue
+
+            try:
+                self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.settings_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                self.last_recovered_backup = str(archive_path)
+                return self._from_dict(data)
+            except Exception:
+                continue
+
+        return None
     
     # Convenience methods
     def add_keyword(self, keyword: SearchKeyword) -> None:

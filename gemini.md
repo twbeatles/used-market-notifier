@@ -499,3 +499,40 @@ This section is the source of truth for current behavior and supersedes older Se
   - strict decode failures must be `0`
   - `U+FFFD` occurrences must be `0`
   - C1 control chars (`0x80-0x9F`) must be `0`
+
+## 2026-03 Consistency Update (Data Integrity + Delivery Reliability)
+
+Treat this as the current baseline for the March 25, 2026 stabilization pass.
+
+- Schema / storage:
+  - auto tags are stored in `listing_auto_tags`
+  - sale-status transitions are stored in `sale_status_history`
+  - channel delivery outcomes are stored in `notification_delivery_log`
+- Listing update policy:
+  - existing listings refresh only with non-empty incoming metadata
+  - `keyword` on the listing row stays stable
+  - sale status is recalculated every cycle
+- Notification behavior:
+  - first cycle skips both new-item and price-change notifications
+  - retries happen per channel only
+  - `notification_log` means successful delivery only
+  - operational failure/rate-limit inspection uses `notification_delivery_log`
+- Metadata enrichment:
+  - controlled by `metadata_enrichment_enabled`
+  - default is off
+  - only filtered items with missing seller/location are enriched
+  - hard cap is 10 items per platform per keyword per cycle
+- Cleanup / recovery:
+  - `cleanup_exclude_noted` checks real note/status rows only
+  - auto tags alone must not protect a listing from cleanup
+  - broken settings files are renamed to `settings.broken-YYYYMMDD_HHMMSS.json`
+  - newest valid backup settings payload is restored automatically when possible
+- Packaging / repo hygiene:
+  - `python main.py --headless` is session-only
+  - `used_market_notifier.spec` excludes `tests` and `legacy`
+  - `.gitignore` should cover `settings.broken-*.json` and rotated logs like `notifier.log.1`
+
+### Verification Baseline
+
+- `python -m pytest -q` -> `47 passed`
+- `pyright .` -> `0 errors, 0 warnings, 0 informations`

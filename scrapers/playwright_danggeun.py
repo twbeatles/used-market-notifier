@@ -31,6 +31,13 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
 
     MAX_RESULTS = 120
     CARD_SELECTOR = "a[data-gtm='search_article'][href^='/kr/buy-sell/']"
+    DETAIL_SELLER_SELECTORS = (
+        "a[href*='/users/']",
+        "[data-gtm='seller_profile']",
+        "[class*='profile'] strong",
+        "[class*='nickname']",
+        "[class*='user-name']",
+    )
     TIME_MARKERS = ("방금", "초 전", "분 전", "시간 전", "일 전", "주 전", "달 전", "끌올")
 
     INVALID_TITLE_PATTERNS = [
@@ -163,6 +170,84 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                 location = line
 
         return title, price, location
+
+    @staticmethod
+    def _extract_label_value(text: str, labels: tuple[str, ...]) -> str | None:
+        for label in labels:
+            pattern = rf"{re.escape(label)}\s*[:\n]\s*([^\n]{{2,40}})"
+            match = re.search(pattern, text)
+            if match:
+                value = match.group(1).strip()
+                if value:
+                    return value
+        return None
+
+    async def _extract_first_matching_text(self, page, selectors: tuple[str, ...]) -> str | None:
+        for selector in selectors:
+            try:
+                value = (await page.locator(selector).first.inner_text(timeout=800) or "").strip()
+            except Exception:
+                value = ""
+            if value:
+                return value
+        return None
+
+    async def _enrich_item_async(self, item: Item) -> Item:
+        if not item.link:
+            return item
+
+        page = await self.get_page()
+        ok = await self.navigate_with_retry(item.link, wait_until="domcontentloaded", max_retries=2)
+        if not ok:
+            return item
+        await page.wait_for_timeout(800)
+
+        page_text = ""
+        try:
+            page_text = (await page.locator("body").inner_text() or "").strip()
+        except Exception:
+            page_text = ""
+
+        seller = item.seller or await self._extract_first_matching_text(page, self.DETAIL_SELLER_SELECTORS)
+        if not seller and page_text:
+            seller = self._extract_label_value(page_text, ("판매자", "작성자", "당근이웃"))
+
+        location_value = item.location or self._extract_location(page_text)
+
+        return Item(
+            platform=item.platform,
+            article_id=item.article_id,
+            title=item.title,
+            price=item.price,
+            link=item.link,
+            keyword=item.keyword,
+            thumbnail=item.thumbnail,
+            seller=seller or item.seller,
+            location=location_value or item.location,
+            price_numeric=item.price_numeric,
+        )
+
+    async def _enrich_item_session(self, item: Item) -> Item:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as pw:
+            browser = await self._launch_browser(pw)
+            try:
+                self._context = await self._create_context(browser)
+                self._owned_context = True
+                self._page = None
+                return await self._enrich_item_async(item)
+            finally:
+                try:
+                    await self.close()
+                finally:
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
+
+    def enrich_item(self, item: Item) -> Item:
+        return _run_async(lambda: self._enrich_item_session(item))
 
     async def _build_dom_card_map(self, page) -> dict[str, dict[str, str | None]]:
         card_map: dict[str, dict[str, str | None]] = {}

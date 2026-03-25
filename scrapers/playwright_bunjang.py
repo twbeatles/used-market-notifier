@@ -30,6 +30,13 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
     BADGE_LINES = {"배송비포함", "검수가능"}
     UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
     MAX_RESULTS = 120
+    DETAIL_SELLER_SELECTORS = (
+        "a[href*='/users/']",
+        "a[href*='/my-shop/']",
+        "[class*='seller']",
+        "[class*='shop-name']",
+        "[class*='user-name']",
+    )
 
     INVALID_TITLE_PATTERNS = [
         "\ud310\ub9e4\uc644\ub8cc",  # 판매완료
@@ -154,6 +161,95 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
             return (await card.locator(selector).first.inner_text() or "").strip()
         except Exception:
             return ""
+
+    @staticmethod
+    def _extract_label_value(text: str, labels: tuple[str, ...]) -> str | None:
+        for label in labels:
+            pattern = rf"{re.escape(label)}\s*[:\n]\s*([^\n]{{2,40}})"
+            match = re.search(pattern, text)
+            if match:
+                value = match.group(1).strip()
+                if value:
+                    return value
+        return None
+
+    @classmethod
+    def _extract_location_from_text(cls, text: str) -> str | None:
+        labeled = cls._extract_label_value(text, ("지역", "지역 정보", "지역정보"))
+        if labeled:
+            return cls._normalize_location(labeled)
+        match = re.search(
+            r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\n|,/]{0,20}",
+            text,
+        )
+        return cls._normalize_location(match.group(0)) if match else None
+
+    async def _extract_first_matching_text(self, page, selectors: tuple[str, ...]) -> str | None:
+        for selector in selectors:
+            try:
+                value = (await page.locator(selector).first.inner_text(timeout=800) or "").strip()
+            except Exception:
+                value = ""
+            if value:
+                return value
+        return None
+
+    async def _enrich_item_async(self, item: Item) -> Item:
+        if not item.link:
+            return item
+
+        page = await self.get_page()
+        ok = await self.navigate_with_retry(item.link, wait_until="domcontentloaded", max_retries=2)
+        if not ok:
+            return item
+        await page.wait_for_timeout(800)
+
+        page_text = ""
+        try:
+            page_text = (await page.locator("body").inner_text() or "").strip()
+        except Exception:
+            page_text = ""
+
+        seller = item.seller or await self._extract_first_matching_text(page, self.DETAIL_SELLER_SELECTORS)
+        if not seller and page_text:
+            seller = self._extract_label_value(page_text, ("상점명", "판매자", "작성자"))
+
+        location_value = item.location or self._extract_location_from_text(page_text)
+
+        return Item(
+            platform=item.platform,
+            article_id=item.article_id,
+            title=item.title,
+            price=item.price,
+            link=item.link,
+            keyword=item.keyword,
+            thumbnail=item.thumbnail,
+            seller=seller or item.seller,
+            location=location_value or item.location,
+            price_numeric=item.price_numeric,
+        )
+
+    async def _enrich_item_session(self, item: Item) -> Item:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as pw:
+            browser = await self._launch_browser(pw)
+            try:
+                self._context = await self._create_context(browser)
+                self._owned_context = True
+                self._page = None
+                return await self._enrich_item_async(item)
+            finally:
+                try:
+                    await self.close()
+                finally:
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
+
+    def enrich_item(self, item: Item) -> Item:
+        return _run_async(lambda: self._enrich_item_session(item))
 
     async def search(self, keyword: str, location: str | None = None) -> list[Item]:
         page = await self.get_page()

@@ -20,6 +20,14 @@ class DanggeunScraper(SeleniumScraper):
     CARD_SELECTOR = "a[data-gtm='search_article'][href^='/kr/buy-sell/']"
     TIME_MARKERS = ("방금", "초 전", "분 전", "시간 전", "일 전", "주 전", "달 전", "끌올")
 
+    DETAIL_SELLER_SELECTORS = (
+        "a[href*='/users/']",
+        "[data-gtm='seller_profile']",
+        "[class*='profile'] strong",
+        "[class*='nickname']",
+        "[class*='user-name']",
+    )
+
     # Invalid title patterns to filter out
     INVALID_TITLE_PATTERNS = [
         "판매완료", "예약중", "거래완료", "No Title", "광고"
@@ -156,6 +164,60 @@ class DanggeunScraper(SeleniumScraper):
                 continue
 
         return card_map
+
+    @staticmethod
+    def _extract_label_value(text: str, labels: tuple[str, ...]) -> str | None:
+        for label in labels:
+            pattern = rf"{re.escape(label)}\s*[:\n]\s*([^\n]{{2,40}})"
+            match = re.search(pattern, text)
+            if match:
+                value = match.group(1).strip()
+                if value:
+                    return value
+        return None
+
+    def _extract_first_matching_text(self, selectors: tuple[str, ...]) -> str | None:
+        for selector in selectors:
+            try:
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+            except Exception:
+                elements = []
+            for element in elements:
+                value = (element.text or "").strip()
+                if value:
+                    return value
+        return None
+
+    def enrich_item(self, item: Item) -> Item:
+        if not item.link:
+            return item
+
+        self.driver.get(item.link)
+        time.sleep(1.0)
+
+        try:
+            page_text = (self.driver.find_element(By.TAG_NAME, "body").text or "").strip()
+        except Exception:
+            page_text = ""
+
+        seller = item.seller or self._extract_first_matching_text(self.DETAIL_SELLER_SELECTORS)
+        if not seller and page_text:
+            seller = self._extract_label_value(page_text, ("판매자", "작성자", "당근이웃"))
+
+        location_value = item.location or self._extract_location(page_text)
+
+        return Item(
+            platform=item.platform,
+            article_id=item.article_id,
+            title=item.title,
+            price=item.price,
+            link=item.link,
+            keyword=item.keyword,
+            thumbnail=item.thumbnail,
+            seller=seller or item.seller,
+            location=location_value or item.location,
+            price_numeric=item.price_numeric,
+        )
 
     def search(self, keyword: str, location: str | None = None) -> list[Item]:
         """

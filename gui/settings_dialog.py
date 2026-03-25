@@ -135,6 +135,11 @@ class SettingsDialog(QDialog):
         self.headless_check = QCheckBox("백그라운드 모드 (브라우저 창 숨김)")
         self.headless_check.setStyleSheet("font-size: 10pt;")
         monitor_layout.addRow("", self.headless_check)
+
+        self.metadata_enrichment_check = QCheckBox("seller/location 보강 수집 사용")
+        self.metadata_enrichment_check.setToolTip("상세 페이지를 한 번 더 열어 비어 있는 seller/location 정보만 보강합니다.")
+        self.metadata_enrichment_check.setStyleSheet("font-size: 10pt;")
+        monitor_layout.addRow("", self.metadata_enrichment_check)
         
         # Theme settings
         theme_row = QHBoxLayout()
@@ -467,6 +472,7 @@ class SettingsDialog(QDialog):
         
         self.interval_spin.setValue(s.check_interval_seconds)
         self.headless_check.setChecked(s.headless_mode)
+        self.metadata_enrichment_check.setChecked(getattr(s, "metadata_enrichment_enabled", False))
         self.minimize_tray_check.setChecked(s.minimize_to_tray)
         self.start_minimized_check.setChecked(s.start_minimized)
         self.auto_start_check.setChecked(s.auto_start_monitoring)
@@ -566,6 +572,7 @@ class SettingsDialog(QDialog):
         
         s.check_interval_seconds = self.interval_spin.value()
         s.headless_mode = self.headless_check.isChecked()
+        s.metadata_enrichment_enabled = self.metadata_enrichment_check.isChecked()
         s.minimize_to_tray = self.minimize_tray_check.isChecked()
         s.start_minimized = self.start_minimized_check.isChecked()
         s.auto_start_monitoring = self.auto_start_check.isChecked()
@@ -747,7 +754,7 @@ class SettingsDialog(QDialog):
         self.cleanup_exclude_favorites_check = QCheckBox("즐겨찾기 제외")
         cleanup_form.addRow("", self.cleanup_exclude_favorites_check)
 
-        self.cleanup_exclude_noted_check = QCheckBox("메모/태그가 있는 항목 제외")
+        self.cleanup_exclude_noted_check = QCheckBox("사용자 메모/상태가 있는 항목 제외")
         cleanup_form.addRow("", self.cleanup_exclude_noted_check)
 
         cleanup_layout.addLayout(cleanup_form)

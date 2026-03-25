@@ -726,3 +726,41 @@ Per platform, keep one-line log fields:
 - `fallback_count`
 - `fallback_reason`
 - `elapsed_ms`
+
+## 2026-03 Consistency Update (Data Integrity + Ops Visibility)
+
+Use this section as the latest implementation baseline for March 25, 2026.
+
+- Database / schema baseline:
+  - auto tags live in `listing_auto_tags`
+  - sale status transitions live in `sale_status_history`
+  - per-channel delivery telemetry lives in `notification_delivery_log`
+  - `listing_notes` now means actual user note/status data, not auto-tag storage
+- Listing write policy:
+  - existing listings refresh only with non-empty incoming metadata
+  - `keyword` on `listings` stays stable; search tracking still belongs to `search_stats`
+  - sale status is re-evaluated on every cycle
+- Notification policy:
+  - first cycle skips both new-item and price-change notifications
+  - retry scope is channel-level only
+  - `notification_log` is success-only
+  - delivery failures and rate-limit events are read from `notification_delivery_log`
+- Metadata enrichment:
+  - `metadata_enrichment_enabled` defaults to `False`
+  - enrichment is best-effort and limited to 10 missing-metadata items per platform per keyword per cycle
+  - supported paths may enrich seller/location from detail pages; unsupported paths no-op safely
+- Cleanup / recovery semantics:
+  - `cleanup_exclude_noted` checks `listing_notes` only
+  - tag-only rows must not protect cleanup targets
+  - broken settings are quarantined as `settings.broken-YYYYMMDD_HHMMSS.json`
+  - the newest valid backup settings payload is restored automatically when possible
+  - GUI startup shows a recovery notice when defaults or backup recovery were used
+- Packaging / repo hygiene:
+  - `python main.py --headless` is session-only and must not persist to settings unless explicitly saved by the user
+  - `used_market_notifier.spec` excludes `tests` and `legacy`
+  - `.gitignore` should include `settings.broken-*.json` and rotated logs (`*.log.*`)
+
+### Verification Baseline
+
+- `python -m pytest -q` -> `47 passed`
+- `pyright .` -> `0 errors, 0 warnings, 0 informations`

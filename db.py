@@ -1,13 +1,18 @@
 # db.py
 """Enhanced database manager with price tracking and statistics"""
 
+import difflib
+import json
 import logging
 import sqlite3
 import threading
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
+
 from models import Item, FavoriteItem, NotificationLog, SellerFilter
-import difflib
+
+
+_UNSET = object()
 
 
 
@@ -30,6 +35,7 @@ class DatabaseManager:
         self._cache_time = None
         
         # Enable WAL mode and other optimizations for better concurrency
+        self.conn.execute('PRAGMA foreign_keys=ON')
         self.conn.execute('PRAGMA journal_mode=WAL')
         self.conn.execute('PRAGMA synchronous=NORMAL')  # Faster writes
         self.conn.execute('PRAGMA cache_size=-64000')  # 64MB cache
@@ -117,6 +123,20 @@ class DatabaseManager:
                 )
             ''')
 
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notification_delivery_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL,
+                    notification_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    attempt INTEGER DEFAULT 1,
+                    error_message TEXT,
+                    rate_limited BOOLEAN DEFAULT 0,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (listing_id) REFERENCES listings(id)
+                )
+            ''')
+
             # Seller Filter table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS seller_filters (
@@ -184,9 +204,44 @@ class DatabaseManager:
                     FOREIGN KEY (listing_id) REFERENCES listings(id)
                 )
             ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS listing_auto_tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL,
+                    tag_name TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(listing_id, tag_name),
+                    FOREIGN KEY (listing_id) REFERENCES listings(id)
+                )
+            ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS sale_status_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL,
+                    old_status TEXT,
+                    new_status TEXT NOT NULL,
+                    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (listing_id) REFERENCES listings(id)
+                )
+            ''')
             
             # Index for listing_notes (created after table exists)
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_listing_notes_listing ON listing_notes(listing_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listing_auto_tags_listing ON listing_auto_tags(listing_id)')
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_sale_status_history_listing_changed '
+                'ON sale_status_history(listing_id, changed_at DESC)'
+            )
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_notification_delivery_log_sent_at '
+                'ON notification_delivery_log(sent_at DESC)'
+            )
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_notification_delivery_log_type_sent_at '
+                'ON notification_delivery_log(notification_type, sent_at DESC)'
+            )
             
             # Migration: Add sale_status column if not exists (for existing databases)
             try:
@@ -236,6 +291,10 @@ class DatabaseManager:
                 self._migrate_price_parse_version(cursor)
             except Exception as e:
                 self.logger.warning(f"Price parse migration skipped/failed: {e}")
+            try:
+                self._migrate_auto_tags_table(cursor)
+            except Exception as e:
+                self.logger.warning(f"Auto-tag migration skipped/failed: {e}")
 
     def _get_meta(self, cursor: sqlite3.Cursor, key: str) -> Optional[str]:
         cursor.execute("SELECT value FROM meta WHERE key = ?", (key,))
@@ -318,6 +377,44 @@ class DatabaseManager:
         self.logger.info(
             f"Numeric price migration complete. listings updated={updated}, price_history updated={ph_updated}."
         )
+
+    def _migrate_auto_tags_table(self, cursor: sqlite3.Cursor) -> None:
+        """Move legacy listing_notes.auto_tags JSON into listing_auto_tags once."""
+        key = "auto_tags_table_migrated_v1"
+        if self._get_meta(cursor, key) == "1":
+            return
+
+        cursor.execute("SELECT listing_id, note, status_tag, auto_tags FROM listing_notes")
+        rows = cursor.fetchall()
+        for row in rows:
+            listing_id = row["listing_id"]
+            raw_tags = row["auto_tags"]
+            tags: list[str] = []
+            if raw_tags:
+                try:
+                    parsed = json.loads(raw_tags)
+                    if isinstance(parsed, list):
+                        tags = [str(tag).strip() for tag in parsed if str(tag).strip()]
+                except Exception:
+                    tags = []
+
+            for tag_name in tags:
+                cursor.execute(
+                    '''
+                    INSERT INTO listing_auto_tags (listing_id, tag_name)
+                    VALUES (?, ?)
+                    ON CONFLICT(listing_id, tag_name) DO NOTHING
+                    ''',
+                    (listing_id, tag_name),
+                )
+
+            note = str(row["note"] or "").strip()
+            status_tag = str(row["status_tag"] or "interested").strip() or "interested"
+            if tags and not note and status_tag == "interested":
+                cursor.execute("DELETE FROM listing_notes WHERE listing_id = ?", (listing_id,))
+
+        self._set_meta(cursor, key, "1")
+        self.conn.commit()
     
     def is_duplicate(self, platform: str, article_id: str) -> bool:
         """Check if listing already exists"""
@@ -347,6 +444,34 @@ class DatabaseManager:
             )
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    @staticmethod
+    def _prefer_non_empty(new_value: Any, current_value: Any) -> Any:
+        """Keep existing values when the new scrape result is empty."""
+        if new_value is None:
+            return current_value
+        if isinstance(new_value, str) and not new_value.strip():
+            return current_value
+        return new_value
+
+    def _record_sale_status_change(
+        self,
+        cursor: sqlite3.Cursor,
+        listing_id: int,
+        old_status: str | None,
+        new_status: str,
+    ) -> None:
+        old_value = old_status or "for_sale"
+        new_value = new_status or "for_sale"
+        if old_value == new_value:
+            return
+        cursor.execute(
+            '''
+            INSERT INTO sale_status_history (listing_id, old_status, new_status)
+            VALUES (?, ?, ?)
+            ''',
+            (listing_id, old_value, new_value),
+        )
     
     def add_listing(self, item: Item) -> tuple[bool, Optional[dict], Optional[int]]:
         """
@@ -371,12 +496,16 @@ class DatabaseManager:
             existing = dict(row) if row else None
             
             price_numeric = item.parse_price()
+            detected_status = self.detect_sale_status(item.title)
             
             if existing:
                 # Check for price change
                 old_price = existing['price']
                 old_price_numeric = existing['price_numeric'] or 0
-                
+                old_status = existing.get('sale_status') or 'for_sale'
+                new_status = detected_status or old_status
+
+                price_change_info: Optional[dict] = None
                 if old_price != item.price and old_price_numeric != price_numeric:
                     # Price changed - record in history
                     cursor.execute('''
@@ -384,36 +513,76 @@ class DatabaseManager:
                         (listing_id, old_price, old_price_numeric, new_price, new_price_numeric)
                         VALUES (?, ?, ?, ?, ?)
                     ''', (existing['id'], old_price, old_price_numeric, item.price, price_numeric))
-                    
-                    # Update listing
-                    cursor.execute('''
-                        UPDATE listings 
-                        SET price = ?, price_numeric = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                    ''', (item.price, price_numeric, existing['id']))
-                    
-                    self.conn.commit()
-                    self._invalidate_cache()
-                    
-                    return False, {
+
+                    price_change_info = {
                         'old_price': old_price,
                         'new_price': item.price,
                         'old_numeric': old_price_numeric,
                         'new_numeric': price_numeric
-                    }, existing['id']
-                
-                return False, None, existing['id']
+                    }
+
+                updated_title = self._prefer_non_empty(item.title, existing.get('title'))
+                updated_url = self._prefer_non_empty(item.link, existing.get('url'))
+                updated_thumbnail = self._prefer_non_empty(item.thumbnail, existing.get('thumbnail'))
+                updated_seller = self._prefer_non_empty(item.seller, existing.get('seller'))
+                updated_location = self._prefer_non_empty(item.location, existing.get('location'))
+                updated_price = self._prefer_non_empty(item.price, existing.get('price'))
+                updated_price_numeric = (
+                    price_numeric if isinstance(updated_price, str) and updated_price == item.price
+                    else existing.get('price_numeric') or 0
+                )
+
+                if new_status != old_status:
+                    self._record_sale_status_change(cursor, existing['id'], old_status, new_status)
+
+                fields_changed = any(
+                    (
+                        updated_title != existing.get('title'),
+                        updated_url != existing.get('url'),
+                        updated_thumbnail != existing.get('thumbnail'),
+                        updated_seller != existing.get('seller'),
+                        updated_location != existing.get('location'),
+                        updated_price != existing.get('price'),
+                        updated_price_numeric != (existing.get('price_numeric') or 0),
+                        new_status != old_status,
+                    )
+                )
+
+                if fields_changed:
+                    cursor.execute(
+                        '''
+                        UPDATE listings
+                        SET title = ?, price = ?, price_numeric = ?, url = ?, thumbnail = ?,
+                            seller = ?, location = ?, sale_status = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        ''',
+                        (
+                            updated_title,
+                            updated_price,
+                            updated_price_numeric,
+                            updated_url,
+                            updated_thumbnail,
+                            updated_seller,
+                            updated_location,
+                            new_status,
+                            existing['id'],
+                        ),
+                    )
+                    self.conn.commit()
+                    self._invalidate_cache()
+
+                return False, price_change_info, existing['id']
             
             # New listing
             try:
                 cursor.execute('''
                     INSERT INTO listings 
-                    (platform, article_id, keyword, title, price, price_numeric, url, thumbnail, seller, location)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (platform, article_id, keyword, title, price, price_numeric, url, thumbnail, seller, location, sale_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     item.platform, item.article_id, item.keyword, item.title,
                     item.price, price_numeric, item.link, item.thumbnail,
-                    item.seller, item.location
+                    item.seller, item.location, detected_status
                 ))
                 new_id = cursor.lastrowid
                 self.conn.commit()
@@ -645,6 +814,23 @@ class DatabaseManager:
             ''', (f'-{daily_days} days',))
             daily = [dict(row) for row in cursor.fetchall()]
 
+            cursor.execute(
+                '''
+                SELECT
+                    l.platform,
+                    l.title,
+                    ssh.old_status,
+                    ssh.new_status,
+                    ssh.changed_at,
+                    l.url
+                FROM sale_status_history ssh
+                JOIN listings l ON ssh.listing_id = l.id
+                ORDER BY ssh.changed_at DESC
+                LIMIT 20
+                '''
+            )
+            status_history = [dict(row) for row in cursor.fetchall()]
+
             snapshot = {
                 'total': total,
                 'by_platform': by_platform,
@@ -652,6 +838,7 @@ class DatabaseManager:
                 'price_changes': price_changes,
                 'analysis': analysis,
                 'daily_stats': daily,
+                'status_history': status_history,
             }
             self._stats_cache[cache_key] = snapshot
             self._cache_time = now
@@ -759,8 +946,8 @@ class DatabaseManager:
         self,
         listing_id: int,
         notes: str | None = None,
-        target_price: int | None = None,
-    ) -> None:
+        target_price: int | None | object = _UNSET,
+    ) -> bool:
         """Update favorite details"""
         with self.lock:
             cursor = self.conn.cursor()
@@ -769,12 +956,12 @@ class DatabaseManager:
             if notes is not None:
                 updates.append("notes = ?")
                 params.append(notes)
-            if target_price is not None:
+            if target_price is not _UNSET:
                 updates.append("target_price = ?")
                 params.append(target_price)
             
             if not updates:
-                return
+                return False
 
             params.append(listing_id)
             cursor.execute(f'''
@@ -782,6 +969,7 @@ class DatabaseManager:
             ''', tuple(params))
             self.conn.commit()
             self._invalidate_cache()
+            return cursor.rowcount > 0
 
     def remove_favorite(self, listing_id: int):
         """Remove a listing from favorites"""
@@ -830,6 +1018,36 @@ class DatabaseManager:
             self.conn.commit()
             self._invalidate_cache()
 
+    def log_notification_delivery(
+        self,
+        listing_id: int,
+        notification_type: str,
+        status: str,
+        attempt: int = 1,
+        error_message: str | None = None,
+        rate_limited: bool = False,
+    ) -> None:
+        """Log delivery attempt results for operational visibility."""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                '''
+                INSERT INTO notification_delivery_log
+                (listing_id, notification_type, status, attempt, error_message, rate_limited)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    listing_id,
+                    notification_type,
+                    status,
+                    max(1, int(attempt)),
+                    (error_message or "")[:500] or None,
+                    1 if rate_limited else 0,
+                ),
+            )
+            self.conn.commit()
+            self._invalidate_cache()
+
     def get_notification_logs(self, limit: int = 50, offset: int = 0) -> list:
         """Get notification logs"""
         with self.lock:
@@ -842,6 +1060,75 @@ class DatabaseManager:
                 LIMIT ? OFFSET ?
             ''', (limit, offset))
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_notification_delivery_summary(self, days: int = 7) -> dict[str, dict[str, Any]]:
+        """Summarize delivery success/failure and last events per channel."""
+        with self.lock:
+            cursor = self.conn.cursor()
+            channels = ("telegram", "discord", "slack")
+            summary: dict[str, dict[str, Any]] = {
+                channel: {
+                    "success_count": 0,
+                    "failed_count": 0,
+                    "success_rate": 0.0,
+                    "last_success_at": None,
+                    "last_failure_at": None,
+                    "last_failure_message": None,
+                    "last_rate_limited_at": None,
+                }
+                for channel in channels
+            }
+
+            cursor.execute(
+                '''
+                SELECT
+                    notification_type,
+                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+                    MAX(CASE WHEN status = 'success' THEN sent_at END) AS last_success_at,
+                    MAX(CASE WHEN status = 'failed' THEN sent_at END) AS last_failure_at,
+                    MAX(CASE WHEN rate_limited = 1 THEN sent_at END) AS last_rate_limited_at
+                FROM notification_delivery_log
+                WHERE sent_at >= datetime('now', ?)
+                GROUP BY notification_type
+                ''',
+                (f'-{days} days',),
+            )
+            for row in cursor.fetchall():
+                channel = str(row["notification_type"] or "")
+                if channel not in summary:
+                    continue
+                success_count = int(row["success_count"] or 0)
+                failed_count = int(row["failed_count"] or 0)
+                total = success_count + failed_count
+                summary[channel].update(
+                    {
+                        "success_count": success_count,
+                        "failed_count": failed_count,
+                        "success_rate": round((success_count / total) * 100.0, 1) if total else 0.0,
+                        "last_success_at": row["last_success_at"],
+                        "last_failure_at": row["last_failure_at"],
+                        "last_rate_limited_at": row["last_rate_limited_at"],
+                    }
+                )
+
+            for channel in channels:
+                cursor.execute(
+                    '''
+                    SELECT error_message
+                    FROM notification_delivery_log
+                    WHERE notification_type = ?
+                      AND status = 'failed'
+                      AND sent_at >= datetime('now', ?)
+                    ORDER BY sent_at DESC
+                    LIMIT 1
+                    ''',
+                    (channel, f'-{days} days'),
+                )
+                row = cursor.fetchone()
+                summary[channel]["last_failure_message"] = row["error_message"] if row else None
+
+            return summary
 
     # Seller Management
     def add_seller_filter(self, seller_name: str, platform: str, is_blocked: bool = True, notes: str = ""):
@@ -973,7 +1260,20 @@ class DatabaseManager:
         with self.lock:
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT l.*, ln.note, ln.status_tag, ln.auto_tags, ln.updated_at as note_updated
+                SELECT l.*, ln.note, ln.status_tag,
+                       COALESCE(
+                           (
+                               SELECT json_group_array(tag_name)
+                               FROM (
+                                   SELECT tag_name
+                                   FROM listing_auto_tags lat
+                                   WHERE lat.listing_id = l.id
+                                   ORDER BY tag_name
+                               )
+                           ),
+                           '[]'
+                       ) as auto_tags,
+                       ln.updated_at as note_updated
                 FROM listing_notes ln
                 JOIN listings l ON ln.listing_id = l.id
                 ORDER BY ln.updated_at DESC
@@ -986,10 +1286,22 @@ class DatabaseManager:
         """Update sale status of a listing"""
         with self.lock:
             cursor = self.conn.cursor()
-            cursor.execute('''
+            cursor.execute('SELECT sale_status FROM listings WHERE id = ?', (listing_id,))
+            row = cursor.fetchone()
+            if row is None:
+                return
+            old_status = row['sale_status'] or 'for_sale'
+            new_status = status or 'for_sale'
+            if old_status == new_status:
+                return
+            self._record_sale_status_change(cursor, listing_id, old_status, new_status)
+            cursor.execute(
+                '''
                 UPDATE listings SET sale_status = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            ''', (status, listing_id))
+                ''',
+                (new_status, listing_id),
+            )
             self.conn.commit()
             self._invalidate_cache()
     
@@ -1044,6 +1356,28 @@ class DatabaseManager:
                 GROUP BY sale_status
             ''')
             return {row['sale_status'] or 'for_sale': row['count'] for row in cursor.fetchall()}
+
+    def get_status_history(self, limit: int = 20) -> list:
+        """Get recent sale status changes."""
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                '''
+                SELECT
+                    l.platform,
+                    l.title,
+                    l.url,
+                    ssh.old_status,
+                    ssh.new_status,
+                    ssh.changed_at
+                FROM sale_status_history ssh
+                JOIN listings l ON ssh.listing_id = l.id
+                ORDER BY ssh.changed_at DESC
+                LIMIT ?
+                ''',
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
     
     # ===== Feature #18: Cleanup =====
     
@@ -1110,7 +1444,27 @@ class DatabaseManager:
             cursor.execute(f'''
                 DELETE FROM notification_log WHERE listing_id IN ({subquery})
             ''', params)
-            
+
+            cursor.execute(f'''
+                DELETE FROM notification_delivery_log WHERE listing_id IN ({subquery})
+            ''', params)
+
+            cursor.execute(f'''
+                DELETE FROM sale_status_history WHERE listing_id IN ({subquery})
+            ''', params)
+
+            cursor.execute(f'''
+                DELETE FROM listing_auto_tags WHERE listing_id IN ({subquery})
+            ''', params)
+
+            cursor.execute(f'''
+                DELETE FROM listing_notes WHERE listing_id IN ({subquery})
+            ''', params)
+
+            cursor.execute(f'''
+                DELETE FROM favorites WHERE listing_id IN ({subquery})
+            ''', params)
+             
             # Delete the listings
             delete_query = f'''
                 DELETE FROM listings WHERE id IN ({subquery})
@@ -1126,40 +1480,35 @@ class DatabaseManager:
     
     def add_auto_tags(self, listing_id: int, tags: list):
         """Add or update auto-generated tags for a listing"""
-        import json
         with self.lock:
             cursor = self.conn.cursor()
-            tags_json = json.dumps(tags, ensure_ascii=False)
-            
-            # Check if note exists
-            cursor.execute('SELECT id FROM listing_notes WHERE listing_id = ?', (listing_id,))
-            if cursor.fetchone():
-                cursor.execute('''
-                    UPDATE listing_notes SET auto_tags = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE listing_id = ?
-                ''', (tags_json, listing_id))
-            else:
-                cursor.execute('''
-                    INSERT INTO listing_notes (listing_id, note, status_tag, auto_tags)
-                    VALUES (?, '', 'interested', ?)
-                ''', (listing_id, tags_json))
-            
+            normalized = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
+            cursor.execute('DELETE FROM listing_auto_tags WHERE listing_id = ?', (listing_id,))
+            if normalized:
+                cursor.executemany(
+                    '''
+                    INSERT INTO listing_auto_tags (listing_id, tag_name)
+                    VALUES (?, ?)
+                    ''',
+                    [(listing_id, tag_name) for tag_name in normalized],
+                )
             self.conn.commit()
             self._invalidate_cache()
     
     def get_auto_tags(self, listing_id: int) -> list:
         """Get auto-generated tags for a listing"""
-        import json
         with self.lock:
             cursor = self.conn.cursor()
-            cursor.execute('SELECT auto_tags FROM listing_notes WHERE listing_id = ?', (listing_id,))
-            row = cursor.fetchone()
-            if row and row['auto_tags']:
-                try:
-                    return json.loads(row['auto_tags'])
-                except json.JSONDecodeError:
-                    return []
-            return []
+            cursor.execute(
+                '''
+                SELECT tag_name
+                FROM listing_auto_tags
+                WHERE listing_id = ?
+                ORDER BY tag_name
+                ''',
+                (listing_id,),
+            )
+            return [str(row['tag_name']) for row in cursor.fetchall()]
     
     # ===== Feature #16: Enhanced Export =====
     
@@ -1179,7 +1528,18 @@ class DatabaseManager:
                 SELECT l.*, 
                        COALESCE(ln.note, '') as note,
                        COALESCE(ln.status_tag, '') as user_status,
-                       COALESCE(ln.auto_tags, '[]') as auto_tags
+                       COALESCE(
+                           (
+                               SELECT json_group_array(tag_name)
+                               FROM (
+                                   SELECT tag_name
+                                   FROM listing_auto_tags lat
+                                   WHERE lat.listing_id = l.id
+                                   ORDER BY tag_name
+                               )
+                           ),
+                           '[]'
+                       ) as auto_tags
                 FROM listings l
                 LEFT JOIN listing_notes ln ON l.id = ln.listing_id
                 WHERE 1=1

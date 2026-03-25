@@ -493,3 +493,45 @@ This section is the current source of truth and supersedes older statements in t
 3. Verify per-platform scrape log line includes:
    - `primary_engine`, `primary_count`, `fallback_used`, `fallback_count`, `fallback_reason`, `elapsed_ms`
 4. Confirm new listings are persisted in DB.
+
+## 2026-03 Consistency Update (Data Integrity + Notification Reliability)
+
+This section is the current source of truth for the March 25, 2026 stabilization work.
+
+- Listing persistence:
+  - auto tags are stored in `listing_auto_tags`, not in `listing_notes.auto_tags`
+  - existing listings refresh non-empty `title`, `url`, `thumbnail`, `seller`, and `location`
+  - `keyword` remains the original representative keyword for the listing row
+  - `sale_status` is re-detected every cycle and state transitions are recorded in `sale_status_history`
+- Notification delivery:
+  - the first monitoring cycle skips both new-item notifications and price-change notifications
+  - retries happen per channel, not per whole notification job
+  - successful sends are recorded in `notification_log`
+  - channel success/failure/retry telemetry is recorded in `notification_delivery_log`
+  - the notification history UI now shows a 7-day channel health summary
+- Metadata enrichment:
+  - `metadata_enrichment_enabled` defaults to `false`
+  - when enabled, seller/location enrichment runs only for filtered items with missing metadata
+  - enrichment is capped at `10` items per platform per keyword per cycle
+  - failures are warning-only and do not discard the base search result
+- Cleanup / recovery semantics:
+  - `cleanup_exclude_noted` protects only rows that have real `listing_notes`
+  - auto tags alone do not protect a listing from cleanup
+  - cleanup explicitly removes linked rows from favorites, notes, auto tags, notification logs, delivery logs, price history, and sale-status history
+  - broken settings files are renamed to `settings.broken-YYYYMMDD_HHMMSS.json`
+  - startup recovery restores the newest valid `backup_*.zip` settings payload when available, otherwise defaults are used
+  - GUI startup shows a recovery notice when this path is taken
+- CLI / packaging:
+  - `python main.py --headless` is a session-only override and does not rewrite `settings.json`
+  - `used_market_notifier.spec` excludes `tests` and `legacy` from onefile builds
+  - `.gitignore` must ignore `settings.broken-*.json` and rotated logs like `notifier.log.1`
+
+### Verification Baseline
+
+- Regression tests:
+  - `python -m pytest -q`
+- Type checks:
+  - `pyright .`
+- Current expected baseline after this update:
+  - `47 passed`
+  - `0 errors, 0 warnings, 0 informations`

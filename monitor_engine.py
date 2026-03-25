@@ -5,7 +5,7 @@ import asyncio
 import concurrent.futures
 import inspect
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from time import perf_counter
 from typing import Awaitable, Callable, Optional, Protocol, cast
@@ -34,6 +34,9 @@ class ScraperProtocol(Protocol):
     def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
         ...
 
+    def enrich_item(self, item: Item) -> Item:
+        ...
+
     def close(self) -> object:
         ...
 
@@ -48,6 +51,9 @@ class NotifierProtocol(Protocol):
     async def send_price_change(self, item: Item, old_price: str, new_price: str) -> bool:
         ...
 
+    def get_last_delivery_result(self) -> dict:
+        ...
+
 
 @dataclass
 class NotificationJob:
@@ -60,6 +66,16 @@ class NotificationJob:
     listing_id: Optional[int] = None
     attempts: int = 0
     enqueued_at: float = 0.0
+    target_channels: list[str] = field(default_factory=list)
+
+
+@dataclass
+class NotificationDeliveryResult:
+    """Per-channel delivery outcome for one queued notification."""
+
+    attempted_channels: list[str] = field(default_factory=list)
+    successful_channels: list[str] = field(default_factory=list)
+    failed_channels: list[str] = field(default_factory=list)
 
 
 class MonitorEngine:
@@ -71,6 +87,7 @@ class MonitorEngine:
     SCRAPER_CONCURRENCY = 2
     NOTIFICATION_MAX_RETRIES = 3
     NOTIFICATION_DRAIN_TIMEOUT = 20.0
+    METADATA_ENRICHMENT_LIMIT = 10
 
     def __init__(self, settings_manager: SettingsProvider, db: Optional[DatabaseManager] = None):
         self.settings = settings_manager
@@ -398,6 +415,123 @@ class MonitorEngine:
             except Exception as e:
                 self.logger.error(f"Failed to initialize {config.type.value} notifier: {e}")
 
+    @staticmethod
+    def _notifier_type(notifier: NotifierProtocol) -> str:
+        return notifier.__class__.__name__.replace("Notifier", "").lower()
+
+    def _build_notification_preview(self, job: NotificationJob) -> str:
+        prefix = "Price change" if job.is_price_change else "New item"
+        if job.is_price_change and job.old_price and job.new_price:
+            return f"{prefix}: {job.item.title} ({job.old_price} -> {job.new_price})"
+        return f"{prefix}: {job.item.title}"
+
+    def _needs_metadata_enrichment(self, item: Item) -> bool:
+        return not bool(getattr(item, "seller", None)) or not bool(getattr(item, "location", None))
+
+    async def _run_enrichment(self, scraper: ScraperProtocol, item: Item) -> Item:
+        if self._executor is None:
+            return scraper.enrich_item(item)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._executor, scraper.enrich_item, item)
+
+    async def enrich_item_metadata(self, item: Item, platform: str | None = None) -> Item:
+        """Best-effort metadata enrichment for seller/location fields."""
+        target_platform = str(platform or getattr(item, "platform", "") or "").strip().lower()
+        if not target_platform or not self._needs_metadata_enrichment(item):
+            return item
+
+        current = item
+        for use_fallback in (False, True):
+            if not self._needs_metadata_enrichment(current):
+                break
+            if not await self._ensure_scraper(target_platform, use_fallback=use_fallback):
+                continue
+
+            scraper_map = self.fallback_scrapers if use_fallback else self.primary_scrapers
+            scraper_kind_map = self.fallback_scraper_kind if use_fallback else self.primary_scraper_kind
+            scraper = scraper_map.get(target_platform)
+            if scraper is None:
+                continue
+
+            try:
+                enriched = await self._run_enrichment(scraper, current)
+                if isinstance(enriched, Item):
+                    current = enriched
+            except Exception as e:
+                self.logger.warning(
+                    f"Metadata enrichment failed: platform={target_platform} "
+                    f"engine={scraper_kind_map.get(target_platform, 'unknown')} error={e}"
+                )
+
+        return current
+
+    async def _enrich_filtered_items(self, platform: str, keyword: str, items: list[Item]) -> list[Item]:
+        if not items or not getattr(self.settings.settings, "metadata_enrichment_enabled", False):
+            return items
+
+        enriched_items: list[Item] = []
+        attempted = 0
+        for item in items:
+            if attempted >= self.METADATA_ENRICHMENT_LIMIT or not self._needs_metadata_enrichment(item):
+                enriched_items.append(item)
+                continue
+
+            attempted += 1
+            try:
+                enriched = await self.enrich_item_metadata(item, platform=platform)
+                if (
+                    getattr(enriched, "seller", None) != getattr(item, "seller", None)
+                    or getattr(enriched, "location", None) != getattr(item, "location", None)
+                ):
+                    self.logger.info(
+                        f"Metadata enriched: platform={platform} keyword='{keyword}' "
+                        f"article_id={getattr(item, 'article_id', '')}"
+                    )
+                enriched_items.append(enriched)
+            except Exception as e:
+                self.logger.warning(
+                    f"Metadata enrichment warning: platform={platform} keyword='{keyword}' "
+                    f"article_id={getattr(item, 'article_id', '')} error={e}"
+                )
+                enriched_items.append(item)
+
+        return enriched_items
+
+    def enrich_item_metadata_once(self, item: Item, platform: str | None = None) -> Item:
+        """Synchronous one-shot enrichment for UI actions."""
+        target_platform = str(platform or getattr(item, "platform", "") or "").strip().lower()
+        if not target_platform or not self._needs_metadata_enrichment(item):
+            return item
+
+        current = item
+        headless = self.settings.settings.headless_mode
+        for kind in self._get_engine_order():
+            if not self._needs_metadata_enrichment(current):
+                break
+            if kind == "playwright":
+                try:
+                    self._probe_playwright_runtime_sync()
+                except Exception as e:
+                    self.logger.warning(f"Skipping Playwright enrichment for {target_platform}: {e}")
+                    continue
+
+            try:
+                scraper = self._create_scraper(target_platform, headless, kind)
+            except Exception as e:
+                self.logger.warning(f"Failed to create enrichment scraper {target_platform}/{kind}: {e}")
+                continue
+
+            try:
+                enriched = scraper.enrich_item(current)
+                if isinstance(enriched, Item):
+                    current = enriched
+            except Exception as e:
+                self.logger.warning(f"One-shot metadata enrichment failed {target_platform}/{kind}: {e}")
+            finally:
+                self._close_scraper_safe(target_platform, scraper)
+
+        return current
+
     async def _start_notification_worker(self) -> None:
         """Ensure notification queue worker is running."""
         if self._notification_queue is None:
@@ -425,8 +559,8 @@ class MonitorEngine:
 
             try:
                 queue_wait_ms = (perf_counter() - job.enqueued_at) * 1000 if job.enqueued_at else 0.0
-                ok = await self._deliver_notification(job, queue_wait_ms=queue_wait_ms)
-                if not ok and job.attempts < self.NOTIFICATION_MAX_RETRIES - 1:
+                result = await self._deliver_notification_channels(job, queue_wait_ms=queue_wait_ms)
+                if result.failed_channels and job.attempts < self.NOTIFICATION_MAX_RETRIES - 1:
                     retry = NotificationJob(
                         item=job.item,
                         is_price_change=job.is_price_change,
@@ -435,10 +569,12 @@ class MonitorEngine:
                         listing_id=job.listing_id,
                         attempts=job.attempts + 1,
                         enqueued_at=perf_counter(),
+                        target_channels=list(result.failed_channels),
                     )
                     backoff = min(2 ** retry.attempts, 8)
                     self.logger.warning(
-                        f"Notification retry scheduled attempt={retry.attempts + 1}/{self.NOTIFICATION_MAX_RETRIES}"
+                        f"Notification retry scheduled attempt={retry.attempts + 1}/{self.NOTIFICATION_MAX_RETRIES} "
+                        f"channels={','.join(retry.target_channels)}"
                     )
                     await self._sleep_or_stop(backoff)
                     await queue.put(retry)
@@ -487,6 +623,86 @@ class MonitorEngine:
         )
         return sent_count > 0
 
+    async def _deliver_notification_channels(
+        self, job: NotificationJob, queue_wait_ms: float = 0.0
+    ) -> NotificationDeliveryResult:
+        """Send one notification job and track channel-level outcomes."""
+        result = NotificationDeliveryResult()
+        if not self.settings.settings.notifications_enabled:
+            return result
+
+        schedule = self.settings.settings.notification_schedule
+        if not schedule.is_active_now():
+            self.logger.info("Notification skipped - outside scheduled hours")
+            return result
+        if not self.notifiers:
+            return result
+
+        target_channels = {channel.strip().lower() for channel in (job.target_channels or []) if channel}
+        target_notifiers = [
+            notifier
+            for notifier in self.notifiers
+            if not target_channels or self._notifier_type(notifier) in target_channels
+        ]
+        if not target_notifiers:
+            return result
+
+        msg_preview = self._build_notification_preview(job)
+        for notifier in target_notifiers:
+            channel = self._notifier_type(notifier)
+            result.attempted_channels.append(channel)
+            success = False
+            error_message: str | None = None
+            rate_limited = False
+            try:
+                if job.is_price_change:
+                    success = await notifier.send_price_change(
+                        job.item,
+                        job.old_price or "",
+                        job.new_price or "",
+                    )
+                else:
+                    success = await notifier.send_item(job.item, with_image=True)
+
+                delivery_meta = (
+                    notifier.get_last_delivery_result() if hasattr(notifier, "get_last_delivery_result") else {}
+                )
+                if isinstance(delivery_meta, dict):
+                    rate_limited = bool(delivery_meta.get("rate_limited"))
+                    error_message = delivery_meta.get("error_message") or None
+                    if delivery_meta.get("success") is not None:
+                        success = bool(delivery_meta.get("success"))
+            except Exception as e:
+                error_message = str(e)
+                self.logger.error(f"Notification error ({channel}): {e}")
+
+            if not success and not error_message:
+                error_message = "send returned False"
+
+            if success:
+                result.successful_channels.append(channel)
+            else:
+                result.failed_channels.append(channel)
+
+            if job.listing_id:
+                self.db.log_notification_delivery(
+                    job.listing_id,
+                    channel,
+                    "success" if success else "failed",
+                    attempt=job.attempts + 1,
+                    error_message=error_message,
+                    rate_limited=rate_limited,
+                )
+                if success:
+                    self.db.log_notification(job.listing_id, channel, msg_preview)
+
+        self.logger.info(
+            f"[perf] notification queue_wait_ms={queue_wait_ms:.1f} "
+            f"targets={len(target_notifiers)} attempted={len(result.attempted_channels)} "
+            f"sent={len(result.successful_channels)} failed={len(result.failed_channels)}"
+        )
+        return result
+
     async def send_notifications(
         self,
         item: Item,
@@ -500,7 +716,7 @@ class MonitorEngine:
             return
         if self._notification_queue is None:
             # Fallback (worker not ready yet): deliver inline.
-            await self._deliver_notification(
+            await self._deliver_notification_channels(
                 NotificationJob(
                     item=item,
                     is_price_change=is_price_change,
@@ -707,6 +923,8 @@ class MonitorEngine:
                     f"max={keyword_config.max_price}, exclude={len(keyword_config.exclude_keywords or [])})"
                 )
 
+            items = await self._enrich_filtered_items(platform, keyword_config.keyword, items)
+
             if blocked_set:
                 items = [it for it in items if not it.seller or (it.seller, it.platform) not in blocked_set]
 
@@ -741,12 +959,6 @@ class MonitorEngine:
                             self.db.add_auto_tags(listing_id, tags)
                             self.logger.debug(f"Auto-tagged '{item.title}' with: {tags}")
 
-                    if listing_id:
-                        detected_status = self.db.detect_sale_status(item.title)
-                        if detected_status != "for_sale":
-                            self.db.update_sale_status(listing_id, detected_status)
-                            self.logger.debug(f"Detected sale status '{detected_status}' for: {item.title}")
-
                     if self.on_new_item:
                         self.on_new_item(item)
 
@@ -768,7 +980,7 @@ class MonitorEngine:
                     if self.on_price_change:
                         self.on_price_change(item, price_change["old_price"], price_change["new_price"])
 
-                    if getattr(keyword_config, "notify_enabled", True):
+                    if not self.is_first_run and getattr(keyword_config, "notify_enabled", True):
                         await self.send_notifications(
                             item,
                             is_price_change=True,
@@ -1076,6 +1288,7 @@ class MonitorEngine:
             "recent_listings": snap["recent"],
             "price_changes": snap["price_changes"],
             "price_analysis": snap["analysis"],
+            "status_history": snap.get("status_history", []),
         }
 
     async def close(self):

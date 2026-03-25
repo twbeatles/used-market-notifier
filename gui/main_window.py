@@ -141,10 +141,10 @@ class MaintenanceCleanupThread(QThread):
 class MainWindow(QMainWindow):
     """Main application window"""
     
-    def __init__(self):
+    def __init__(self, settings_manager: SettingsManager | None = None):
         super().__init__()
         
-        self.settings_manager = SettingsManager()
+        self.settings_manager = settings_manager or SettingsManager()
         # Shared DB connection for the UI lifetime (engine must not close this DB).
         self.db = DatabaseManager(self.settings_manager.settings.db_path)
         self.engine = MonitorEngine(self.settings_manager, db=self.db)
@@ -169,8 +169,30 @@ class MainWindow(QMainWindow):
         if self.settings_manager.settings.auto_backup_enabled:
             self._check_auto_backup()
 
+        QTimer.singleShot(0, self._show_settings_recovery_notice)
         # Run startup maintenance (cleanup) once after UI is shown.
         QTimer.singleShot(0, self._run_startup_maintenance)
+
+    def _show_settings_recovery_notice(self):
+        state = getattr(self.settings_manager, "load_recovery_state", {}) or {}
+        if not state or not (state.get("broken_settings_path") or state.get("recovered_from_backup") or state.get("used_default")):
+            return
+
+        lines = ["설정 파일을 정상적으로 읽지 못해 복구 절차를 진행했습니다."]
+        broken_path = state.get("broken_settings_path")
+        recovered_backup = state.get("recovered_backup_path")
+        error_text = state.get("error")
+
+        if broken_path:
+            lines.append(f"손상 파일: {broken_path}")
+        if recovered_backup:
+            lines.append(f"복구에 사용한 백업: {recovered_backup}")
+        if state.get("used_default"):
+            lines.append("유효한 백업을 찾지 못해 기본 설정으로 시작했습니다.")
+        if error_text:
+            lines.append(f"원인: {error_text}")
+
+        QMessageBox.information(self, "설정 복구 안내", "\n".join(lines))
 
     def _run_startup_maintenance(self):
         s = self.settings_manager.settings
@@ -743,6 +765,9 @@ class MainWindow(QMainWindow):
         self._mark_live_data_dirty(reason="new_item")
     
     def on_price_change(self, item, old_price: str, new_price: str):
+        if hasattr(self.engine, 'is_first_run') and self.engine.is_first_run:
+            self._mark_live_data_dirty(reason="price_change")
+            return
         self.tray_icon.show_notification(
             "💰 가격 변동",
             f"{item.title}\n{old_price} → {new_price}"

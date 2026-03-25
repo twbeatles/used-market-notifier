@@ -57,6 +57,10 @@ class BaseScraper(ABC):
     def close(self):
         """Clean up resources (drivers, etc.)"""
         pass
+
+    def enrich_item(self, item: Item) -> Item:
+        """Best-effort metadata enrichment hook for seller/location/detail fields."""
+        return item
     
     def filter_by_price(
         self,
