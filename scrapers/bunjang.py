@@ -1,14 +1,16 @@
 # scrapers/bunjang.py
 """Bunjang (번개장터) scraper using Selenium"""
 
+import json
 import re
 import time
+from urllib.error import URLError
 from urllib.parse import quote
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from .selenium_base import SeleniumScraper
+from urllib.request import urlopen
+
 from .base import Item
+from .marketplace_parsers import normalize_location_value, parse_bunjang_detail_payload
+from .selenium_base import By, EC, SeleniumScraper, WebDriverWait
 
 
 class BunjangScraper(SeleniumScraper):
@@ -18,11 +20,11 @@ class BunjangScraper(SeleniumScraper):
     UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
 
     DETAIL_SELLER_SELECTORS = (
-        "a[href*='/users/']",
-        "a[href*='/my-shop/']",
-        "[class*='seller']",
-        "[class*='shop-name']",
-        "[class*='user-name']",
+        "a[href*='/shop/'][href$='/products']",
+        "a[href*='/shop/']",
+        "[class*='Seller'] [class*='Name']",
+        "[class*='ProductSeller'] [class*='Name']",
+        "[class*='Seller']",
     )
 
     # Invalid title patterns to filter out
@@ -55,13 +57,7 @@ class BunjangScraper(SeleniumScraper):
 
     @classmethod
     def _normalize_location(cls, text: str) -> str | None:
-        value = str(text or "").strip()
-        if not value:
-            return None
-        compact = value.replace(" ", "")
-        if compact in {"지역정보없음"} or value in cls.UNKNOWN_LOCATION_TEXTS:
-            return None
-        return value
+        return normalize_location_value(text)
 
     @staticmethod
     def _looks_like_time_line(text: str) -> bool:
@@ -142,9 +138,44 @@ class BunjangScraper(SeleniumScraper):
                     return value
         return None
 
+    @staticmethod
+    def _detail_api_url(article_id: str) -> str:
+        return f"https://api.bunjang.co.kr/api/pms/v3/products-detail/{article_id}?viewerUid=-1"
+
+    def _fetch_detail_payload(self, article_id: str) -> dict | None:
+        if not article_id:
+            return None
+        try:
+            with urlopen(self._detail_api_url(article_id), timeout=5) as response:
+                if getattr(response, "status", 200) >= 400:
+                    return None
+                return json.loads(response.read().decode("utf-8"))
+        except (OSError, URLError, json.JSONDecodeError):
+            return None
+
+    @staticmethod
+    def _apply_detail_payload(item: Item, payload: dict[str, object]) -> Item:
+        return Item(
+            platform=item.platform,
+            article_id=item.article_id,
+            title=item.title,
+            price=str(payload.get("price") or item.price),
+            link=item.link,
+            keyword=item.keyword,
+            thumbnail=item.thumbnail,
+            seller=str(payload.get("seller") or item.seller) if (payload.get("seller") or item.seller) else None,
+            location=str(payload.get("location") or item.location) if (payload.get("location") or item.location) else None,
+            sale_status=str(payload.get("sale_status") or item.sale_status) if (payload.get("sale_status") or item.sale_status) else None,
+            price_numeric=payload.get("price_numeric") if payload.get("price_numeric") is not None else item.price_numeric,
+        )
+
     def enrich_item(self, item: Item) -> Item:
         if not item.link:
             return item
+
+        payload = parse_bunjang_detail_payload(self._fetch_detail_payload(item.article_id))
+        if any(payload.get(field) for field in ("seller", "location", "price", "sale_status")):
+            return self._apply_detail_payload(item, payload)
 
         self.driver.get(item.link)
         time.sleep(1.0)
@@ -170,6 +201,7 @@ class BunjangScraper(SeleniumScraper):
             thumbnail=item.thumbnail,
             seller=seller or item.seller,
             location=location_value or item.location,
+            sale_status=item.sale_status,
             price_numeric=item.price_numeric,
         )
 

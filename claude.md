@@ -691,6 +691,7 @@ This section is the latest baseline and overrides older text in this document if
 - Bunjang parser updates:
   - unknown location text (`지역정보 없음` variants) is normalized to `None`.
   - badge lines (`배송비포함`, `검수가능`) are removed in card-text fallback parsing.
+  - detail enrichment prefers the Bunjang product-detail API for seller/location/price/sale status, with DOM fallback only when the API path fails.
 - `.gitignore` runtime artifacts include `debug_output/` from Playwright debugger.
 
 ### Runtime / Packaging
@@ -698,13 +699,34 @@ This section is the latest baseline and overrides older text in this document if
 - Playwright runtime install command:
   - `python -m playwright install chromium`
 - Standard test command:
-  - `python -m pytest -q`
+  - `python -m unittest discover -s tests -q`
 - Type-check command:
   - `pyright .`
 - `used_market_notifier.spec` now collects Playwright Python modules.
 - PyInstaller onefile build intentionally excludes `matplotlib`; chart widgets fall back to placeholder mode.
 - Chromium runtime binaries are not embedded in onefile output.
 - On runtime unavailability, monitor engine logs warning and degrades to Selenium path.
+
+## 2026-04 Audit Remediation Update
+
+- Joonggonara parsing / enrichment:
+  - Naver result parsing now accepts only article links with numeric `articleid` values.
+  - noise anchors such as generic cafe links, bare URLs, time/video labels, and placeholder text are filtered before item creation.
+  - enrichment opens the article, waits for `iframe#cafe_main`, and parses seller/location/price/title from frame content before considering an outer-page fallback.
+- Bunjang detail enrichment / status:
+  - detail enrichment is API-first and reads seller, location, price, and sale status from the Bunjang product-detail API when available.
+  - seller fallback selectors were updated to the current `/shop/.../products` pattern.
+  - explicit scraper sale status is normalized to `for_sale`, `reserved`, `sold`, or `unknown`, and DB updates prefer it over title-based inference.
+- Search observability:
+  - Danggeun and Bunjang now log candidate counts and drop reasons per search.
+  - Playwright automatically writes anomaly diagnostics to `debug_output/` when candidate DOM/data exists but parsed results still collapse to zero.
+- Metadata enrichment flow:
+  - enrichment uses a shared cap of `10` items per platform per keyword per cycle.
+  - pass 1 runs only where seller/location is needed for filtering or blocked-seller checks.
+  - pass 2 uses the remaining budget for kept items that still need seller/location for persistence and notifications.
+- Packaging / regression coverage:
+  - `used_market_notifier.spec` now collects the `aiohttp` dependency tree used by Bunjang detail enrichment.
+  - regression fixtures cover Danggeun JSON-LD/card markup, Bunjang card markup plus detail API JSON, and Joonggonara search/iframe markup.
 
 ## 2026-03 Consistency Update (Type Safety + Encoding)
 
@@ -748,7 +770,11 @@ Use this section as the latest implementation baseline for March 25, 2026.
 - Metadata enrichment:
   - `metadata_enrichment_enabled` defaults to `False`
   - enrichment is best-effort and limited to 10 missing-metadata items per platform per keyword per cycle
+  - enrichment now uses a targeted prefilter pass for location/seller-block decisions, then a postfilter pass for kept items still missing metadata
   - supported paths may enrich seller/location from detail pages; unsupported paths no-op safely
+- Import/runtime safety:
+  - the package remains importable in Playwright-only environments even if `selenium` is not installed
+  - Selenium scraper classes are optional runtime dependencies and are skipped with explicit initialization logs when unavailable
 - Cleanup / recovery semantics:
   - `cleanup_exclude_noted` checks `listing_notes` only
   - tag-only rows must not protect cleanup targets
@@ -762,5 +788,5 @@ Use this section as the latest implementation baseline for March 25, 2026.
 
 ### Verification Baseline
 
-- `python -m pytest -q` -> `47 passed`
-- `pyright .` -> `0 errors, 0 warnings, 0 informations`
+- `python -m unittest discover -s tests -q` -> `Ran 57 tests` / `OK`
+- `pyright .` -> run as an optional type-check gate when available

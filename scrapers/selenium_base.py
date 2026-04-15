@@ -3,15 +3,28 @@
 
 import time
 import functools
-from typing import List
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from .base import BaseScraper, Item
+from typing import Any, List
+
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from webdriver_manager.chrome import ChromeDriverManager
+    SELENIUM_IMPORT_ERROR: Exception | None = None
+except Exception as exc:  # pragma: no cover - exercised via import-safety tests
+    webdriver = None  # type: ignore[assignment]
+    Service = None  # type: ignore[assignment]
+    Options = None  # type: ignore[assignment]
+    By = None  # type: ignore[assignment]
+    WebDriverWait = None  # type: ignore[assignment]
+    EC = None  # type: ignore[assignment]
+    ChromeDriverManager = None  # type: ignore[assignment]
+    SELENIUM_IMPORT_ERROR = exc
+
+from .base import BaseScraper, Item, ScraperDependencyUnavailable
 
 
 def retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
@@ -43,9 +56,10 @@ class SeleniumScraper(BaseScraper):
         self,
         headless: bool = True,
         disable_images: bool = True,
-        driver: webdriver.Chrome | None = None,
+        driver: Any = None,
     ):
         super().__init__()
+        self._ensure_selenium_available()
         self._owned_driver = False
         if driver:
             self.driver = driver
@@ -53,9 +67,18 @@ class SeleniumScraper(BaseScraper):
             self.driver = self._create_driver(headless, disable_images)
             self._owned_driver = True
         self.wait_time = 10
+
+    @staticmethod
+    def _ensure_selenium_available() -> None:
+        if SELENIUM_IMPORT_ERROR is None:
+            return
+        raise ScraperDependencyUnavailable(
+            "Selenium runtime unavailable. Install 'selenium' and 'webdriver-manager' to use Selenium scrapers."
+        ) from SELENIUM_IMPORT_ERROR
     
-    def _create_driver(self, headless: bool, disable_images: bool) -> webdriver.Chrome:
+    def _create_driver(self, headless: bool, disable_images: bool):
         """Initialize and configure Chrome driver"""
+        self._ensure_selenium_available()
         options = Options()
         if headless:
             options.add_argument('--headless=new')
@@ -118,7 +141,7 @@ class SeleniumScraper(BaseScraper):
         """Search with automatic retry on failure"""
         return self.search(keyword, location)
     
-    def set_shared_driver(self, driver: webdriver.Chrome):
+    def set_shared_driver(self, driver: Any):
         """Set shared driver instance (for engine-managed driver)"""
         if self._owned_driver and self.driver:
             try:

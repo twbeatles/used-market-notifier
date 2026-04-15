@@ -1,14 +1,22 @@
-﻿# scrapers/playwright_bunjang.py
+# scrapers/playwright_bunjang.py
 """Playwright-based Bunjang scraper."""
 
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import re
 from urllib.parse import quote
 
+import aiohttp
+
 from models import Item
 
+from .marketplace_parsers import (
+    normalize_location_value,
+    parse_bunjang_detail_payload,
+    parse_html_snapshot,
+)
 from .playwright_base import PlaywrightScraper
 
 
@@ -25,17 +33,17 @@ def _run_async(coro_factory):
 
 
 class PlaywrightBunjangScraper(PlaywrightScraper):
-    """Bunjang scraper with data-pid priority and link fallback."""
+    """Bunjang scraper with data-pid priority, API enrichment, and anomaly diagnostics."""
 
     BADGE_LINES = {"배송비포함", "검수가능"}
     UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
     MAX_RESULTS = 120
     DETAIL_SELLER_SELECTORS = (
-        "a[href*='/users/']",
-        "a[href*='/my-shop/']",
-        "[class*='seller']",
-        "[class*='shop-name']",
-        "[class*='user-name']",
+        "a[href*='/shop/'][href$='/products']",
+        "a[href*='/shop/']",
+        "[class*='Seller'] [class*='Name']",
+        "[class*='ProductSeller'] [class*='Name']",
+        "[class*='Seller']",
     )
 
     INVALID_TITLE_PATTERNS = [
@@ -56,7 +64,6 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
         )
 
     def is_healthy(self) -> bool:
-        # This scraper uses one-shot sessions per search.
         return True
 
     def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
@@ -92,13 +99,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
 
     @classmethod
     def _normalize_location(cls, text: str) -> str | None:
-        value = str(text or "").strip()
-        if not value:
-            return None
-        compact = value.replace(" ", "")
-        if compact in {"지역정보없음"} or value in cls.UNKNOWN_LOCATION_TEXTS:
-            return None
-        return value
+        return normalize_location_value(text)
 
     @staticmethod
     def _looks_like_time_line(text: str) -> bool:
@@ -156,13 +157,6 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
         return None
 
     @staticmethod
-    async def _extract_first_text(card, selector: str) -> str:
-        try:
-            return (await card.locator(selector).first.inner_text() or "").strip()
-        except Exception:
-            return ""
-
-    @staticmethod
     def _extract_label_value(text: str, labels: tuple[str, ...]) -> str | None:
         for label in labels:
             pattern = rf"{re.escape(label)}\s*[:\n]\s*([^\n]{{2,40}})"
@@ -194,9 +188,168 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
                 return value
         return None
 
+    @staticmethod
+    def _detail_api_url(article_id: str) -> str:
+        return f"https://api.bunjang.co.kr/api/pms/v3/products-detail/{article_id}?viewerUid=-1"
+
+    async def _fetch_detail_payload(self, article_id: str) -> dict | None:
+        if not article_id:
+            return None
+        timeout = aiohttp.ClientTimeout(total=5)
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(self._detail_api_url(article_id)) as response:
+                    if response.status >= 400:
+                        return None
+                    return await response.json(content_type=None)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _apply_detail_payload(item: Item, payload: dict[str, object]) -> Item:
+        seller = payload.get("seller") or item.seller
+        location = payload.get("location") or item.location
+        sale_status = payload.get("sale_status") or item.sale_status
+        price = payload.get("price") or item.price
+        price_numeric = payload.get("price_numeric")
+        return Item(
+            platform=item.platform,
+            article_id=item.article_id,
+            title=item.title,
+            price=str(price),
+            link=item.link,
+            keyword=item.keyword,
+            thumbnail=item.thumbnail,
+            seller=str(seller) if seller else None,
+            location=str(location) if location else None,
+            sale_status=str(sale_status) if sale_status else None,
+            price_numeric=price_numeric if price_numeric is not None else item.price_numeric,
+        )
+
+    def _log_search_metrics(self, keyword: str, metrics: dict[str, object]) -> None:
+        self.logger.info(
+            f"Bunjang search metrics keyword='{keyword}' "
+            f"dom_card_count={metrics.get('dom_card_count', 0)} "
+            f"dom_product_link_count={metrics.get('dom_product_link_count', 0)} "
+            f"items_after_data_pid={metrics.get('items_after_data_pid', 0)} "
+            f"items_after_dom_fallback={metrics.get('items_after_dom_fallback', 0)} "
+            f"drop_reason_count={metrics.get('drop_reason_count', {})}"
+        )
+
+    def _parse_snapshot_items(self, snapshot, keyword: str) -> tuple[list[Item], dict[str, object]]:
+        metrics: dict[str, object] = {
+            "dom_card_count": 0,
+            "dom_product_link_count": 0,
+            "items_after_data_pid": 0,
+            "items_after_dom_fallback": 0,
+            "drop_reason_count": {},
+        }
+        drop_reasons: Counter[str] = Counter()
+        items: list[Item] = []
+        seen_pids: set[str] = set()
+
+        cards = [anchor for anchor in snapshot.anchors if anchor.attrs.get("data-pid")]
+        metrics["dom_card_count"] = len(cards)
+        for anchor in cards[: self.MAX_RESULTS]:
+            try:
+                pid = str(anchor.attrs.get("data-pid") or "").strip()
+                if not pid:
+                    drop_reasons["missing_id"] += 1
+                    continue
+                if pid in seen_pids:
+                    drop_reasons["duplicate_id"] += 1
+                    continue
+
+                raw_card_text = anchor.text
+                title, price, location_value = self._parse_card_text_fallback(raw_card_text)
+                if not self._is_valid_title(title):
+                    drop_reasons["invalid_title"] += 1
+                    continue
+
+                items.append(
+                    Item(
+                        platform="bunjang",
+                        article_id=pid,
+                        title=title,
+                        price=price,
+                        link=f"https://m.bunjang.co.kr/products/{pid}",
+                        keyword=keyword,
+                        thumbnail=anchor.image,
+                        seller=None,
+                        location=location_value,
+                    )
+                )
+                seen_pids.add(pid)
+            except Exception:
+                drop_reasons["parse_error"] += 1
+
+        metrics["items_after_data_pid"] = len(items)
+        if items:
+            metrics["drop_reason_count"] = dict(drop_reasons)
+            return items, metrics
+
+        product_links = [
+            anchor
+            for anchor in snapshot.anchors
+            if "/products/" in str(anchor.attrs.get("href") or "")
+        ]
+        metrics["dom_product_link_count"] = len(product_links)
+        for anchor in product_links[: self.MAX_RESULTS]:
+            try:
+                href = str(anchor.attrs.get("href") or "").strip()
+                if not href:
+                    drop_reasons["missing_href"] += 1
+                    continue
+                if href.startswith("/"):
+                    href = f"https://m.bunjang.co.kr{href}"
+
+                pid = self._extract_pid_from_href(href)
+                if not pid:
+                    drop_reasons["missing_id"] += 1
+                    continue
+                if pid in seen_pids:
+                    drop_reasons["duplicate_id"] += 1
+                    continue
+
+                title, price, location_value = self._parse_card_text_fallback(anchor.text)
+                if not self._is_valid_title(title):
+                    drop_reasons["invalid_title"] += 1
+                    continue
+
+                items.append(
+                    Item(
+                        platform="bunjang",
+                        article_id=pid,
+                        title=title,
+                        price=price,
+                        link=href,
+                        keyword=keyword,
+                        thumbnail=anchor.image,
+                        seller=None,
+                        location=location_value,
+                    )
+                )
+                seen_pids.add(pid)
+            except Exception:
+                drop_reasons["parse_error"] += 1
+
+        metrics["items_after_dom_fallback"] = len(items)
+        metrics["drop_reason_count"] = dict(drop_reasons)
+        return items, metrics
+
+    async def _dump_anomaly_if_needed(self, page, keyword: str, metrics: dict[str, object], items: list[Item]) -> None:
+        candidate_count = int(metrics.get("dom_card_count", 0)) + int(metrics.get("dom_product_link_count", 0))
+        if items or candidate_count <= 0:
+            return
+        await self.dump_debug_artifacts(keyword, metrics, prefix="zero_results")
+
     async def _enrich_item_async(self, item: Item) -> Item:
         if not item.link:
             return item
+
+        payload = parse_bunjang_detail_payload(await self._fetch_detail_payload(item.article_id))
+        if any(payload.get(field) for field in ("seller", "location", "price", "sale_status")):
+            return self._apply_detail_payload(item, payload)
 
         page = await self.get_page()
         ok = await self.navigate_with_retry(item.link, wait_until="domcontentloaded", max_retries=2)
@@ -226,6 +379,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
             thumbnail=item.thumbnail,
             seller=seller or item.seller,
             location=location_value or item.location,
+            sale_status=item.sale_status,
             price_numeric=item.price_numeric,
         )
 
@@ -263,104 +417,11 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
         try:
             await page.wait_for_selector("a[data-pid]", timeout=6000)
         except Exception:
-            # Keep going: fallback link selectors may still be available.
             pass
+        await page.wait_for_timeout(800)
 
-        items: list[Item] = []
-        seen_pids: set[str] = set()
-
-        # 1) data-pid cards (preferred)
-        cards = page.locator("a[data-pid]")
-        count = min(await cards.count(), self.MAX_RESULTS)
-        for i in range(count):
-            card = cards.nth(i)
-            try:
-                pid = (await card.get_attribute("data-pid") or "").strip()
-                if not pid or pid in seen_pids:
-                    continue
-
-                raw_card_text = (await card.inner_text() or "").strip()
-                parsed_title, parsed_price, parsed_location = self._parse_card_text_fallback(raw_card_text)
-
-                title = await self._extract_first_text(card, "div:nth-of-type(2) > div:nth-of-type(1)")
-                if not title:
-                    title = parsed_title
-                if not self._is_valid_title(title):
-                    continue
-
-                price_text = await self._extract_first_text(
-                    card,
-                    "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)",
-                )
-                price = self._parse_price(price_text)
-                if price == "N/A":
-                    price = parsed_price
-
-                location_text = await self._extract_first_text(card, "div:nth-of-type(3)")
-                location_value = self._normalize_location(location_text) or parsed_location
-
-                thumbnail = None
-                try:
-                    thumbnail = await card.locator("img").first.get_attribute("src")
-                except Exception:
-                    thumbnail = None
-
-                items.append(
-                    Item(
-                        platform="bunjang",
-                        article_id=pid,
-                        title=title,
-                        price=price,
-                        link=f"https://m.bunjang.co.kr/products/{pid}",
-                        keyword=keyword,
-                        thumbnail=thumbnail,
-                        seller=None,
-                        location=location_value,
-                    )
-                )
-                seen_pids.add(pid)
-            except Exception:
-                continue
-
-        if items:
-            return items
-
-        # 2) Product link DOM fallback
-        links = page.locator("a[href*='/products/']")
-        fallback_count = min(await links.count(), self.MAX_RESULTS)
-        for i in range(fallback_count):
-            el = links.nth(i)
-            try:
-                href = (await el.get_attribute("href") or "").strip()
-                if not href:
-                    continue
-                if href.startswith("/"):
-                    href = f"https://m.bunjang.co.kr{href}"
-
-                pid = self._extract_pid_from_href(href)
-                if not pid or pid in seen_pids:
-                    continue
-
-                raw_text = (await el.inner_text() or "").strip()
-                title, price, location_text = self._parse_card_text_fallback(raw_text)
-                if not self._is_valid_title(title):
-                    continue
-
-                items.append(
-                    Item(
-                        platform="bunjang",
-                        article_id=pid,
-                        title=title,
-                        price=price,
-                        link=href,
-                        keyword=keyword,
-                        thumbnail=None,
-                        seller=None,
-                        location=location_text,
-                    )
-                )
-                seen_pids.add(pid)
-            except Exception:
-                continue
-
+        snapshot = parse_html_snapshot(await page.content())
+        items, metrics = self._parse_snapshot_items(snapshot, keyword)
+        self._log_search_metrics(keyword, metrics)
+        await self._dump_anomaly_if_needed(page, keyword, metrics, items)
         return items

@@ -96,6 +96,41 @@ class TestDatabaseIntegrityUpdates(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_explicit_sale_status_overrides_title_heuristic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(os.path.join(tmp, "test.db"))
+            try:
+                first = Item(
+                    platform="bunjang",
+                    article_id="status-1",
+                    title="아이폰 15 프로",
+                    price="900,000원",
+                    link="https://example.com/status-1",
+                    keyword="iphone",
+                )
+                db.add_listing(first)
+
+                updated = Item(
+                    platform="bunjang",
+                    article_id="status-1",
+                    title="아이폰 15 프로 예약중",
+                    price="900,000원",
+                    link="https://example.com/status-1",
+                    keyword="iphone",
+                    sale_status="sold",
+                )
+                db.add_listing(updated)
+
+                listing = db.get_listing("bunjang", "status-1")
+                assert listing is not None
+                self.assertEqual(listing["sale_status"], "sold")
+
+                history = db.get_status_history(limit=10)
+                self.assertEqual(len(history), 1)
+                self.assertEqual(history[0]["new_status"], "sold")
+            finally:
+                db.close()
+
 
 if __name__ == "__main__":
     unittest.main()

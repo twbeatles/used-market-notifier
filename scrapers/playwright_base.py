@@ -2,9 +2,12 @@
 """Playwright-based scraper base class with advanced stealth and debugging support"""
 
 import asyncio
+import json
 import logging
 import functools
 from abc import ABC, abstractmethod
+from datetime import datetime
+from pathlib import Path
 from typing import Awaitable, Callable, Literal, Optional, TypeVar
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
 
@@ -72,6 +75,7 @@ class PlaywrightScraper(ABC):
     
     # Wait strategies (faster to slower)
     WAIT_STRATEGIES = ["domcontentloaded", "load", "networkidle"]
+    DEBUG_OUTPUT_DIR = Path("debug_output")
     
     # Invalid title patterns to filter out (shared across scrapers)
     INVALID_TITLE_PATTERNS = [
@@ -443,6 +447,32 @@ class PlaywrightScraper(ABC):
             self.logger.info(f"📸 Screenshot saved: {filename}")
         
         return await self._page.screenshot(full_page=True)
+
+    async def dump_debug_artifacts(self, keyword: str, summary: dict, *, prefix: str = "anomaly") -> dict[str, str]:
+        """Persist lightweight HTML/screenshot/summary artifacts for anomalous searches."""
+        page = await self.get_page()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_keyword = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(keyword or ""))[:40] or "keyword"
+        base_name = f"{self.__class__.__name__.lower()}_{safe_keyword}_{prefix}_{timestamp}"
+        self.DEBUG_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        html_path = self.DEBUG_OUTPUT_DIR / f"{base_name}.html"
+        json_path = self.DEBUG_OUTPUT_DIR / f"{base_name}.json"
+        png_path = self.DEBUG_OUTPUT_DIR / f"{base_name}.png"
+
+        html = await page.content()
+        html_path.write_text(html, encoding="utf-8")
+        json_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        await page.screenshot(path=str(png_path), full_page=True)
+
+        self.logger.warning(
+            f"Debug artifacts written: html={html_path} screenshot={png_path} summary={json_path}"
+        )
+        return {
+            "html": str(html_path),
+            "summary": str(json_path),
+            "screenshot": str(png_path),
+        }
     
     async def close(self):
         """Clean up resources"""

@@ -144,7 +144,7 @@ python -m playwright install chromium
 python main.py
 
 # regression tests (team standard)
-python -m pytest -q
+python -m unittest discover -s tests -q
 ```
 
 ### CLI 모드 (백그라운드 실행)
@@ -458,6 +458,7 @@ This section is the current source of truth and supersedes older statements in t
 - Bunjang parser behavior:
   - Unknown location text (`지역정보 없음` variants) is normalized to `None`.
   - Card text fallback parser removes badge lines (`배송비포함`, `검수가능`) before title/price/location extraction.
+  - Detail enrichment prefers the Bunjang product-detail API for seller/location/price/sale status, with DOM fallback only when the API path fails.
 - Location policy impact:
   - Danggeun remains strict when keyword location filter is set.
   - Non-Danggeun platforms keep best-effort behavior with unknown location values.
@@ -467,7 +468,7 @@ This section is the current source of truth and supersedes older statements in t
 - Required setup for Playwright path:
   - `python -m playwright install chromium`
 - Team-standard regression command:
-  - `python -m pytest -q`
+  - `python -m unittest discover -s tests -q`
 - Type-check gate command:
   - `pyright .`
 - Type-check baseline is pinned in `pyrightconfig.json`:
@@ -477,6 +478,27 @@ This section is the current source of truth and supersedes older statements in t
 - PyInstaller onefile build intentionally excludes `matplotlib`; chart widgets fall back gracefully when unavailable.
 - Chromium runtime binaries are not bundled in the EXE.
 - If Playwright runtime is unavailable at startup, engine automatically degrades to Selenium mode with warning logs.
+
+## 2026-04 Audit Remediation Update
+
+- Joonggonara parsing / enrichment:
+  - Naver search results now accept only Joonggonara article links with numeric `articleid` values.
+  - known noise links are rejected before item creation (generic cafe links, URL-only anchors, time/video labels, placeholder text).
+  - detail enrichment now waits for `iframe#cafe_main` and parses seller/location/price/title from the frame body, with outer-page fallback only when the iframe path is unavailable.
+- Bunjang enrichment / sale status:
+  - detail enrichment is API-first and uses the Bunjang product-detail API for seller, location, price, and explicit sale status.
+  - seller extraction selectors were updated to the current `/shop/.../products` shape.
+  - scraper-provided sale status is normalized to `for_sale`, `reserved`, `sold`, or `unknown`, and DB writes prefer that explicit value over title heuristics.
+- Observability:
+  - Danggeun and Bunjang searches now log per-search candidate counters and drop reasons (`selector_count`, `jsonld_scripts`, `jsonld_items`, `parsed_items`, invalid-title drops, missing-id drops, parse-error drops).
+  - when a Playwright search finds candidate DOM/data but still returns `0` parsed items, debug artifacts are dumped under `debug_output/`.
+- Metadata enrichment flow:
+  - enrichment now uses one shared budget per platform/keyword/cycle.
+  - pass 1 enriches only items that need seller/location for location filtering or blocked-seller decisions.
+  - pass 2 spends any remaining budget on kept items that still lack seller/location for DB quality and notifications.
+- Packaging / tests:
+  - `used_market_notifier.spec` now collects Playwright modules plus the `aiohttp` dependency tree used by Bunjang detail enrichment.
+  - regression fixtures cover Danggeun, Bunjang, and Joonggonara live markup snapshots plus import safety without `selenium`.
 
 ### Encoding Hygiene Gate
 
@@ -511,9 +533,13 @@ This section is the current source of truth for the March 25, 2026 stabilization
   - the notification history UI now shows a 7-day channel health summary
 - Metadata enrichment:
   - `metadata_enrichment_enabled` defaults to `false`
-  - when enabled, seller/location enrichment runs only for filtered items with missing metadata
+  - when enabled, seller/location enrichment uses a two-phase budget: targeted prefilter enrichment for location/seller-block decisions, then postfilter enrichment for kept items still missing metadata
   - enrichment is capped at `10` items per platform per keyword per cycle
   - failures are warning-only and do not discard the base search result
+  - explicit scraper-provided `sale_status` values are persisted when available
+- Import/runtime safety:
+  - the package can be imported in Playwright-only environments even when `selenium` is not installed
+  - Selenium scraper classes are treated as optional runtime dependencies and are skipped with informative logs when unavailable
 - Cleanup / recovery semantics:
   - `cleanup_exclude_noted` protects only rows that have real `listing_notes`
   - auto tags alone do not protect a listing from cleanup
@@ -529,9 +555,9 @@ This section is the current source of truth for the March 25, 2026 stabilization
 ### Verification Baseline
 
 - Regression tests:
-  - `python -m pytest -q`
+  - `python -m unittest discover -s tests -q`
 - Type checks:
   - `pyright .`
 - Current expected baseline after this update:
-  - `47 passed`
-  - `0 errors, 0 warnings, 0 informations`
+  - `Ran 57 tests`
+  - `OK`

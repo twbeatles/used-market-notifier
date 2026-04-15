@@ -1,0 +1,13 @@
+{
+  "data": {
+    "shop": {
+      "name": "삼삼상점"
+    },
+    "product": {
+      "name": "아이폰 15 프로 256GB",
+      "price": 760000,
+      "saleStatus": "RESERVED",
+      "regionFullName": "서울특별시 강남구 역삼동"
+    }
+  }
+}

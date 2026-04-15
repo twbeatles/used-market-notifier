@@ -40,6 +40,7 @@ class Item:
     thumbnail: Optional[str] = None
     seller: Optional[str] = None
     location: Optional[str] = None
+    sale_status: Optional[str] = None
     price_numeric: Optional[int] = None  # Parsed price for filtering
 
     def parse_price(self) -> int:

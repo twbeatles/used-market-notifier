@@ -1,9 +1,17 @@
 # scrapers/__init__.py
-from .base import BaseScraper
-from .danggeun import DanggeunScraper
-from .bunjang import BunjangScraper
-from .joonggonara import JoonggonaraScraper
-from .selenium_base import SeleniumScraper
+from .base import BaseScraper, ScraperDependencyUnavailable
+
+try:
+    from .danggeun import DanggeunScraper
+    from .bunjang import BunjangScraper
+    from .joonggonara import JoonggonaraScraper
+    from .selenium_base import SeleniumScraper
+except Exception:
+    # Optional runtime dependency: Selenium may not be installed.
+    DanggeunScraper = None
+    BunjangScraper = None
+    JoonggonaraScraper = None
+    SeleniumScraper = None
 
 try:
     from .playwright_danggeun import PlaywrightDanggeunScraper
@@ -20,6 +28,7 @@ from models import Item
 
 __all__ = [
     'BaseScraper',
+    'ScraperDependencyUnavailable',
     'SeleniumScraper',
     'Item',
     'DanggeunScraper',

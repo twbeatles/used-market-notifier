@@ -5,6 +5,10 @@ import logging
 from models import Item
 
 
+class ScraperDependencyUnavailable(RuntimeError):
+    """Raised when an optional scraper runtime dependency is unavailable."""
+
+
 class BaseScraper(ABC):
     """Abstract base class for marketplace scrapers"""
     

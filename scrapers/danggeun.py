@@ -6,11 +6,9 @@ import json
 import re
 import time
 from urllib.parse import quote
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from .selenium_base import SeleniumScraper
+
 from .base import Item
+from .selenium_base import By, EC, SeleniumScraper, WebDriverWait
 
 
 class DanggeunScraper(SeleniumScraper):
@@ -216,6 +214,7 @@ class DanggeunScraper(SeleniumScraper):
             thumbnail=item.thumbnail,
             seller=seller or item.seller,
             location=location_value or item.location,
+            sale_status=item.sale_status,
             price_numeric=item.price_numeric,
         )
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import hashlib
 import json
 import re
@@ -11,6 +12,7 @@ from urllib.parse import quote
 
 from models import Item
 
+from .marketplace_parsers import extract_location_from_text, parse_html_snapshot
 from .playwright_base import PlaywrightScraper
 
 
@@ -27,7 +29,7 @@ def _run_async(coro_factory):
 
 
 class PlaywrightDanggeunScraper(PlaywrightScraper):
-    """Danggeun scraper with JSON-LD first and DOM fallback parsing."""
+    """Danggeun scraper with JSON-LD first parsing, HTML snapshot fallback, and anomaly diagnostics."""
 
     MAX_RESULTS = 120
     CARD_SELECTOR = "a[data-gtm='search_article'][href^='/kr/buy-sell/']"
@@ -57,7 +59,6 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
         )
 
     def is_healthy(self) -> bool:
-        # This scraper uses one-shot sessions per search.
         return True
 
     def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
@@ -100,14 +101,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
 
     @staticmethod
     def _extract_location(text: str) -> str | None:
-        if not text:
-            return None
-        # Best-effort extraction for Korean region prefixes.
-        m = re.search(
-            r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\n|,/]{0,20}",
-            text,
-        )
-        return m.group(0).strip() if m else None
+        return extract_location_from_text(text)
 
     @staticmethod
     def _normalize_price(product: dict) -> str:
@@ -224,6 +218,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
             thumbnail=item.thumbnail,
             seller=seller or item.seller,
             location=location_value or item.location,
+            sale_status=item.sale_status,
             price_numeric=item.price_numeric,
         )
 
@@ -249,42 +244,175 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
     def enrich_item(self, item: Item) -> Item:
         return _run_async(lambda: self._enrich_item_session(item))
 
-    async def _build_dom_card_map(self, page) -> dict[str, dict[str, str | None]]:
+    @classmethod
+    def _build_dom_card_map_from_snapshot(cls, snapshot) -> dict[str, dict[str, str | None]]:
         card_map: dict[str, dict[str, str | None]] = {}
-        cards = page.locator(self.CARD_SELECTOR)
-        count = min(await cards.count(), self.MAX_RESULTS)
+        for anchor in snapshot.anchors:
+            attrs = anchor.attrs
+            href = str(attrs.get("href") or "")
+            if attrs.get("data-gtm") != "search_article" or not href.startswith("/kr/buy-sell/"):
+                continue
+            link = cls._to_absolute_link(href)
+            article_id = cls._extract_article_id(link)
+            if not article_id or article_id in card_map:
+                continue
+            title, price, location = cls._parse_card_text(anchor.text)
+            card_map[article_id] = {
+                "title": title or None,
+                "price": price if price != "가격문의" else None,
+                "location": location,
+                "thumbnail": anchor.image,
+                "link": link,
+            }
+        return card_map
 
-        for i in range(count):
-            card = cards.nth(i)
+    def _parse_json_ld_items(
+        self,
+        script_texts: list[str],
+        dom_card_map: dict[str, dict[str, str | None]],
+        keyword: str,
+        drop_reasons: Counter[str],
+    ) -> tuple[list[Item], int]:
+        items: list[Item] = []
+        seen_ids: set[str] = set()
+        json_ld_item_count = 0
+
+        for script_text in script_texts:
             try:
-                link = self._to_absolute_link((await card.get_attribute("href") or "").strip())
-                if not link:
-                    continue
-
-                article_id = self._extract_article_id(link)
-                if not article_id or article_id in card_map:
-                    continue
-
-                text = (await card.inner_text() or "").strip()
-                title, price, location = self._parse_card_text(text)
-
-                thumbnail = None
-                try:
-                    thumbnail = await card.locator("img").first.get_attribute("src", timeout=800)
-                except Exception:
-                    thumbnail = None
-
-                card_map[article_id] = {
-                    "title": title or None,
-                    "price": price if price != "가격문의" else None,
-                    "location": location,
-                    "thumbnail": thumbnail,
-                    "link": link,
-                }
+                data = json.loads(script_text)
             except Exception:
+                drop_reasons["json_ld_parse_error"] += 1
                 continue
 
-        return card_map
+            nodes = data if isinstance(data, list) else [data]
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                if node.get("@type") != "ItemList":
+                    continue
+                for entry in node.get("itemListElement", []):
+                    json_ld_item_count += 1
+                    product = entry.get("item", {}) if isinstance(entry, dict) else {}
+                    if not product and isinstance(entry, dict):
+                        product = entry
+                    if not isinstance(product, dict):
+                        drop_reasons["parse_error"] += 1
+                        continue
+                    if product.get("@type") not in (None, "Product"):
+                        continue
+
+                    link = self._to_absolute_link(str(product.get("url", "")).strip())
+                    article_id = self._extract_article_id(link)
+                    if not article_id:
+                        drop_reasons["missing_id"] += 1
+                        continue
+                    if article_id in seen_ids:
+                        drop_reasons["duplicate_id"] += 1
+                        continue
+
+                    card_data = dom_card_map.get(article_id, {})
+                    title = str(product.get("name", "")).strip() or str(card_data.get("title") or "")
+                    if not self._is_valid_title(title):
+                        drop_reasons["invalid_title"] += 1
+                        continue
+
+                    price = self._normalize_price(product)
+                    if price == "가격문의" and card_data.get("price"):
+                        price = str(card_data["price"])
+
+                    location_text = self._extract_location(str(product.get("description", "")))
+                    if not location_text:
+                        location_text = str(card_data.get("location") or "") or None
+
+                    thumbnail = product.get("image") or card_data.get("thumbnail")
+                    seen_ids.add(article_id)
+                    items.append(
+                        Item(
+                            platform="danggeun",
+                            article_id=article_id,
+                            title=title,
+                            price=price,
+                            link=link,
+                            keyword=keyword,
+                            thumbnail=thumbnail,
+                            location=location_text,
+                        )
+                    )
+                    if len(items) >= self.MAX_RESULTS:
+                        return items, json_ld_item_count
+
+        return items, json_ld_item_count
+
+    def _log_search_metrics(self, keyword: str, metrics: dict[str, object]) -> None:
+        self.logger.info(
+            f"Danggeun search metrics keyword='{keyword}' "
+            f"json_ld_script_count={metrics.get('json_ld_script_count', 0)} "
+            f"json_ld_item_count={metrics.get('json_ld_item_count', 0)} "
+            f"dom_card_count={metrics.get('dom_card_count', 0)} "
+            f"items_after_json_ld={metrics.get('items_after_json_ld', 0)} "
+            f"items_after_dom_fallback={metrics.get('items_after_dom_fallback', 0)} "
+            f"drop_reason_count={metrics.get('drop_reason_count', {})}"
+        )
+
+    def _parse_snapshot_items(self, snapshot, keyword: str) -> tuple[list[Item], dict[str, object]]:
+        dom_card_map = self._build_dom_card_map_from_snapshot(snapshot)
+        drop_reasons: Counter[str] = Counter()
+        items, json_ld_item_count = self._parse_json_ld_items(
+            snapshot.ld_json_scripts,
+            dom_card_map,
+            keyword,
+            drop_reasons,
+        )
+
+        metrics: dict[str, object] = {
+            "json_ld_script_count": len(snapshot.ld_json_scripts),
+            "json_ld_item_count": json_ld_item_count,
+            "dom_card_count": len(dom_card_map),
+            "items_after_json_ld": len(items),
+            "items_after_dom_fallback": 0,
+            "drop_reason_count": {},
+        }
+
+        if items:
+            metrics["drop_reason_count"] = dict(drop_reasons)
+            return items, metrics
+
+        seen_ids: set[str] = set()
+        for article_id, card_data in list(dom_card_map.items())[: self.MAX_RESULTS]:
+            try:
+                if article_id in seen_ids:
+                    drop_reasons["duplicate_id"] += 1
+                    continue
+                title = str(card_data.get("title") or "")
+                if not self._is_valid_title(title):
+                    drop_reasons["invalid_title"] += 1
+                    continue
+
+                seen_ids.add(article_id)
+                items.append(
+                    Item(
+                        platform="danggeun",
+                        article_id=article_id,
+                        title=title,
+                        price=str(card_data.get("price") or "가격문의"),
+                        link=str(card_data.get("link") or ""),
+                        keyword=keyword,
+                        thumbnail=card_data.get("thumbnail"),
+                        location=card_data.get("location"),
+                    )
+                )
+            except Exception:
+                drop_reasons["parse_error"] += 1
+
+        metrics["items_after_dom_fallback"] = len(items)
+        metrics["drop_reason_count"] = dict(drop_reasons)
+        return items, metrics
+
+    async def _dump_anomaly_if_needed(self, page, keyword: str, metrics: dict[str, object], items: list[Item]) -> None:
+        candidate_count = int(metrics.get("json_ld_item_count", 0)) + int(metrics.get("dom_card_count", 0))
+        if items or candidate_count <= 0:
+            return
+        await self.dump_debug_artifacts(keyword, metrics, prefix="zero_results")
 
     async def search(self, keyword: str, location: str | None = None) -> list[Item]:
         page = await self.get_page()
@@ -294,119 +422,15 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
         ok = await self.navigate_with_retry(url, wait_until="domcontentloaded", max_retries=2)
         if not ok:
             return []
-        await page.wait_for_timeout(1200)
 
-        dom_card_map = await self._build_dom_card_map(page)
-        items: list[Item] = []
-        seen_ids: set[str] = set()
-
-        # 1) JSON-LD parsing (preferred)
         try:
-            scripts = await page.locator("script[type='application/ld+json']").all_text_contents()
-            for script_text in scripts:
-                try:
-                    data = json.loads(script_text)
-                except Exception:
-                    continue
-
-                nodes = data if isinstance(data, list) else [data]
-                for node in nodes:
-                    if not isinstance(node, dict):
-                        continue
-                    if node.get("@type") != "ItemList":
-                        continue
-                    for entry in node.get("itemListElement", [])[: self.MAX_RESULTS]:
-                        product = entry.get("item", {}) if isinstance(entry, dict) else {}
-                        if not product and isinstance(entry, dict):
-                            product = entry
-                        if not isinstance(product, dict):
-                            continue
-                        if product.get("@type") not in (None, "Product"):
-                            continue
-
-                        link = self._to_absolute_link(str(product.get("url", "")).strip())
-                        article_id = self._extract_article_id(link)
-                        if not article_id or article_id in seen_ids:
-                            continue
-
-                        card_data = dom_card_map.get(article_id, {})
-                        title = str(product.get("name", "")).strip() or str(card_data.get("title") or "")
-                        if not self._is_valid_title(title):
-                            continue
-
-                        price = self._normalize_price(product)
-                        if price == "가격문의" and card_data.get("price"):
-                            price = str(card_data["price"])
-
-                        location_text = self._extract_location(str(product.get("description", "")))
-                        if not location_text:
-                            location_text = str(card_data.get("location") or "") or None
-
-                        thumbnail = product.get("image") or card_data.get("thumbnail")
-
-                        seen_ids.add(article_id)
-                        items.append(
-                            Item(
-                                platform="danggeun",
-                                article_id=article_id,
-                                title=title,
-                                price=price,
-                                link=link,
-                                keyword=keyword,
-                                thumbnail=thumbnail,
-                                location=location_text,
-                            )
-                        )
-                        if len(items) >= self.MAX_RESULTS:
-                            return items
-                if items:
-                    return items
+            await page.wait_for_selector("script[type='application/ld+json']", timeout=5000)
         except Exception:
             pass
+        await page.wait_for_timeout(1200)
 
-        # 2) DOM card parsing fallback
-        cards = page.locator(self.CARD_SELECTOR)
-        count = min(await cards.count(), self.MAX_RESULTS)
-        for i in range(count):
-            card = cards.nth(i)
-            try:
-                link = self._to_absolute_link((await card.get_attribute("href") or "").strip())
-                if not link:
-                    continue
-
-                article_id = self._extract_article_id(link)
-                if not article_id or article_id in seen_ids:
-                    continue
-
-                text = (await card.inner_text() or "").strip()
-                if not text:
-                    continue
-                title, price, location_text = self._parse_card_text(text)
-                if not self._is_valid_title(title):
-                    continue
-
-                thumbnail = None
-                try:
-                    thumbnail = await card.locator("img").first.get_attribute("src", timeout=800)
-                except Exception:
-                    thumbnail = None
-
-                seen_ids.add(article_id)
-                items.append(
-                    Item(
-                        platform="danggeun",
-                        article_id=article_id,
-                        title=title,
-                        price=price,
-                        link=link,
-                        keyword=keyword,
-                        thumbnail=thumbnail,
-                        location=location_text,
-                    )
-                )
-                if len(items) >= self.MAX_RESULTS:
-                    break
-            except Exception:
-                continue
-
+        snapshot = parse_html_snapshot(await page.content())
+        items, metrics = self._parse_snapshot_items(snapshot, keyword)
+        self._log_search_metrics(keyword, metrics)
+        await self._dump_anomaly_if_needed(page, keyword, metrics, items)
         return items

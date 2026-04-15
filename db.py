@@ -496,7 +496,8 @@ class DatabaseManager:
             existing = dict(row) if row else None
             
             price_numeric = item.parse_price()
-            detected_status = self.detect_sale_status(item.title)
+            explicit_status = self._normalize_sale_status(item.sale_status)
+            detected_status = explicit_status if explicit_status is not None else self.detect_sale_status(item.title)
             
             if existing:
                 # Check for price change
@@ -1313,6 +1314,22 @@ class DatabaseManager:
         elif any(keyword in title_lower for keyword in ["예약중", "예약", "reserved"]):
             return "reserved"
         return "for_sale"
+
+    @staticmethod
+    def _normalize_sale_status(value: str | None) -> str | None:
+        raw = str(value or "").strip().lower()
+        if not raw:
+            return None
+        compact = ''.join(ch for ch in raw if ch.isalnum() or ('가' <= ch <= '힣'))
+        if compact in {"forsale", "onsale", "sale", "selling", "판매중", "판매", "available", "진행중"}:
+            return "for_sale"
+        if compact in {"reserved", "reserve", "reservation", "예약", "예약중", "hold"}:
+            return "reserved"
+        if compact in {"sold", "soldout", "판매완료", "거래완료", "완료", "품절"}:
+            return "sold"
+        if compact in {"unknown", "미확인", "알수없음"}:
+            return "unknown"
+        return "unknown"
     
     def get_listings_by_status(
         self,

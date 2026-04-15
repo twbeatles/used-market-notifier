@@ -18,6 +18,9 @@ Notes:
 - Scraper parser updates (2026-03) such as Danggeun slug/hash article IDs
   and Bunjang unknown-location normalization are runtime logic changes only
   and do not require additional PyInstaller hidden imports.
+- Audit remediation updates (2026-04) keep Playwright-only environments
+  import-safe when `selenium` is absent and add Bunjang detail-API enrichment
+  through `aiohttp`, so async HTTP helper modules are collected explicitly.
 - Static typing / encoding hygiene updates (2026-03) are source-level changes only
   and do not require PyInstaller hidden import adjustments.
 - Data-integrity features added in 2026-03 (metadata enrichment, delivery logs,
@@ -73,6 +76,11 @@ hiddenimports = [
     # Async / HTTP
     "asyncio",
     "aiohttp",
+    "aiosignal",
+    "frozenlist",
+    "multidict",
+    "yarl",
+    "propcache",
 
     # Data export
     "openpyxl",
@@ -91,6 +99,13 @@ try:
     hiddenimports += collect_submodules("playwright")
 except Exception:
     pass
+
+# aiohttp and its helper packages may resolve parts of the stack lazily.
+for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", "propcache"):
+    try:
+        hiddenimports += collect_submodules(package_name)
+    except Exception:
+        pass
 
 a = Analysis(
     ["main.py"],

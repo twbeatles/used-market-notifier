@@ -22,6 +22,7 @@ from scrapers import (
     PlaywrightBunjangScraper,
     PlaywrightDanggeunScraper,
     PlaywrightJoonggonaraScraper,
+    ScraperDependencyUnavailable,
 )
 from settings_manager import SettingsManager
 
@@ -237,10 +238,16 @@ class MonitorEngine:
 
         if engine_kind == "selenium":
             if platform == "danggeun":
+                if DanggeunScraper is None:
+                    raise ScraperDependencyUnavailable("Danggeun Selenium scraper unavailable")
                 return DanggeunScraper(headless=headless)
             if platform == "bunjang":
+                if BunjangScraper is None:
+                    raise ScraperDependencyUnavailable("Bunjang Selenium scraper unavailable")
                 return BunjangScraper(headless=headless)
             if platform == "joonggonara":
+                if JoonggonaraScraper is None:
+                    raise ScraperDependencyUnavailable("Joonggonara Selenium scraper unavailable")
                 if headless:
                     self.logger.warning("중고나라: 헤드리스 모드에서 네이버 봇 탐지로 결과가 제한될 수 있습니다")
                 return JoonggonaraScraper(headless=headless)
@@ -248,15 +255,15 @@ class MonitorEngine:
         if engine_kind == "playwright":
             if platform == "danggeun":
                 if PlaywrightDanggeunScraper is None:
-                    raise RuntimeError("PlaywrightDanggeunScraper unavailable")
+                    raise ScraperDependencyUnavailable("PlaywrightDanggeunScraper unavailable")
                 return PlaywrightDanggeunScraper(headless=headless)
             if platform == "bunjang":
                 if PlaywrightBunjangScraper is None:
-                    raise RuntimeError("PlaywrightBunjangScraper unavailable")
+                    raise ScraperDependencyUnavailable("PlaywrightBunjangScraper unavailable")
                 return PlaywrightBunjangScraper(headless=headless)
             if platform == "joonggonara":
                 if PlaywrightJoonggonaraScraper is None:
-                    raise RuntimeError("PlaywrightJoonggonaraScraper unavailable")
+                    raise ScraperDependencyUnavailable("PlaywrightJoonggonaraScraper unavailable")
                 return PlaywrightJoonggonaraScraper(headless=headless)
 
         raise ValueError(f"Unsupported scraper kind: platform={platform}, kind={engine_kind}")
@@ -323,6 +330,8 @@ class MonitorEngine:
                 try:
                     scraper = await loop.run_in_executor(self._executor, self._create_scraper, platform, headless, kind)
                     resolved.append((kind, scraper))
+                except ScraperDependencyUnavailable as e:
+                    self.logger.info(f"Engine unavailable for {platform} ({kind}): {e}")
                 except Exception as e:
                     self.logger.warning(f"Failed to initialize {platform} ({kind}): {e}")
 
@@ -428,6 +437,44 @@ class MonitorEngine:
     def _needs_metadata_enrichment(self, item: Item) -> bool:
         return not bool(getattr(item, "seller", None)) or not bool(getattr(item, "location", None))
 
+    @staticmethod
+    def _blocked_seller_applies_to_platform(blocked_platform: str | None, platform: str) -> bool:
+        value = str(blocked_platform or "").strip().lower()
+        return not value or value == platform
+
+    def _item_is_blocked(self, item: Item, blocked_set: set[tuple[str, Optional[str]]]) -> bool:
+        seller = str(getattr(item, "seller", "") or "").strip()
+        platform = str(getattr(item, "platform", "") or "").strip().lower()
+        if not seller or not blocked_set:
+            return False
+        for blocked_seller, blocked_platform in blocked_set:
+            if blocked_seller != seller:
+                continue
+            if self._blocked_seller_applies_to_platform(blocked_platform, platform):
+                return True
+        return False
+
+    def _needs_prefilter_metadata_enrichment(
+        self,
+        item: Item,
+        keyword_config: SearchKeyword,
+        blocked_set: set[tuple[str, Optional[str]]],
+    ) -> bool:
+        if not self._needs_metadata_enrichment(item):
+            return False
+
+        if keyword_config.location and not getattr(item, "location", None):
+            return True
+
+        if blocked_set and not getattr(item, "seller", None):
+            platform = str(getattr(item, "platform", "") or "").strip().lower()
+            return any(
+                self._blocked_seller_applies_to_platform(blocked_platform, platform)
+                for _, blocked_platform in blocked_set
+            )
+
+        return False
+
     async def _run_enrichment(self, scraper: ScraperProtocol, item: Item) -> Item:
         if self._executor is None:
             return scraper.enrich_item(item)
@@ -465,14 +512,27 @@ class MonitorEngine:
 
         return current
 
-    async def _enrich_filtered_items(self, platform: str, keyword: str, items: list[Item]) -> list[Item]:
-        if not items or not getattr(self.settings.settings, "metadata_enrichment_enabled", False):
-            return items
+    async def _enrich_items_with_budget(
+        self,
+        platform: str,
+        keyword: str,
+        items: list[Item],
+        budget: int,
+        *,
+        phase: str,
+        predicate: Callable[[Item], bool],
+    ) -> tuple[list[Item], int]:
+        if (
+            budget <= 0
+            or not items
+            or not getattr(self.settings.settings, "metadata_enrichment_enabled", False)
+        ):
+            return items, 0
 
         enriched_items: list[Item] = []
         attempted = 0
         for item in items:
-            if attempted >= self.METADATA_ENRICHMENT_LIMIT or not self._needs_metadata_enrichment(item):
+            if attempted >= budget or not predicate(item):
                 enriched_items.append(item)
                 continue
 
@@ -482,20 +542,21 @@ class MonitorEngine:
                 if (
                     getattr(enriched, "seller", None) != getattr(item, "seller", None)
                     or getattr(enriched, "location", None) != getattr(item, "location", None)
+                    or getattr(enriched, "sale_status", None) != getattr(item, "sale_status", None)
                 ):
                     self.logger.info(
-                        f"Metadata enriched: platform={platform} keyword='{keyword}' "
+                        f"Metadata enriched: phase={phase} platform={platform} keyword='{keyword}' "
                         f"article_id={getattr(item, 'article_id', '')}"
                     )
                 enriched_items.append(enriched)
             except Exception as e:
                 self.logger.warning(
-                    f"Metadata enrichment warning: platform={platform} keyword='{keyword}' "
+                    f"Metadata enrichment warning: phase={phase} platform={platform} keyword='{keyword}' "
                     f"article_id={getattr(item, 'article_id', '')} error={e}"
                 )
                 enriched_items.append(item)
 
-        return enriched_items
+        return enriched_items, attempted
 
     def enrich_item_metadata_once(self, item: Item, platform: str | None = None) -> Item:
         """Synchronous one-shot enrichment for UI actions."""
@@ -907,10 +968,27 @@ class MonitorEngine:
         for platform in active_platforms:
             items_raw = platform_results.get(platform) or []
             raw_count = len(items_raw)
+            enrichment_budget = self.METADATA_ENRICHMENT_LIMIT if getattr(
+                self.settings.settings, "metadata_enrichment_enabled", False
+            ) else 0
+
+            items_prefilter, used_prefilter = await self._enrich_items_with_budget(
+                platform,
+                keyword_config.keyword,
+                items_raw,
+                enrichment_budget,
+                phase="prefilter",
+                predicate=lambda item, kw=keyword_config, blocked=blocked_set: self._needs_prefilter_metadata_enrichment(
+                    item,
+                    kw,
+                    blocked,
+                ),
+            )
+            enrichment_budget = max(0, enrichment_budget - used_prefilter)
 
             # Apply per-keyword filters (price/location/exclude keywords)
             items: list[Item] = []
-            for it in items_raw:
+            for it in items_prefilter:
                 if not getattr(it, "keyword", None):
                     it.keyword = keyword_config.keyword
                 if keyword_config.matches(it):
@@ -923,10 +1001,17 @@ class MonitorEngine:
                     f"max={keyword_config.max_price}, exclude={len(keyword_config.exclude_keywords or [])})"
                 )
 
-            items = await self._enrich_filtered_items(platform, keyword_config.keyword, items)
-
             if blocked_set:
-                items = [it for it in items if not it.seller or (it.seller, it.platform) not in blocked_set]
+                items = [it for it in items if not self._item_is_blocked(it, blocked_set)]
+
+            items, _ = await self._enrich_items_with_budget(
+                platform,
+                keyword_config.keyword,
+                items,
+                enrichment_budget,
+                phase="postfilter",
+                predicate=self._needs_metadata_enrichment,
+            )
 
             self.logger.info(f"Found {len(items)} items on {platform} for '{keyword_config.keyword}'")
             process_start = perf_counter()

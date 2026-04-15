@@ -481,13 +481,34 @@ This section is the source of truth for current behavior and supersedes older Se
 - Install Playwright runtime:
   - `python -m playwright install chromium`
 - Team regression command:
-  - `python -m pytest -q`
+  - `python -m unittest discover -s tests -q`
 - Type-check command:
   - `pyright .`
 - `used_market_notifier.spec` collects Playwright Python modules.
 - PyInstaller onefile build intentionally excludes `matplotlib`; chart widgets fall back to placeholder mode.
 - Chromium runtime binaries are not bundled in onefile artifacts.
 - If Playwright runtime is unavailable, engine auto-degrades to Selenium with warning logs.
+
+## 2026-04 Audit Remediation Update
+
+- Joonggonara parsing / enrichment:
+  - only Joonggonara article links with numeric `articleid` values are accepted from Naver search results.
+  - generic cafe links, URL-only anchors, time/video labels, and placeholder text are rejected as noise before item creation.
+  - detail enrichment waits for `iframe#cafe_main` and extracts seller/location/price/title from the frame body, with outer-page fallback only when the iframe path is unavailable.
+- Bunjang detail enrichment / status:
+  - the Bunjang product-detail API is now the primary source for seller, location, price, and sale status.
+  - seller fallback selectors were aligned to the current `/shop/.../products` structure.
+  - scraper-provided sale status is normalized to `for_sale`, `reserved`, `sold`, or `unknown`, and persisted ahead of title-based inference.
+- Search observability:
+  - Danggeun and Bunjang searches now emit per-search candidate counters and drop-reason summaries.
+  - Playwright writes debug artifacts into `debug_output/` when candidate DOM/data exists but parsed results still end at zero.
+- Metadata enrichment flow:
+  - enrichment uses a shared cap of `10` items per platform per keyword per cycle.
+  - pass 1 is targeted prefilter enrichment for location-filter and blocked-seller decisions.
+  - pass 2 uses the remaining budget on kept items that still need seller/location for DB quality and notifications.
+- Packaging / regression coverage:
+  - `used_market_notifier.spec` now collects Playwright modules plus the `aiohttp` dependency tree required by Bunjang detail enrichment.
+  - regression tests now include live-markup fixtures for Danggeun, Bunjang, Joonggonara, and import safety without `selenium`.
 
 ## 2026-03 Consistency Update (Type Safety + Encoding)
 
@@ -520,7 +541,7 @@ Treat this as the current baseline for the March 25, 2026 stabilization pass.
 - Metadata enrichment:
   - controlled by `metadata_enrichment_enabled`
   - default is off
-  - only filtered items with missing seller/location are enriched
+  - enrichment now uses a targeted prefilter pass for location/seller-block decisions, then a postfilter pass for kept items still missing seller/location
   - hard cap is 10 items per platform per keyword per cycle
 - Cleanup / recovery:
   - `cleanup_exclude_noted` checks real note/status rows only
@@ -534,5 +555,5 @@ Treat this as the current baseline for the March 25, 2026 stabilization pass.
 
 ### Verification Baseline
 
-- `python -m pytest -q` -> `47 passed`
-- `pyright .` -> `0 errors, 0 warnings, 0 informations`
+- `python -m unittest discover -s tests -q` -> `Ran 57 tests` / `OK`
+- `pyright .` -> run as an optional type-check gate when available
