@@ -25,6 +25,9 @@ Notes:
 - Shared seller-candidate scanning and Danggeun best-effort location warnings
   added during the 2026-04 audit pass are source/runtime behavior changes only
   and do not require additional PyInstaller hidden imports.
+- Build environments that have both `PyQt6` and `PyQt5` installed must exclude
+  the older Qt bindings explicitly so PyInstaller does not abort on mixed-hook
+  collection.
 - Static typing / encoding hygiene updates (2026-03) are source-level changes only
   and do not require PyInstaller hidden import adjustments.
 - Data-integrity features added in 2026-03 (metadata enrichment, delivery logs,
@@ -163,6 +166,11 @@ a = Analysis(
         "PyQt6.QtWebEngineWidgets",
         "PyQt6.QtWebSockets",
         "PyQt6.QtXml",
+        "PyQt5",
+        "PyQt5.sip",
+        "PyQt5.QtCore",
+        "PyQt5.QtGui",
+        "PyQt5.QtWidgets",
 
         # Heavy unused packages
         "numpy",
