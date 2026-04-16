@@ -89,6 +89,9 @@ class MonitorEngine:
     NOTIFICATION_MAX_RETRIES = 3
     NOTIFICATION_DRAIN_TIMEOUT = 20.0
     METADATA_ENRICHMENT_LIMIT = 10
+    DANGGEUN_LOCATION_WARNING = (
+        "당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터이며, 요청 지역 정확도를 보장하지 않음"
+    )
 
     def __init__(self, settings_manager: SettingsProvider, db: Optional[DatabaseManager] = None):
         self.settings = settings_manager
@@ -133,6 +136,7 @@ class MonitorEngine:
         self._cycle_platform_attempts: Optional[dict[str, int]] = None
         self._cycle_fallback_counts: Optional[dict[str, int]] = None
         self._cycle_blocked_set: set[tuple[str, Optional[str]]] = set()
+        self._cycle_danggeun_location_warning_keys: set[tuple[str, str]] = set()
 
         # Callbacks for UI updates
         self.on_new_item: Optional[Callable[[Item], None]] = None
@@ -846,6 +850,22 @@ class MonitorEngine:
             return
         self._cycle_fallback_counts[platform] = self._cycle_fallback_counts.get(platform, 0) + 1
 
+    def _warn_danggeun_location_best_effort(self, keyword_config: SearchKeyword) -> None:
+        location = str(getattr(keyword_config, "location", "") or "").strip()
+        if not location or "danggeun" not in (keyword_config.platforms or []):
+            return
+
+        warning_key = (str(keyword_config.keyword or "").strip(), location)
+        if warning_key in self._cycle_danggeun_location_warning_keys:
+            return
+        self._cycle_danggeun_location_warning_keys.add(warning_key)
+
+        self.logger.warning(
+            f"{self.DANGGEUN_LOCATION_WARNING}: keyword='{keyword_config.keyword}' location='{location}'"
+        )
+        if self.on_status_update:
+            self.on_status_update(self.DANGGEUN_LOCATION_WARNING)
+
     async def search_keyword(self, keyword_config: SearchKeyword, blocked_set: Optional[set] = None) -> int:
         """Search a single keyword across enabled platforms and return new-item count."""
         search_start = perf_counter()
@@ -857,6 +877,7 @@ class MonitorEngine:
         semaphore = asyncio.Semaphore(self.SCRAPER_CONCURRENCY)
 
         self._update_status(f"검색중: '{keyword_config.keyword}' ({', '.join(keyword_config.platforms)})")
+        self._warn_danggeun_location_best_effort(keyword_config)
 
         async def scrape_platform(platform: str):
             if self._cycle_platform_attempts is not None:
@@ -1095,6 +1116,7 @@ class MonitorEngine:
         self._cycle_platform_raw_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
         self._cycle_platform_attempts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
         self._cycle_fallback_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        self._cycle_danggeun_location_warning_keys = set()
         blocked_sellers = self.db.get_blocked_sellers()
         self._cycle_blocked_set = {
             (row.get("seller_name"), row.get("platform")) for row in blocked_sellers if row.get("seller_name")
@@ -1143,6 +1165,7 @@ class MonitorEngine:
             self._cycle_platform_attempts = None
             self._cycle_fallback_counts = None
             self._cycle_blocked_set = set()
+            self._cycle_danggeun_location_warning_keys = set()
 
         if total_new == 0 and not self.is_first_run:
             self._update_status("검색 결과가 없습니다. 키워드/필터를 확인해주세요.")

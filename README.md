@@ -24,7 +24,7 @@
 | **다중 플랫폼** | 당근마켓 🥕, 번개장터 ⚡, 중고나라 🛒 동시 검색 |
 | **무제한 키워드** | 원하는 만큼 키워드 등록 가능 |
 | **가격 필터** | 최소/최대 가격 범위 설정 |
-| **지역 필터** | 당근마켓 지역 검색 지원 |
+| **지역 필터** | 당근마켓 best-effort 지역 필터 + 정확도 경고 |
 | **제외 키워드** | 불필요한 매물 자동 필터링 |
 | **키워드 그룹** | 관련 키워드 그룹화 관리 |
 | **개별 설정** | 키워드별 검색 주기, 알림 토글 |
@@ -163,7 +163,7 @@ python main.py --cli
 2. 검색 키워드 입력 (예: "맥북 프로 M2")
 3. 옵션 설정:
    - **가격 범위**: 최소/최대 가격
-   - **지역**: 당근마켓 지역 필터
+   - **지역**: 당근마켓 best-effort 지역 필터
    - **제외 키워드**: "부품", "고장" 등
    - **플랫폼**: 검색할 플랫폼 선택
 4. 저장
@@ -171,6 +171,8 @@ python main.py --cli
 ### 2. 알림 설정
 
 > 참고: Telegram/Discord/Slack 채널을 활성화해도, 전역 설정 `notifications_enabled`가 `true`여야 실제 알림이 전송됩니다.
+
+> 참고: 당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터로 동작합니다. 요청 지역 정확도는 보장되지 않으며, 앱에서 경고를 표시합니다.
 
 1. **설정** (⚙️) 버튼 클릭
 2. 원하는 알림 채널 탭 선택:
@@ -282,7 +284,7 @@ used_market_notifier/
 
 > 참고:
 > - 리포지토리에는 `settings.example.json`만 포함됩니다. 실제 실행을 위해서는 `settings.json`을 생성해 토큰/웹훅 등을 채워주세요.
-> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/`, `debug_output/` 등은 로컬 런타임 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
+> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/`, `debug_output/`, `.tmp/` 등은 로컬 런타임 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
 > - 과거 레거시 설정/알림 샘플 코드는 `legacy/`에 있으며, 현재 메인 앱에서는 사용하지 않습니다.
 
 ### 데이터 파일
@@ -445,6 +447,7 @@ This section is the current source of truth and supersedes older statements in t
   - secondary key: `url/link`
 - Danggeun location policy:
   - if location filter is set, unknown location items are excluded for `danggeun`.
+  - app/runtime warns that Danggeun location filtering is best-effort and does not guarantee requested-region accuracy.
 - Joonggonara title validity filter:
   - completion keywords are checked by substring match (not exact match).
 
@@ -455,10 +458,11 @@ This section is the current source of truth and supersedes older statements in t
   - JSON-LD parsing is primary and result intake is capped at top `120` items per search.
   - DOM fallback selector is narrowed to search-result cards only:
     - `a[data-gtm='search_article'][href^='/kr/buy-sell/']`
+  - seller enrichment now scans multiple candidate nodes and can recover seller names from profile `aria-label` values when visible text is empty.
 - Bunjang parser behavior:
   - Unknown location text (`지역정보 없음` variants) is normalized to `None`.
   - Card text fallback parser removes badge lines (`배송비포함`, `검수가능`) before title/price/location extraction.
-  - Detail enrichment prefers the Bunjang product-detail API for seller/location/price/sale status, with DOM fallback only when the API path fails.
+  - Detail enrichment is API-first, but still falls back to DOM for missing seller/location fields after partial API responses.
 - Location policy impact:
   - Danggeun remains strict when keyword location filter is set.
   - Non-Danggeun platforms keep best-effort behavior with unknown location values.
@@ -469,6 +473,8 @@ This section is the current source of truth and supersedes older statements in t
   - `python -m playwright install chromium`
 - Team-standard regression command:
   - `python -m unittest discover -s tests -q`
+- Onefile build command:
+  - `pyinstaller used_market_notifier.spec`
 - Type-check gate command:
   - `pyright .`
 - Type-check baseline is pinned in `pyrightconfig.json`:
@@ -483,12 +489,14 @@ This section is the current source of truth and supersedes older statements in t
 
 - Joonggonara parsing / enrichment:
   - Naver search results now accept only Joonggonara article links with numeric `articleid` values.
-  - known noise links are rejected before item creation (generic cafe links, URL-only anchors, time/video labels, placeholder text).
+  - known noise links are rejected before item creation (generic cafe links, URL-only anchors, time/video labels, placeholder text, numeric-only anchor text).
   - detail enrichment now waits for `iframe#cafe_main` and parses seller/location/price/title from the frame body, with outer-page fallback only when the iframe path is unavailable.
+  - detail parsing now skips category/UI meta lines, supports `35만원`-style prices, and extracts station/dong-level transaction locations when present.
 - Bunjang enrichment / sale status:
   - detail enrichment is API-first and uses the Bunjang product-detail API for seller, location, price, and explicit sale status.
   - seller extraction selectors were updated to the current `/shop/.../products` shape.
   - scraper-provided sale status is normalized to `for_sale`, `reserved`, `sold`, or `unknown`, and DB writes prefer that explicit value over title heuristics.
+  - when the detail API omits `seller` or `location`, DOM fallback still tries to fill the missing fields from valid seller candidates and `직거래지역` / `거래지역` labels.
 - Observability:
   - Danggeun and Bunjang searches now log per-search candidate counters and drop reasons (`selector_count`, `jsonld_scripts`, `jsonld_items`, `parsed_items`, invalid-title drops, missing-id drops, parse-error drops).
   - when a Playwright search finds candidate DOM/data but still returns `0` parsed items, debug artifacts are dumped under `debug_output/`.
@@ -550,14 +558,16 @@ This section is the current source of truth for the March 25, 2026 stabilization
 - CLI / packaging:
   - `python main.py --headless` is a session-only override and does not rewrite `settings.json`
   - `used_market_notifier.spec` excludes `tests` and `legacy` from onefile builds
-  - `.gitignore` must ignore `settings.broken-*.json` and rotated logs like `notifier.log.1`
+  - `.gitignore` must ignore `settings.broken-*.json`, rotated logs like `notifier.log.1`, and workspace-local temp directories such as `.tmp/`
 
 ### Verification Baseline
 
 - Regression tests:
   - `python -m unittest discover -s tests -q`
+- Restricted/sandboxed shells:
+  - point `TEMP/TMP` to workspace-local `.tmp/` before running regression tests
 - Type checks:
   - `pyright .`
 - Current expected baseline after this update:
-  - `Ran 57 tests`
+  - `Ran 64 tests`
   - `OK`

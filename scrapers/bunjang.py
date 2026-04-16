@@ -9,7 +9,12 @@ from urllib.parse import quote
 from urllib.request import urlopen
 
 from .base import Item
-from .marketplace_parsers import normalize_location_value, parse_bunjang_detail_payload
+from .marketplace_parsers import (
+    merge_item_metadata,
+    normalize_location_value,
+    parse_bunjang_detail_payload,
+    pick_seller_candidate,
+)
 from .selenium_base import By, EC, SeleniumScraper, WebDriverWait
 
 
@@ -20,10 +25,10 @@ class BunjangScraper(SeleniumScraper):
     UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
 
     DETAIL_SELLER_SELECTORS = (
+        "[class*='ProductSeller'] [class*='Name']",
+        "[class*='Seller'] [class*='Name']",
         "a[href*='/shop/'][href$='/products']",
         "a[href*='/shop/']",
-        "[class*='Seller'] [class*='Name']",
-        "[class*='ProductSeller'] [class*='Name']",
         "[class*='Seller']",
     )
 
@@ -117,7 +122,10 @@ class BunjangScraper(SeleniumScraper):
 
     @classmethod
     def _extract_location_from_text(cls, text: str) -> str | None:
-        labeled = cls._extract_label_value(text, ("지역", "지역 정보", "지역정보"))
+        labeled = cls._extract_label_value(
+            text,
+            ("직거래지역", "직거래 지역", "거래지역", "거래 지역", "지역", "지역 정보", "지역정보"),
+        )
         if labeled:
             return cls._normalize_location(labeled)
         match = re.search(
@@ -132,10 +140,20 @@ class BunjangScraper(SeleniumScraper):
                 elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
             except Exception:
                 elements = []
-            for element in elements:
-                value = (element.text or "").strip()
-                if value:
-                    return value
+            candidates: list[dict[str, str | None]] = []
+            for element in elements[:5]:
+                try:
+                    text = (element.text or "").strip()
+                except Exception:
+                    text = ""
+                try:
+                    href = element.get_attribute("href")
+                except Exception:
+                    href = None
+                candidates.append({"text": text, "href": href, "aria_label": None})
+            value = pick_seller_candidate(candidates, platform="bunjang")
+            if value:
+                return value
         return None
 
     @staticmethod
@@ -155,18 +173,13 @@ class BunjangScraper(SeleniumScraper):
 
     @staticmethod
     def _apply_detail_payload(item: Item, payload: dict[str, object]) -> Item:
-        return Item(
-            platform=item.platform,
-            article_id=item.article_id,
-            title=item.title,
-            price=str(payload.get("price") or item.price),
-            link=item.link,
-            keyword=item.keyword,
-            thumbnail=item.thumbnail,
-            seller=str(payload.get("seller") or item.seller) if (payload.get("seller") or item.seller) else None,
-            location=str(payload.get("location") or item.location) if (payload.get("location") or item.location) else None,
-            sale_status=str(payload.get("sale_status") or item.sale_status) if (payload.get("sale_status") or item.sale_status) else None,
-            price_numeric=payload.get("price_numeric") if payload.get("price_numeric") is not None else item.price_numeric,
+        return merge_item_metadata(
+            item,
+            seller=payload.get("seller"),
+            location=payload.get("location"),
+            price=payload.get("price"),
+            sale_status=payload.get("sale_status"),
+            price_numeric=payload.get("price_numeric"),
         )
 
     def enrich_item(self, item: Item) -> Item:
@@ -174,10 +187,11 @@ class BunjangScraper(SeleniumScraper):
             return item
 
         payload = parse_bunjang_detail_payload(self._fetch_detail_payload(item.article_id))
-        if any(payload.get(field) for field in ("seller", "location", "price", "sale_status")):
-            return self._apply_detail_payload(item, payload)
+        enriched = self._apply_detail_payload(item, payload)
+        if enriched.seller and enriched.location:
+            return enriched
 
-        self.driver.get(item.link)
+        self.driver.get(enriched.link)
         time.sleep(1.0)
 
         try:
@@ -185,24 +199,16 @@ class BunjangScraper(SeleniumScraper):
         except Exception:
             page_text = ""
 
-        seller = item.seller or self._extract_first_matching_text(self.DETAIL_SELLER_SELECTORS)
+        seller = enriched.seller or self._extract_first_matching_text(self.DETAIL_SELLER_SELECTORS)
         if not seller and page_text:
             seller = self._extract_label_value(page_text, ("상점명", "판매자", "작성자"))
 
-        location_value = item.location or self._extract_location_from_text(page_text)
+        location_value = enriched.location or self._extract_location_from_text(page_text)
 
-        return Item(
-            platform=item.platform,
-            article_id=item.article_id,
-            title=item.title,
-            price=item.price,
-            link=item.link,
-            keyword=item.keyword,
-            thumbnail=item.thumbnail,
-            seller=seller or item.seller,
-            location=location_value or item.location,
-            sale_status=item.sale_status,
-            price_numeric=item.price_numeric,
+        return merge_item_metadata(
+            enriched,
+            seller=seller,
+            location=location_value,
         )
 
     def search(self, keyword: str, location: str | None = None) -> list[Item]:

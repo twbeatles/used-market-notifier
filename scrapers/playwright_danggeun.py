@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from models import Item
 
-from .marketplace_parsers import extract_location_from_text, parse_html_snapshot
+from .marketplace_parsers import extract_location_from_text, parse_html_snapshot, pick_seller_candidate
 from .playwright_base import PlaywrightScraper
 
 
@@ -179,9 +179,25 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
     async def _extract_first_matching_text(self, page, selectors: tuple[str, ...]) -> str | None:
         for selector in selectors:
             try:
-                value = (await page.locator(selector).first.inner_text(timeout=800) or "").strip()
+                elements = await page.query_selector_all(selector)
             except Exception:
-                value = ""
+                elements = []
+            candidates: list[dict[str, str | None]] = []
+            for element in elements[:5]:
+                try:
+                    text = (await element.inner_text() or "").strip()
+                except Exception:
+                    text = ""
+                try:
+                    href = await element.get_attribute("href")
+                except Exception:
+                    href = None
+                try:
+                    aria_label = await element.get_attribute("aria-label")
+                except Exception:
+                    aria_label = None
+                candidates.append({"text": text, "href": href, "aria_label": aria_label})
+            value = pick_seller_candidate(candidates, platform="danggeun")
             if value:
                 return value
         return None

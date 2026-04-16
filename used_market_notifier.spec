@@ -12,7 +12,8 @@ Notes:
 - `matplotlib` is intentionally excluded to keep onefile size small.
   Chart widgets degrade gracefully to a fallback label when matplotlib is unavailable.
 - Runtime-local recovery artifacts such as `settings.broken-*.json`, `backup/`,
-  `notifier.log*`, and `debug_output/` are not bundled and remain local-only.
+  `notifier.log*`, `debug_output/`, and workspace-local temp dirs such as `.tmp/`
+  are not bundled and remain local-only.
 - Session-only CLI overrides such as `python main.py --headless` do not mutate
   packaged default settings; they only affect the current process.
 - Scraper parser updates (2026-03) such as Danggeun slug/hash article IDs
@@ -21,6 +22,9 @@ Notes:
 - Audit remediation updates (2026-04) keep Playwright-only environments
   import-safe when `selenium` is absent and add Bunjang detail-API enrichment
   through `aiohttp`, so async HTTP helper modules are collected explicitly.
+- Shared seller-candidate scanning and Danggeun best-effort location warnings
+  added during the 2026-04 audit pass are source/runtime behavior changes only
+  and do not require additional PyInstaller hidden imports.
 - Static typing / encoding hygiene updates (2026-03) are source-level changes only
   and do not require PyInstaller hidden import adjustments.
 - Data-integrity features added in 2026-03 (metadata enrichment, delivery logs,

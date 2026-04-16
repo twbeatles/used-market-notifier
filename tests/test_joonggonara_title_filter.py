@@ -12,6 +12,13 @@ class TestJoonggonaraTitleFilter(unittest.TestCase):
         self.assertFalse(scraper._is_valid_title("거래완료 닌텐도"))
         self.assertTrue(scraper._is_valid_title("아이폰 15 상태좋음"))
 
+    def test_numeric_only_titles_are_filtered(self):
+        scraper = object.__new__(JoonggonaraScraper)
+
+        self.assertFalse(scraper._is_valid_title("10"))
+        self.assertFalse(scraper._is_valid_title("123"))
+        self.assertTrue(scraper._is_valid_title("아이폰 15"))
+
 
 if __name__ == "__main__":
     unittest.main()

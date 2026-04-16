@@ -22,6 +22,7 @@ htmlcov/
 # Build artifacts (PyInstaller etc.)
 build/
 dist/
+.tmp/
 
 # IDE / OS
 .vscode/

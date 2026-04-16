@@ -13,9 +13,11 @@ import aiohttp
 from models import Item
 
 from .marketplace_parsers import (
+    merge_item_metadata,
     normalize_location_value,
     parse_bunjang_detail_payload,
     parse_html_snapshot,
+    pick_seller_candidate,
 )
 from .playwright_base import PlaywrightScraper
 
@@ -39,10 +41,10 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
     UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
     MAX_RESULTS = 120
     DETAIL_SELLER_SELECTORS = (
+        "[class*='ProductSeller'] [class*='Name']",
+        "[class*='Seller'] [class*='Name']",
         "a[href*='/shop/'][href$='/products']",
         "a[href*='/shop/']",
-        "[class*='Seller'] [class*='Name']",
-        "[class*='ProductSeller'] [class*='Name']",
         "[class*='Seller']",
     )
 
@@ -169,7 +171,10 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
 
     @classmethod
     def _extract_location_from_text(cls, text: str) -> str | None:
-        labeled = cls._extract_label_value(text, ("지역", "지역 정보", "지역정보"))
+        labeled = cls._extract_label_value(
+            text,
+            ("직거래지역", "직거래 지역", "거래지역", "거래 지역", "지역", "지역 정보", "지역정보"),
+        )
         if labeled:
             return cls._normalize_location(labeled)
         match = re.search(
@@ -181,9 +186,21 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
     async def _extract_first_matching_text(self, page, selectors: tuple[str, ...]) -> str | None:
         for selector in selectors:
             try:
-                value = (await page.locator(selector).first.inner_text(timeout=800) or "").strip()
+                elements = await page.query_selector_all(selector)
             except Exception:
-                value = ""
+                elements = []
+            candidates: list[dict[str, str | None]] = []
+            for element in elements[:5]:
+                try:
+                    text = (await element.inner_text() or "").strip()
+                except Exception:
+                    text = ""
+                try:
+                    href = await element.get_attribute("href")
+                except Exception:
+                    href = None
+                candidates.append({"text": text, "href": href, "aria_label": None})
+            value = pick_seller_candidate(candidates, platform="bunjang")
             if value:
                 return value
         return None
@@ -207,23 +224,13 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
 
     @staticmethod
     def _apply_detail_payload(item: Item, payload: dict[str, object]) -> Item:
-        seller = payload.get("seller") or item.seller
-        location = payload.get("location") or item.location
-        sale_status = payload.get("sale_status") or item.sale_status
-        price = payload.get("price") or item.price
-        price_numeric = payload.get("price_numeric")
-        return Item(
-            platform=item.platform,
-            article_id=item.article_id,
-            title=item.title,
-            price=str(price),
-            link=item.link,
-            keyword=item.keyword,
-            thumbnail=item.thumbnail,
-            seller=str(seller) if seller else None,
-            location=str(location) if location else None,
-            sale_status=str(sale_status) if sale_status else None,
-            price_numeric=price_numeric if price_numeric is not None else item.price_numeric,
+        return merge_item_metadata(
+            item,
+            seller=payload.get("seller"),
+            location=payload.get("location"),
+            price=payload.get("price"),
+            sale_status=payload.get("sale_status"),
+            price_numeric=payload.get("price_numeric"),
         )
 
     def _log_search_metrics(self, keyword: str, metrics: dict[str, object]) -> None:
@@ -348,13 +355,14 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
             return item
 
         payload = parse_bunjang_detail_payload(await self._fetch_detail_payload(item.article_id))
-        if any(payload.get(field) for field in ("seller", "location", "price", "sale_status")):
-            return self._apply_detail_payload(item, payload)
+        enriched = self._apply_detail_payload(item, payload)
+        if enriched.seller and enriched.location:
+            return enriched
 
         page = await self.get_page()
-        ok = await self.navigate_with_retry(item.link, wait_until="domcontentloaded", max_retries=2)
+        ok = await self.navigate_with_retry(enriched.link, wait_until="domcontentloaded", max_retries=2)
         if not ok:
-            return item
+            return enriched
         await page.wait_for_timeout(800)
 
         page_text = ""
@@ -363,24 +371,16 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
         except Exception:
             page_text = ""
 
-        seller = item.seller or await self._extract_first_matching_text(page, self.DETAIL_SELLER_SELECTORS)
+        seller = enriched.seller or await self._extract_first_matching_text(page, self.DETAIL_SELLER_SELECTORS)
         if not seller and page_text:
             seller = self._extract_label_value(page_text, ("상점명", "판매자", "작성자"))
 
-        location_value = item.location or self._extract_location_from_text(page_text)
+        location_value = enriched.location or self._extract_location_from_text(page_text)
 
-        return Item(
-            platform=item.platform,
-            article_id=item.article_id,
-            title=item.title,
-            price=item.price,
-            link=item.link,
-            keyword=item.keyword,
-            thumbnail=item.thumbnail,
-            seller=seller or item.seller,
-            location=location_value or item.location,
-            sale_status=item.sale_status,
-            price_numeric=item.price_numeric,
+        return merge_item_metadata(
+            enriched,
+            seller=seller,
+            location=location_value,
         )
 
     async def _enrich_item_session(self, item: Item) -> Item:

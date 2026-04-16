@@ -294,7 +294,22 @@ class KeywordEditDialog(QDialog):
         self.location_edit = QLineEdit()
         self.location_edit.setPlaceholderText("예: 강남구")
         self.location_edit.setMinimumHeight(40)
+        self.location_edit.setToolTip(
+            "당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터로 동작합니다."
+        )
         location_layout.addWidget(self.location_edit)
+        location_note = QLabel(
+            "현재 당근 지역 필터는 세션 지역 기준의 best-effort 검색 후 후처리로 적용됩니다."
+        )
+        location_note.setWordWrap(True)
+        location_note.setStyleSheet(
+            """
+            color: #f9e2af;
+            font-size: 9pt;
+            background: transparent;
+            """
+        )
+        location_layout.addWidget(location_note)
         filter_row.addWidget(location_group)
         
         # Exclude keywords

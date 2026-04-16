@@ -1,5 +1,6 @@
 import unittest
 
+from scrapers.marketplace_parsers import pick_seller_candidate
 from scrapers.playwright_danggeun import PlaywrightDanggeunScraper
 
 
@@ -37,6 +38,20 @@ class TestPlaywrightDanggeunParser(unittest.TestCase):
         self.assertEqual(title, "아이폰15프로 256기가 네츄럴티타늄 판매")
         self.assertEqual(price, "750,000원")
         self.assertEqual(location, "여의도동")
+
+    def test_pick_seller_candidate_uses_danggeun_profile_aria_fallback(self):
+        value = pick_seller_candidate(
+            [
+                {
+                    "text": "",
+                    "href": "/kr/users/sample-user/",
+                    "aria_label": "주말만바라봄님의 프로필 페이지",
+                },
+                {"text": "주말만바라봄의 판매 물품", "href": "/kr/users/sample-user/", "aria_label": None},
+            ],
+            platform="danggeun",
+        )
+        self.assertEqual(value, "주말만바라봄")
 
 
 if __name__ == "__main__":

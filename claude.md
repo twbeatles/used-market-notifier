@@ -11,7 +11,7 @@
 ### 핵심 기능 요약
 | 카테고리 | 기능 |
 |----------|------|
-| 🔍 **검색** | 다중 플랫폼 키워드 검색, 가격/지역/제외 키워드 필터 |
+| 🔍 **검색** | 다중 플랫폼 키워드 검색, 가격/지역/제외 키워드 필터, 당근 지역 정확도 경고 |
 | 📢 **알림** | Telegram, Discord, Slack 웹훅, 스케줄 설정 |
 | 📊 **데이터** | 즐겨찾기, 가격 추적, 통계, CSV/Excel 내보내기 |
 | 🏷️ **자동화** | 자동 태깅, 자동 백업, 데이터 정리 |
@@ -160,6 +160,7 @@ class MessageTemplateManager:
 
 > 참고: 현재 앱은 `scraper_mode` 설정에 따라 Playwright/Selenium 이중 엔진을 사용합니다.
 > 기본값은 `playwright_primary`이며, Playwright 런타임이 없으면 Selenium으로 자동 강등됩니다.
+> 당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터이며, 요청 지역 정확도를 보장하지 않습니다.
 
 ## 📁 디렉토리별 상세 역할
 
@@ -679,6 +680,7 @@ This section is the latest baseline and overrides older text in this document if
 - Merge/dedupe policy is fixed:
   - key1 `(platform, article_id)`, key2 `url/link`.
 - Danggeun location filtering is strict when a location filter is set.
+- Danggeun runtime warns that region filtering is still best-effort because search-stage region binding is not guaranteed.
 - Joonggonara completion-title filtering uses substring matching.
 
 ## 2026-03 Consistency Update (Danggeun/Bunjang Parser)
@@ -688,10 +690,11 @@ This section is the latest baseline and overrides older text in this document if
   - JSON-LD-first parsing with top `120` items cap per query.
   - DOM fallback selector narrowed to:
     - `a[data-gtm='search_article'][href^='/kr/buy-sell/']`
+  - seller enrichment now scans multiple candidate nodes and can recover names from profile `aria-label` values when visible text is empty.
 - Bunjang parser updates:
   - unknown location text (`지역정보 없음` variants) is normalized to `None`.
   - badge lines (`배송비포함`, `검수가능`) are removed in card-text fallback parsing.
-  - detail enrichment prefers the Bunjang product-detail API for seller/location/price/sale status, with DOM fallback only when the API path fails.
+  - detail enrichment is API-first, but continues to DOM fallback when partial API responses still leave seller/location empty.
 - `.gitignore` runtime artifacts include `debug_output/` from Playwright debugger.
 
 ### Runtime / Packaging
@@ -700,6 +703,8 @@ This section is the latest baseline and overrides older text in this document if
   - `python -m playwright install chromium`
 - Standard test command:
   - `python -m unittest discover -s tests -q`
+- Onefile build command:
+  - `pyinstaller used_market_notifier.spec`
 - Type-check command:
   - `pyright .`
 - `used_market_notifier.spec` now collects Playwright Python modules.
@@ -711,12 +716,14 @@ This section is the latest baseline and overrides older text in this document if
 
 - Joonggonara parsing / enrichment:
   - Naver result parsing now accepts only article links with numeric `articleid` values.
-  - noise anchors such as generic cafe links, bare URLs, time/video labels, and placeholder text are filtered before item creation.
+  - noise anchors such as generic cafe links, bare URLs, time/video labels, placeholder text, and numeric-only anchors are filtered before item creation.
   - enrichment opens the article, waits for `iframe#cafe_main`, and parses seller/location/price/title from frame content before considering an outer-page fallback.
+  - detail parsing now skips category/UI meta lines, supports `35만원`-style price text, and extracts station/dong-level transaction locations when present.
 - Bunjang detail enrichment / status:
   - detail enrichment is API-first and reads seller, location, price, and sale status from the Bunjang product-detail API when available.
   - seller fallback selectors were updated to the current `/shop/.../products` pattern.
   - explicit scraper sale status is normalized to `for_sale`, `reserved`, `sold`, or `unknown`, and DB updates prefer it over title-based inference.
+  - when the detail API omits `seller` or `location`, DOM fallback still attempts to fill missing fields from valid seller candidates and `직거래지역` / `거래지역` text.
 - Search observability:
   - Danggeun and Bunjang now log candidate counts and drop reasons per search.
   - Playwright automatically writes anomaly diagnostics to `debug_output/` when candidate DOM/data exists but parsed results still collapse to zero.
@@ -784,9 +791,10 @@ Use this section as the latest implementation baseline for March 25, 2026.
 - Packaging / repo hygiene:
   - `python main.py --headless` is session-only and must not persist to settings unless explicitly saved by the user
   - `used_market_notifier.spec` excludes `tests` and `legacy`
-  - `.gitignore` should include `settings.broken-*.json` and rotated logs (`*.log.*`)
+  - `.gitignore` should include `settings.broken-*.json`, rotated logs (`*.log.*`), and workspace-local temp directories such as `.tmp/`
 
 ### Verification Baseline
 
-- `python -m unittest discover -s tests -q` -> `Ran 57 tests` / `OK`
+- `python -m unittest discover -s tests -q` -> `Ran 64 tests` / `OK`
+- in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available

@@ -9,6 +9,7 @@ from typing import Any, Iterable
 from urllib.parse import parse_qs, urlsplit
 
 from models import Item
+from price_utils import format_price_kr, parse_price_kr
 
 UNKNOWN_LOCATION_TEXTS = {"지역정보 없음", "지역 정보 없음"}
 TIME_TEXT_RE = re.compile(r"^(?:\d+:)?\d{1,2}:\d{2}$")
@@ -18,6 +19,61 @@ PRICE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{2,9})\s*원")
 LOCATION_RE = re.compile(
     r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\n|,/]{0,24}"
 )
+PRICE_CANDIDATE_RE = re.compile(r"\d[\d,\.]*\s*(?:만원|만|천원|천|원)")
+PROFILE_ARIA_RE = re.compile(r"(.+?)님의 프로필 페이지")
+SELLER_SUFFIX_COUNT_RE = re.compile(r"상품\d+$")
+MICRO_LOCATION_TOKEN_RE = re.compile(r"[가-힣A-Za-z0-9]+(?:역|동|읍|면|리|구)")
+
+GENERIC_SELLER_TEXTS = {
+    "내상점",
+    "판매하기",
+    "상점정보",
+    "상점후기",
+    "좋아요",
+    "공유",
+    "프로필",
+    "번개톡",
+    "바로구매",
+}
+GENERIC_SELLER_FRAGMENTS = (
+    "상점후기",
+    "상품 더보기",
+    "팔로우",
+    "번개톡",
+    "바로구매",
+    "판매 물품",
+)
+JOONGGONARA_META_EXACT = {
+    "스마트폰",
+    "휴대폰",
+    "태블릿",
+    "디지털기기",
+    "디지털/가전",
+    "인기멤버",
+    "1:1 채팅",
+    "URL 복사",
+    "카페홈",
+    "목록",
+}
+JOONGGONARA_META_FRAGMENTS = (
+    "게시판 목록",
+    "본문 바로가기",
+    "이전글",
+    "다음글",
+    "구매문의",
+    "조회",
+    "댓글",
+    "중고나라 회원",
+    "거래 시 꼭 알아주세요",
+    "셀러회원",
+    "좋아요",
+)
+JOONGGONARA_SELLER_NOISE = {
+    "인기멤버",
+    "1:1 채팅",
+    "URL 복사",
+    "좋아요",
+}
 
 
 @dataclass
@@ -149,6 +205,87 @@ def extract_location_from_text(text: str) -> str | None:
     return normalize_location_value(match.group(0))
 
 
+def extract_profile_name_from_aria_label(value: str | None) -> str | None:
+    text = normalize_whitespace(value)
+    if not text:
+        return None
+    match = PROFILE_ARIA_RE.search(text)
+    if not match:
+        return None
+    candidate = normalize_whitespace(match.group(1))
+    return candidate or None
+
+
+def pick_seller_candidate(candidates: Iterable[dict[str, Any]], *, platform: str) -> str | None:
+    normalized_platform = str(platform or "").strip().lower()
+    for candidate in candidates:
+        text = normalize_whitespace(candidate.get("text"))
+        href = normalize_whitespace(candidate.get("href"))
+        aria_label = candidate.get("aria_label")
+
+        if normalized_platform == "danggeun" and not text:
+            text = extract_profile_name_from_aria_label(str(aria_label or ""))
+
+        if not text:
+            continue
+
+        text = SELLER_SUFFIX_COUNT_RE.sub("", text).strip()
+        if not text:
+            continue
+
+        if href and "/shop//" in href:
+            continue
+        if text in GENERIC_SELLER_TEXTS:
+            continue
+        if any(fragment in text for fragment in GENERIC_SELLER_FRAGMENTS):
+            continue
+        if re.fullmatch(r"\d+", text):
+            continue
+        if len(text) > 30:
+            continue
+        return text
+    return None
+
+
+def merge_item_metadata(
+    item: Item,
+    *,
+    seller: Any = None,
+    location: Any = None,
+    price: Any = None,
+    sale_status: Any = None,
+    price_numeric: Any = None,
+) -> Item:
+    resolved_price_numeric = item.price_numeric
+    if price_numeric is not None:
+        try:
+            resolved_price_numeric = int(price_numeric)
+        except Exception:
+            resolved_price_numeric = item.price_numeric
+
+    resolved_price = item.price
+    if price is not None and str(price).strip():
+        resolved_price = str(price).strip()
+
+    resolved_seller = normalize_whitespace(str(seller or "")) or item.seller
+    resolved_location = normalize_whitespace(str(location or "")) or item.location
+    resolved_sale_status = normalize_whitespace(str(sale_status or "")) or item.sale_status
+
+    return Item(
+        platform=item.platform,
+        article_id=item.article_id,
+        title=item.title,
+        price=resolved_price,
+        link=item.link,
+        keyword=item.keyword,
+        thumbnail=item.thumbnail,
+        seller=resolved_seller,
+        location=resolved_location,
+        sale_status=resolved_sale_status,
+        price_numeric=resolved_price_numeric,
+    )
+
+
 def _lookup_path(payload: Any, path: tuple[Any, ...]) -> Any:
     current = payload
     for key in path:
@@ -230,6 +367,7 @@ def parse_bunjang_detail_payload(payload: dict[str, Any] | None) -> dict[str, An
             product.get("region"),
             product.get("regionName"),
             product.get("regionFullName"),
+            product.get("geoLabel"),
             _lookup_path(product, ("locationInfo", "name")),
             _lookup_path(product, ("locationInfo", "fullName")),
             _lookup_path(product, ("userArea", "name")),
@@ -318,6 +456,8 @@ def is_valid_joonggonara_title(title: str) -> bool:
         return False
     if QUESTION_ONLY_RE.fullmatch(cleaned):
         return False
+    if re.fullmatch(r"[0-9,]+", cleaned):
+        return False
     if "cafe.naver.com/joonggonara" in lowered:
         return False
     if any(marker in lowered for marker in ("판매완료", "예약중", "거래완료", "no title", "광고", "배송비포함")):
@@ -376,54 +516,108 @@ def parse_joonggonara_search_items(html: str, keyword: str, *, max_results: int 
 def parse_joonggonara_detail_text(text: str) -> dict[str, str | None]:
     body = str(text or "")
     lines = [normalize_whitespace(line) for line in body.splitlines() if normalize_whitespace(line)]
-    ignored_fragments = (
-        "게시판 목록",
-        "목록",
-        "본문 바로가기",
-        "카페홈",
-        "이전글",
-        "다음글",
-        "구매문의",
-        "URL 복사",
-        "조회",
-        "댓글",
-        "중고나라 회원",
-        "판매 완료",
-        "거래 시 꼭 알아주세요",
-        "디지털/가전",
-    )
+
+    def _is_meta_line(value: str) -> bool:
+        cleaned = normalize_whitespace(value)
+        if not cleaned:
+            return True
+        if cleaned.startswith("[") or cleaned.startswith("＃") or cleaned.startswith("#"):
+            return True
+        if cleaned in JOONGGONARA_META_EXACT:
+            return True
+        if any(fragment in cleaned for fragment in JOONGGONARA_META_FRAGMENTS):
+            return True
+        return False
+
+    def _extract_inline_transaction_location(value: str) -> str | None:
+        line = normalize_whitespace(value)
+        if not line or "직거래" not in line:
+            return None
+        match = re.search(r"직거래(?:지역)?\s*[:：]?\s*([^\n]{1,40})", line)
+        if not match:
+            return None
+        candidate = normalize_whitespace(match.group(1))
+        candidate = re.sub(r"(에서|가능|가능하며|가능합니다|합니다|이며).*$", "", candidate).strip(" ,/")
+        if not candidate:
+            return None
+        tokens = MICRO_LOCATION_TOKEN_RE.findall(candidate)
+        if tokens:
+            unique_tokens: list[str] = []
+            for token in tokens:
+                if token not in unique_tokens:
+                    unique_tokens.append(token)
+            return ",".join(unique_tokens[:2])
+        return candidate
+
+    def _extract_price_from_lines(values: list[str]) -> str | None:
+        for line in values:
+            if any(token in line for token in ("가격", "판매가", "희망가격", "금액")):
+                amount = parse_price_kr(line)
+                if amount > 0:
+                    return format_price_kr(amount)
+        for line in values:
+            if not PRICE_CANDIDATE_RE.search(line):
+                continue
+            amount = parse_price_kr(line)
+            if amount > 0:
+                return format_price_kr(amount)
+        return None
 
     title = None
     title_index = -1
     for index, line in enumerate(lines):
-        if any(fragment in line for fragment in ignored_fragments):
-            continue
-        if line.startswith("["):
+        if _is_meta_line(line):
             continue
         if is_valid_joonggonara_title(line):
             title = line
             title_index = index
             break
 
-    labeled_price = extract_label_value(body, ("가격", "판매가", "희망가격", "금액"))
-    raw_price = labeled_price
-    if raw_price and not re.search(r"\d", raw_price):
-        raw_price = None
-    if not raw_price:
-        match = PRICE_RE.search(body)
-        raw_price = match.group(0) if match else None
-    price = normalize_price_text(raw_price) if raw_price else None
+    price = _extract_price_from_lines(lines)
 
-    labeled_location = extract_label_value(body, ("거래 희망지역", "거래희망지역", "거래 지역", "거래지역", "지역 정보", "지역정보", "지역"))
+    labeled_location = extract_label_value(
+        body,
+        (
+            "거래 희망지역",
+            "거래희망지역",
+            "거래 지역",
+            "거래지역",
+            "직거래지역",
+            "직거래 지역",
+            "거래 가능 지역",
+            "거래가능지역",
+            "지역 정보",
+            "지역정보",
+            "지역",
+        ),
+    )
     location = normalize_location_value(labeled_location) if labeled_location else None
+    if not location:
+        for line in lines:
+            location = _extract_inline_transaction_location(line)
+            if location:
+                break
+    if not location:
+        for index, line in enumerate(lines):
+            if "거래방식" not in line:
+                continue
+            for candidate_line in lines[index + 1 : index + 4]:
+                location = _extract_inline_transaction_location(candidate_line)
+                if location:
+                    break
+            if location:
+                break
+
     seller = extract_label_value(body, ("판매자 정보", "판매자", "작성자", "닉네임"))
     if seller and ("협의" in seller or seller.startswith("와 ")):
         seller = None
     if not seller and title_index >= 0:
         for candidate in lines[title_index + 1 : title_index + 6]:
-            if any(fragment in candidate for fragment in ignored_fragments):
+            if _is_meta_line(candidate) or candidate in JOONGGONARA_SELLER_NOISE:
                 continue
             if PRICE_RE.search(candidate) or LOCATION_RE.search(candidate):
+                continue
+            if PRICE_CANDIDATE_RE.search(candidate):
                 continue
             if 2 <= len(candidate) <= 20:
                 seller = candidate

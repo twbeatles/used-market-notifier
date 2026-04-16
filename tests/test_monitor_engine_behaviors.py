@@ -244,6 +244,33 @@ class TestMonitorEngineBehaviors(unittest.IsolatedAsyncioTestCase):
         if engine._executor is not None:
             engine._executor.shutdown(wait=True, cancel_futures=True)
 
+    async def test_danggeun_location_warning_is_emitted_once_per_cycle(self):
+        engine = await self._make_engine(notifications_enabled=False, metadata_enrichment_enabled=False)
+        engine.settings.settings.keywords = [
+            SearchKeyword(keyword="아이폰", location="강남", platforms=["danggeun"]),
+            SearchKeyword(keyword="아이폰", location="강남", platforms=["danggeun"]),
+        ]
+        engine._cycle_platform_raw_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        engine._cycle_platform_attempts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        engine._cycle_fallback_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        engine._cycle_danggeun_location_warning_keys = set()
+
+        scraper = _FakeScraper(items=[])
+        engine.primary_scrapers["danggeun"] = scraper
+        engine.primary_scraper_kind["danggeun"] = "playwright"
+
+        statuses: list[str] = []
+        engine.on_status_update = statuses.append
+
+        await engine.search_keyword(engine.settings.settings.keywords[0], blocked_set=set())
+        await engine.search_keyword(engine.settings.settings.keywords[1], blocked_set=set())
+
+        warning_count = statuses.count(MonitorEngine.DANGGEUN_LOCATION_WARNING)
+        self.assertEqual(warning_count, 1)
+
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
+
 
 if __name__ == "__main__":
     unittest.main()

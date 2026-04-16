@@ -1,0 +1,14 @@
+{
+  "data": {
+    "product": {
+      "pid": 401916857,
+      "name": "아이폰 6S 64기가 로즈 골드 A급 팝니다.",
+      "price": 100000,
+      "saleStatus": "SELLING"
+    },
+    "shop": {
+      "uid": 3756791,
+      "name": "스마트온1"
+    }
+  }
+}

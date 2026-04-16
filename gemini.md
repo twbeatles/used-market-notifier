@@ -3,6 +3,8 @@
 > **이 문서는 Gemini AI가 프로젝트를 이해하고 효과적으로 지원하기 위한 포괄적인 가이드입니다.**
 >
 > 참고: 현재 앱은 `scraper_mode` 기반 이중 엔진(Playwright/Selenium)을 사용합니다. 기본값은 `playwright_primary`이며 런타임 문제 시 Selenium으로 자동 강등됩니다.
+>
+> 참고: 당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리로 동작하며, 요청 지역 정확도를 보장하지 않습니다.
 
 ---
 
@@ -462,6 +464,7 @@ This section is the source of truth for current behavior and supersedes older Se
   - `(platform, article_id)` first
   - `url/link` second
 - Danggeun location filtering is strict for unknown locations when filter is set.
+- Danggeun runtime warns that region filtering is still best-effort because search-stage region binding is not guaranteed.
 - Joonggonara completion-title filtering uses substring rules.
 
 ## 2026-03 Consistency Update (Danggeun/Bunjang Parser)
@@ -471,9 +474,11 @@ This section is the source of truth for current behavior and supersedes older Se
   - JSON-LD-first parsing with maximum `120` items per query.
   - DOM fallback targets search cards only:
     - `a[data-gtm='search_article'][href^='/kr/buy-sell/']`
+  - seller enrichment now scans multiple candidate nodes and can recover seller names from profile `aria-label` values when visible text is empty.
 - Bunjang parser updates:
   - unknown location (`지역정보 없음` variants) is normalized to `None`.
   - fallback text parsing removes badge lines (`배송비포함`, `검수가능`) before field extraction.
+  - detail enrichment is API-first, but continues to DOM fallback when partial API responses still leave seller/location empty.
 - `.gitignore` now includes `debug_output/` for Playwright debug artifacts.
 
 ### Runtime / Packaging
@@ -482,6 +487,8 @@ This section is the source of truth for current behavior and supersedes older Se
   - `python -m playwright install chromium`
 - Team regression command:
   - `python -m unittest discover -s tests -q`
+- Onefile build command:
+  - `pyinstaller used_market_notifier.spec`
 - Type-check command:
   - `pyright .`
 - `used_market_notifier.spec` collects Playwright Python modules.
@@ -493,12 +500,14 @@ This section is the source of truth for current behavior and supersedes older Se
 
 - Joonggonara parsing / enrichment:
   - only Joonggonara article links with numeric `articleid` values are accepted from Naver search results.
-  - generic cafe links, URL-only anchors, time/video labels, and placeholder text are rejected as noise before item creation.
+  - generic cafe links, URL-only anchors, time/video labels, placeholder text, and numeric-only anchors are rejected as noise before item creation.
   - detail enrichment waits for `iframe#cafe_main` and extracts seller/location/price/title from the frame body, with outer-page fallback only when the iframe path is unavailable.
+  - detail parsing skips category/UI meta lines, supports `35만원`-style prices, and extracts station/dong-level transaction locations when present.
 - Bunjang detail enrichment / status:
   - the Bunjang product-detail API is now the primary source for seller, location, price, and sale status.
   - seller fallback selectors were aligned to the current `/shop/.../products` structure.
   - scraper-provided sale status is normalized to `for_sale`, `reserved`, `sold`, or `unknown`, and persisted ahead of title-based inference.
+  - when the detail API omits `seller` or `location`, DOM fallback still tries to fill the missing fields from valid seller candidates and `직거래지역` / `거래지역` labels.
 - Search observability:
   - Danggeun and Bunjang searches now emit per-search candidate counters and drop-reason summaries.
   - Playwright writes debug artifacts into `debug_output/` when candidate DOM/data exists but parsed results still end at zero.
@@ -551,9 +560,10 @@ Treat this as the current baseline for the March 25, 2026 stabilization pass.
 - Packaging / repo hygiene:
   - `python main.py --headless` is session-only
   - `used_market_notifier.spec` excludes `tests` and `legacy`
-  - `.gitignore` should cover `settings.broken-*.json` and rotated logs like `notifier.log.1`
+  - `.gitignore` should cover `settings.broken-*.json`, rotated logs like `notifier.log.1`, and workspace-local temp directories such as `.tmp/`
 
 ### Verification Baseline
 
-- `python -m unittest discover -s tests -q` -> `Ran 57 tests` / `OK`
+- `python -m unittest discover -s tests -q` -> `Ran 64 tests` / `OK`
+- in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available

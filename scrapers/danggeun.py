@@ -8,6 +8,7 @@ import time
 from urllib.parse import quote
 
 from .base import Item
+from .marketplace_parsers import extract_location_from_text, pick_seller_candidate
 from .selenium_base import By, EC, SeleniumScraper, WebDriverWait
 
 
@@ -64,13 +65,7 @@ class DanggeunScraper(SeleniumScraper):
 
     @staticmethod
     def _extract_location(text: str) -> str | None:
-        if not text:
-            return None
-        m = re.search(
-            r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\n|,/]{0,20}",
-            text,
-        )
-        return m.group(0).strip() if m else None
+        return extract_location_from_text(text)
 
     @staticmethod
     def _to_absolute_link(link: str) -> str:
@@ -180,10 +175,24 @@ class DanggeunScraper(SeleniumScraper):
                 elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
             except Exception:
                 elements = []
-            for element in elements:
-                value = (element.text or "").strip()
-                if value:
-                    return value
+            candidates: list[dict[str, str | None]] = []
+            for element in elements[:5]:
+                try:
+                    text = (element.text or "").strip()
+                except Exception:
+                    text = ""
+                try:
+                    href = element.get_attribute("href")
+                except Exception:
+                    href = None
+                try:
+                    aria_label = element.get_attribute("aria-label")
+                except Exception:
+                    aria_label = None
+                candidates.append({"text": text, "href": href, "aria_label": aria_label})
+            value = pick_seller_candidate(candidates, platform="danggeun")
+            if value:
+                return value
         return None
 
     def enrich_item(self, item: Item) -> Item:
