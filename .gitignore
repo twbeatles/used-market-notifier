@@ -33,6 +33,7 @@ Thumbs.db
 # App runtime / local data (do not commit)
 settings.json
 settings.broken-*.json
+*.pre_restore
 listings.db
 listings.db-*
 *.db

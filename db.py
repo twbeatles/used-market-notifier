@@ -8,6 +8,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from models import Item, FavoriteItem, NotificationLog, SellerFilter
 
@@ -20,6 +21,7 @@ class DatabaseManager:
     """SQLite database manager with price history tracking - Thread Safe"""
 
     PRICE_PARSE_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, db_path: str = "listings.db"):
         self.db_path = db_path
@@ -62,6 +64,7 @@ class DatabaseManager:
                     price TEXT,
                     price_numeric INTEGER DEFAULT 0,
                     url TEXT,
+                    normalized_url TEXT,
                     thumbnail TEXT,
                     seller TEXT,
                     location TEXT,
@@ -243,11 +246,14 @@ class DatabaseManager:
                 'ON notification_delivery_log(notification_type, sent_at DESC)'
             )
             
-            # Migration: Add sale_status column if not exists (for existing databases)
-            try:
-                cursor.execute('ALTER TABLE listings ADD COLUMN sale_status TEXT DEFAULT "for_sale"')
-            except Exception:
-                pass  # Column already exists
+            # Migrations for existing databases.
+            self._add_column_if_missing(cursor, "listings", "sale_status", 'TEXT DEFAULT "for_sale"')
+            self._add_column_if_missing(cursor, "listings", "price_numeric", "INTEGER DEFAULT 0")
+            self._add_column_if_missing(cursor, "listings", "normalized_url", "TEXT")
+            self._add_column_if_missing(cursor, "price_history", "old_price_numeric", "INTEGER")
+            self._add_column_if_missing(cursor, "price_history", "new_price_numeric", "INTEGER")
+            self._add_column_if_missing(cursor, "listing_notes", "auto_tags", 'TEXT DEFAULT "[]"')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_listings_platform_normalized_url ON listings(platform, normalized_url)')
 
             # Index for sale_status (must be created after column exists for older DBs)
             try:
@@ -262,28 +268,6 @@ class DatabaseManager:
             except Exception:
                 pass
 
-            # Migration: Add price_numeric column if not exists (older DBs)
-            try:
-                cursor.execute('ALTER TABLE listings ADD COLUMN price_numeric INTEGER DEFAULT 0')
-            except Exception:
-                pass
-
-            # Migration: Add numeric columns in price_history if not exists (older DBs)
-            try:
-                cursor.execute('ALTER TABLE price_history ADD COLUMN old_price_numeric INTEGER')
-            except Exception:
-                pass
-            try:
-                cursor.execute('ALTER TABLE price_history ADD COLUMN new_price_numeric INTEGER')
-            except Exception:
-                pass
-
-            # Migration: Add auto_tags column if not exists
-            try:
-                cursor.execute('ALTER TABLE listing_notes ADD COLUMN auto_tags TEXT DEFAULT "[]"')
-            except Exception:
-                pass  # Column already exists
-            
             self.conn.commit()
 
             # One-time migration: recompute numeric prices with the current parser.
@@ -295,6 +279,16 @@ class DatabaseManager:
                 self._migrate_auto_tags_table(cursor)
             except Exception as e:
                 self.logger.warning(f"Auto-tag migration skipped/failed: {e}")
+            try:
+                self._migrate_normalized_urls(cursor)
+            except Exception as e:
+                self.logger.warning(f"URL normalization migration skipped/failed: {e}")
+            try:
+                self._verify_schema_integrity(cursor)
+                self._set_meta(cursor, "schema_version", str(self.SCHEMA_VERSION))
+                self.conn.commit()
+            except Exception as e:
+                self.logger.warning(f"Schema integrity check failed: {e}")
 
     def _get_meta(self, cursor: sqlite3.Cursor, key: str) -> Optional[str]:
         cursor.execute("SELECT value FROM meta WHERE key = ?", (key,))
@@ -309,6 +303,77 @@ class DatabaseManager:
             ''',
             (key, value),
         )
+
+    def _column_exists(self, cursor: sqlite3.Cursor, table: str, column: str) -> bool:
+        cursor.execute(f"PRAGMA table_info({table})")
+        return any(str(row["name"]) == column for row in cursor.fetchall())
+
+    def _add_column_if_missing(
+        self,
+        cursor: sqlite3.Cursor,
+        table: str,
+        column: str,
+        definition: str,
+    ) -> None:
+        if self._column_exists(cursor, table, column):
+            return
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" in str(e).lower():
+                return
+            self.logger.warning("Schema migration failed: %s.%s (%s)", table, column, e)
+            raise
+
+    @staticmethod
+    def normalize_url(url: str | None) -> str:
+        raw = str(url or "").strip()
+        if not raw:
+            return ""
+        try:
+            split = urlsplit(raw)
+        except Exception:
+            return raw.rstrip("/")
+
+        scheme = (split.scheme or "https").lower()
+        netloc = split.netloc.lower()
+        path = split.path.rstrip("/") or split.path
+        filtered_query = [
+            (key, value)
+            for key, value in parse_qsl(split.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_") and key.lower() not in {"fbclid", "gclid"}
+        ]
+        query = urlencode(sorted(filtered_query), doseq=True)
+        return urlunsplit((scheme, netloc, path, query, ""))
+
+    def _migrate_normalized_urls(self, cursor: sqlite3.Cursor) -> None:
+        key = "normalized_url_migrated_v1"
+        if self._get_meta(cursor, key) == "1":
+            return
+        cursor.execute("SELECT id, url FROM listings WHERE COALESCE(normalized_url, '') = ''")
+        rows = cursor.fetchall()
+        if rows:
+            cursor.executemany(
+                "UPDATE listings SET normalized_url = ? WHERE id = ?",
+                [(self.normalize_url(row["url"]), row["id"]) for row in rows],
+            )
+        self._set_meta(cursor, key, "1")
+        self.conn.commit()
+        self.logger.info("Normalized URL migration complete. listings updated=%s.", len(rows))
+
+    def _verify_schema_integrity(self, cursor: sqlite3.Cursor) -> None:
+        required = {
+            "listings": {"platform", "article_id", "url", "normalized_url", "sale_status", "price_numeric"},
+            "notification_delivery_log": {"listing_id", "notification_type", "status", "attempt"},
+            "meta": {"key", "value"},
+        }
+        missing: list[str] = []
+        for table, columns in required.items():
+            cursor.execute(f"PRAGMA table_info({table})")
+            present = {str(row["name"]) for row in cursor.fetchall()}
+            missing.extend(f"{table}.{column}" for column in columns if column not in present)
+        if missing:
+            raise RuntimeError(f"Missing required database columns: {', '.join(sorted(missing))}")
 
     def _migrate_price_parse_version(self, cursor: sqlite3.Cursor) -> None:
         """
@@ -486,6 +551,7 @@ class DatabaseManager:
         # Internal lock usage to ensure atomicity of check-then-act
         with self.lock:
             cursor = self.conn.cursor()
+            normalized_url = self.normalize_url(item.link)
             
             # Check existing
             cursor.execute(
@@ -493,6 +559,17 @@ class DatabaseManager:
                 (item.platform, item.article_id)
             )
             row = cursor.fetchone()
+            if row is None and normalized_url:
+                cursor.execute(
+                    '''
+                    SELECT * FROM listings
+                    WHERE platform = ? AND normalized_url = ?
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    ''',
+                    (item.platform, normalized_url),
+                )
+                row = cursor.fetchone()
             existing = dict(row) if row else None
             
             price_numeric = item.parse_price()
@@ -524,6 +601,7 @@ class DatabaseManager:
 
                 updated_title = self._prefer_non_empty(item.title, existing.get('title'))
                 updated_url = self._prefer_non_empty(item.link, existing.get('url'))
+                updated_normalized_url = self._prefer_non_empty(normalized_url, existing.get('normalized_url'))
                 updated_thumbnail = self._prefer_non_empty(item.thumbnail, existing.get('thumbnail'))
                 updated_seller = self._prefer_non_empty(item.seller, existing.get('seller'))
                 updated_location = self._prefer_non_empty(item.location, existing.get('location'))
@@ -540,6 +618,7 @@ class DatabaseManager:
                     (
                         updated_title != existing.get('title'),
                         updated_url != existing.get('url'),
+                        updated_normalized_url != existing.get('normalized_url'),
                         updated_thumbnail != existing.get('thumbnail'),
                         updated_seller != existing.get('seller'),
                         updated_location != existing.get('location'),
@@ -553,7 +632,7 @@ class DatabaseManager:
                     cursor.execute(
                         '''
                         UPDATE listings
-                        SET title = ?, price = ?, price_numeric = ?, url = ?, thumbnail = ?,
+                        SET title = ?, price = ?, price_numeric = ?, url = ?, normalized_url = ?, thumbnail = ?,
                             seller = ?, location = ?, sale_status = ?, updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                         ''',
@@ -562,6 +641,7 @@ class DatabaseManager:
                             updated_price,
                             updated_price_numeric,
                             updated_url,
+                            updated_normalized_url,
                             updated_thumbnail,
                             updated_seller,
                             updated_location,
@@ -578,11 +658,11 @@ class DatabaseManager:
             try:
                 cursor.execute('''
                     INSERT INTO listings 
-                    (platform, article_id, keyword, title, price, price_numeric, url, thumbnail, seller, location, sale_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (platform, article_id, keyword, title, price, price_numeric, url, normalized_url, thumbnail, seller, location, sale_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     item.platform, item.article_id, item.keyword, item.title,
-                    item.price, price_numeric, item.link, item.thumbnail,
+                    item.price, price_numeric, item.link, normalized_url, item.thumbnail,
                     item.seller, item.location, detected_status
                 ))
                 new_id = cursor.lastrowid

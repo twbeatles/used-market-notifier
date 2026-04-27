@@ -508,6 +508,28 @@ This section is the current source of truth and supersedes older statements in t
   - `used_market_notifier.spec` now collects Playwright modules plus the `aiohttp` dependency tree used by Bunjang detail enrichment.
   - regression fixtures cover Danggeun, Bunjang, and Joonggonara live markup snapshots plus import safety without `selenium`.
 
+## 2026-04 Stabilization Follow-up
+
+- Playwright lifecycle:
+  - Playwright scrapers now use retained async `start/search/enrich/close` resources instead of launching a browser per search/enrichment call.
+  - `MonitorEngine` awaits async scrapers directly and keeps Selenium/sync scraper compatibility through the executor path.
+  - Playwright health checks now reflect retained browser/context state and recent runtime/parser failures.
+- Settings resilience:
+  - valid JSON settings are normalized field-by-field instead of quarantining the whole file for a single bad value.
+  - `load_recovery_state.normalized_fields` records corrected fields for UI/log diagnostics.
+- Data integrity:
+  - `listings.normalized_url` is backfilled and indexed.
+  - listing writes use `(platform, article_id)` first, then `(platform, normalized_url)` as a secondary duplicate key.
+  - schema version is stored in `meta.schema_version` and startup integrity checks verify required columns.
+- Notification telemetry:
+  - disabled/scheduled-out/no-channel notification decisions are recorded in `notification_delivery_log` with `system` / `skipped_*` statuses.
+  - shutdown no longer requeues failed notification retries.
+- GUI / packaging / repo hygiene:
+  - Settings UI exposes scraper mode, fallback-on-empty, and per-cycle fallback budget.
+  - Backup restore stops monitoring first and exits after restore to avoid stale DB connections.
+  - `.gitignore` includes `*.pre_restore` restore snapshots.
+  - `used_market_notifier.spec` documents the async lifecycle change and standard-library additions.
+
 ### Encoding Hygiene Gate
 
 - Track only UTF-8 text files for source/docs.
@@ -515,6 +537,7 @@ This section is the current source of truth and supersedes older statements in t
   - strict UTF-8 decode failures: `0`
   - `U+FFFD` replacement char occurrences: `0`
   - C1 control chars (`0x80-0x9F`): `0`
+- Windows PowerShell에서 한글/이모지가 깨져 보이면 실행 전 `$env:PYTHONIOENCODING='utf-8'` 또는 `chcp 65001`을 적용하세요. 로그 파일은 UTF-8로 기록됩니다.
 
 ### Quick Smoke Checklist
 
@@ -558,7 +581,7 @@ This section is the current source of truth for the March 25, 2026 stabilization
 - CLI / packaging:
   - `python main.py --headless` is a session-only override and does not rewrite `settings.json`
   - `used_market_notifier.spec` excludes `tests` and `legacy` from onefile builds
-  - `.gitignore` must ignore `settings.broken-*.json`, rotated logs like `notifier.log.1`, and workspace-local temp directories such as `.tmp/`
+  - `.gitignore` must ignore `settings.broken-*.json`, `*.pre_restore`, rotated logs like `notifier.log.1`, and workspace-local temp directories such as `.tmp/`
 
 ### Verification Baseline
 
@@ -569,5 +592,5 @@ This section is the current source of truth for the March 25, 2026 stabilization
 - Type checks:
   - `pyright .`
 - Current expected baseline after this update:
-  - `Ran 64 tests`
+  - `Ran 70 tests`
   - `OK`

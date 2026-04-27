@@ -3,7 +3,7 @@
 
 import time
 import functools
-from typing import Any, List
+from typing import Any, List, cast
 
 try:
     from selenium import webdriver
@@ -79,7 +79,11 @@ class SeleniumScraper(BaseScraper):
     def _create_driver(self, headless: bool, disable_images: bool):
         """Initialize and configure Chrome driver"""
         self._ensure_selenium_available()
-        options = Options()
+        options_cls = cast(Any, Options)
+        service_cls = cast(Any, Service)
+        webdriver_mod = cast(Any, webdriver)
+        driver_manager_cls = cast(Any, ChromeDriverManager)
+        options = options_cls()
         if headless:
             options.add_argument('--headless=new')
         
@@ -108,8 +112,8 @@ class SeleniumScraper(BaseScraper):
         
         try:
             # Use cached driver path if possible
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
+            service = service_cls(driver_manager_cls().install())
+            driver = webdriver_mod.Chrome(service=service, options=options)
             driver.set_page_load_timeout(30)  # 30 second timeout
             driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                 'source': '''

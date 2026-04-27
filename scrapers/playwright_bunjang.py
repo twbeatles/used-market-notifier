@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections import Counter
 import re
 from urllib.parse import quote
@@ -20,18 +19,6 @@ from .marketplace_parsers import (
     pick_seller_candidate,
 )
 from .playwright_base import PlaywrightScraper
-
-
-def _run_async(coro_factory):
-    """Run an async coroutine from synchronous scraper entrypoints."""
-    try:
-        return asyncio.run(coro_factory())
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro_factory())
-        finally:
-            loop.close()
 
 
 class PlaywrightBunjangScraper(PlaywrightScraper):
@@ -64,31 +51,6 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
             use_stealth=True,
             debug_mode=False,
         )
-
-    def is_healthy(self) -> bool:
-        return True
-
-    def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
-        return _run_async(lambda: self._safe_search_session(keyword, location))
-
-    async def _safe_search_session(self, keyword: str, location: str | None = None) -> list[Item]:
-        from playwright.async_api import async_playwright
-
-        async with async_playwright() as pw:
-            browser = await self._launch_browser(pw)
-            try:
-                self._context = await self._create_context(browser)
-                self._owned_context = True
-                self._page = None
-                return await super()._safe_search_async(keyword, location)
-            finally:
-                try:
-                    await self.close()
-                finally:
-                    try:
-                        await browser.close()
-                    except Exception:
-                        pass
 
     @staticmethod
     def _parse_price(text: str) -> str:
@@ -345,12 +307,13 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
         return items, metrics
 
     async def _dump_anomaly_if_needed(self, page, keyword: str, metrics: dict[str, object], items: list[Item]) -> None:
-        candidate_count = int(metrics.get("dom_card_count", 0)) + int(metrics.get("dom_product_link_count", 0))
+        candidate_count = self._metric_int(metrics, "dom_card_count") + self._metric_int(metrics, "dom_product_link_count")
         if items or candidate_count <= 0:
             return
+        self._last_failure_kind = "parser_zero"
         await self.dump_debug_artifacts(keyword, metrics, prefix="zero_results")
 
-    async def _enrich_item_async(self, item: Item) -> Item:
+    async def enrich_item_async(self, item: Item) -> Item:
         if not item.link:
             return item
 
@@ -382,28 +345,6 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
             seller=seller,
             location=location_value,
         )
-
-    async def _enrich_item_session(self, item: Item) -> Item:
-        from playwright.async_api import async_playwright
-
-        async with async_playwright() as pw:
-            browser = await self._launch_browser(pw)
-            try:
-                self._context = await self._create_context(browser)
-                self._owned_context = True
-                self._page = None
-                return await self._enrich_item_async(item)
-            finally:
-                try:
-                    await self.close()
-                finally:
-                    try:
-                        await browser.close()
-                    except Exception:
-                        pass
-
-    def enrich_item(self, item: Item) -> Item:
-        return _run_async(lambda: self._enrich_item_session(item))
 
     async def search(self, keyword: str, location: str | None = None) -> list[Item]:
         page = await self.get_page()

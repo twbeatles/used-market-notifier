@@ -140,6 +140,30 @@ class SettingsDialog(QDialog):
         self.metadata_enrichment_check.setToolTip("상세 페이지를 한 번 더 열어 비어 있는 seller/location 정보만 보강합니다.")
         self.metadata_enrichment_check.setStyleSheet("font-size: 10pt;")
         monitor_layout.addRow("", self.metadata_enrichment_check)
+
+        scraper_row = QHBoxLayout()
+        self.scraper_mode_combo = QComboBox()
+        self.scraper_mode_combo.addItem("Playwright 우선 + Selenium fallback", "playwright_primary")
+        self.scraper_mode_combo.addItem("Selenium 우선 + Playwright fallback", "selenium_primary")
+        self.scraper_mode_combo.addItem("Selenium 전용", "selenium_only")
+        self.scraper_mode_combo.setMinimumWidth(260)
+        scraper_row.addWidget(self.scraper_mode_combo)
+        scraper_row.addStretch()
+        monitor_layout.addRow("스크래퍼 엔진", scraper_row)
+
+        self.fallback_on_empty_check = QCheckBox("기본 엔진 결과가 0개일 때 fallback 사용")
+        self.fallback_on_empty_check.setStyleSheet("font-size: 10pt;")
+        monitor_layout.addRow("", self.fallback_on_empty_check)
+
+        fallback_budget_row = QHBoxLayout()
+        self.max_fallback_spin = QSpinBox()
+        self.max_fallback_spin.setRange(0, 50)
+        self.max_fallback_spin.setSuffix(" 회/사이클")
+        self.max_fallback_spin.setMinimumWidth(140)
+        self.max_fallback_spin.setMinimumHeight(36)
+        fallback_budget_row.addWidget(self.max_fallback_spin)
+        fallback_budget_row.addStretch()
+        monitor_layout.addRow("fallback 최대 횟수", fallback_budget_row)
         
         # Theme settings
         theme_row = QHBoxLayout()
@@ -473,6 +497,13 @@ class SettingsDialog(QDialog):
         self.interval_spin.setValue(s.check_interval_seconds)
         self.headless_check.setChecked(s.headless_mode)
         self.metadata_enrichment_check.setChecked(getattr(s, "metadata_enrichment_enabled", False))
+        if hasattr(self, "scraper_mode_combo"):
+            idx = self.scraper_mode_combo.findData(getattr(s, "scraper_mode", "playwright_primary"))
+            self.scraper_mode_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        if hasattr(self, "fallback_on_empty_check"):
+            self.fallback_on_empty_check.setChecked(getattr(s, "fallback_on_empty_results", True))
+        if hasattr(self, "max_fallback_spin"):
+            self.max_fallback_spin.setValue(int(getattr(s, "max_fallback_per_cycle", 3) or 0))
         self.minimize_tray_check.setChecked(s.minimize_to_tray)
         self.start_minimized_check.setChecked(s.start_minimized)
         self.auto_start_check.setChecked(s.auto_start_monitoring)
@@ -573,6 +604,12 @@ class SettingsDialog(QDialog):
         s.check_interval_seconds = self.interval_spin.value()
         s.headless_mode = self.headless_check.isChecked()
         s.metadata_enrichment_enabled = self.metadata_enrichment_check.isChecked()
+        if hasattr(self, "scraper_mode_combo"):
+            s.scraper_mode = self.scraper_mode_combo.currentData()
+        if hasattr(self, "fallback_on_empty_check"):
+            s.fallback_on_empty_results = self.fallback_on_empty_check.isChecked()
+        if hasattr(self, "max_fallback_spin"):
+            s.max_fallback_per_cycle = self.max_fallback_spin.value()
         s.minimize_to_tray = self.minimize_tray_check.isChecked()
         s.start_minimized = self.start_minimized_check.isChecked()
         s.auto_start_monitoring = self.auto_start_check.isChecked()

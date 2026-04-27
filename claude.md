@@ -735,6 +735,28 @@ This section is the latest baseline and overrides older text in this document if
   - `used_market_notifier.spec` now collects the `aiohttp` dependency tree used by Bunjang detail enrichment.
   - regression fixtures cover Danggeun JSON-LD/card markup, Bunjang card markup plus detail API JSON, and Joonggonara search/iframe markup.
 
+## 2026-04 Stabilization Follow-up
+
+- Playwright lifecycle:
+  - Playwright scrapers keep async browser/context resources across searches via `start/search/enrich/close`.
+  - `MonitorEngine` awaits async scrapers directly and keeps Selenium/sync compatibility through the executor path.
+  - health checks reflect retained browser/context state and recent runtime/parser failure kinds.
+- Settings resilience:
+  - valid JSON settings are normalized field-by-field; only parse/decode/file errors trigger quarantine.
+  - corrected fields are recorded in `load_recovery_state.normalized_fields`.
+- Data integrity:
+  - `listings.normalized_url` is backfilled and indexed.
+  - listing writes use `(platform, article_id)` first, then `(platform, normalized_url)` for duplicate prevention.
+  - `meta.schema_version` tracks schema baseline and startup integrity checks verify required columns.
+- Notification telemetry:
+  - disabled/scheduled-out/no-channel notification decisions are recorded in `notification_delivery_log` as `system` / `skipped_*`.
+  - shutdown does not requeue failed notification retries.
+- GUI / packaging / repo hygiene:
+  - Settings UI exposes scraper mode, empty-result fallback, and fallback budget.
+  - backup restore stops monitoring and exits after restore to avoid stale DB handles.
+  - `.gitignore` includes `*.pre_restore` restore snapshots.
+  - `used_market_notifier.spec` documents async lifecycle and standard-library additions.
+
 ## 2026-03 Consistency Update (Type Safety + Encoding)
 
 - Repository type baseline is pinned via `pyrightconfig.json`:
@@ -755,6 +777,10 @@ Per platform, keep one-line log fields:
 - `fallback_count`
 - `fallback_reason`
 - `elapsed_ms`
+
+### Windows Console Encoding
+
+Source/docs/log files are UTF-8. If PowerShell renders Korean text or emoji incorrectly, set `$env:PYTHONIOENCODING='utf-8'` or run `chcp 65001` before command-line diagnostics.
 
 ## 2026-03 Consistency Update (Data Integrity + Ops Visibility)
 
@@ -791,10 +817,10 @@ Use this section as the latest implementation baseline for March 25, 2026.
 - Packaging / repo hygiene:
   - `python main.py --headless` is session-only and must not persist to settings unless explicitly saved by the user
   - `used_market_notifier.spec` excludes `tests` and `legacy`
-  - `.gitignore` should include `settings.broken-*.json`, rotated logs (`*.log.*`), and workspace-local temp directories such as `.tmp/`
+  - `.gitignore` should include `settings.broken-*.json`, `*.pre_restore`, rotated logs (`*.log.*`), and workspace-local temp directories such as `.tmp/`
 
 ### Verification Baseline
 
-- `python -m unittest discover -s tests -q` -> `Ran 64 tests` / `OK`
+- `python -m unittest discover -s tests -q` -> `Ran 70 tests` / `OK`
 - in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available

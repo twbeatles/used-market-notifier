@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -128,6 +129,86 @@ class TestDatabaseIntegrityUpdates(unittest.TestCase):
                 history = db.get_status_history(limit=10)
                 self.assertEqual(len(history), 1)
                 self.assertEqual(history[0]["new_status"], "sold")
+            finally:
+                db.close()
+
+    def test_same_normalized_url_updates_existing_listing_with_different_article_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(os.path.join(tmp, "test.db"))
+            try:
+                first = Item(
+                    platform="danggeun",
+                    article_id="hash_old",
+                    title="아이폰",
+                    price="100,000원",
+                    link="HTTPS://Example.com/items/123/?utm_source=x&b=2&a=1#frag",
+                    keyword="iphone",
+                )
+                second = Item(
+                    platform="danggeun",
+                    article_id="hash_new",
+                    title="아이폰 상태좋음",
+                    price="90,000원",
+                    link="https://example.com/items/123?a=1&b=2",
+                    keyword="iphone",
+                )
+
+                is_new, _, first_id = db.add_listing(first)
+                self.assertTrue(is_new)
+                is_new, price_change, second_id = db.add_listing(second)
+                self.assertFalse(is_new)
+                self.assertEqual(first_id, second_id)
+                self.assertIsNotNone(price_change)
+
+                with db.lock:
+                    cur = db.conn.cursor()
+                    cur.execute("SELECT COUNT(*) AS count FROM listings")
+                    self.assertEqual(cur.fetchone()["count"], 1)
+                    cur.execute("SELECT normalized_url FROM listings WHERE id = ?", (first_id,))
+                    self.assertEqual(cur.fetchone()["normalized_url"], "https://example.com/items/123?a=1&b=2")
+            finally:
+                db.close()
+
+    def test_old_schema_gets_normalized_url_column_and_version_meta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "old.db")
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE listings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        platform TEXT NOT NULL,
+                        article_id TEXT NOT NULL,
+                        keyword TEXT,
+                        title TEXT,
+                        price TEXT,
+                        url TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(platform, article_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    "INSERT INTO listings (platform, article_id, title, price, url) VALUES (?, ?, ?, ?, ?)",
+                    ("bunjang", "1", "아이폰", "10,000원", "https://example.com/p/1?utm_medium=x"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            db = DatabaseManager(db_path)
+            try:
+                with db.lock:
+                    cur = db.conn.cursor()
+                    cur.execute("PRAGMA table_info(listings)")
+                    columns = {row["name"] for row in cur.fetchall()}
+                    self.assertIn("normalized_url", columns)
+                    cur.execute("SELECT normalized_url FROM listings WHERE article_id = '1'")
+                    self.assertEqual(cur.fetchone()["normalized_url"], "https://example.com/p/1")
+                    cur.execute("SELECT value FROM meta WHERE key = 'schema_version'")
+                    self.assertEqual(cur.fetchone()["value"], str(DatabaseManager.SCHEMA_VERSION))
             finally:
                 db.close()
 

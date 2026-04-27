@@ -2,6 +2,7 @@ import json
 import re
 import unittest
 from pathlib import Path
+from typing import Any, Mapping, cast
 
 from scrapers.marketplace_parsers import (
     merge_item_metadata,
@@ -32,14 +33,15 @@ class TestDanggeunFixtureParser(unittest.TestCase):
         snapshot = parse_html_snapshot(_read_fixture("danggeun_search_snapshot.html"))
 
         items, metrics = scraper._parse_snapshot_items(snapshot, "아이폰")
+        drop_reasons = cast(Mapping[str, Any], metrics["drop_reason_count"])
 
         self.assertEqual(len(items), 1)
         self.assertEqual(metrics["json_ld_script_count"], 1)
         self.assertEqual(metrics["json_ld_item_count"], 3)
         self.assertEqual(metrics["items_after_json_ld"], 1)
         self.assertEqual(metrics["items_after_dom_fallback"], 0)
-        self.assertEqual(metrics["drop_reason_count"]["invalid_title"], 1)
-        self.assertEqual(metrics["drop_reason_count"]["missing_id"], 1)
+        self.assertEqual(drop_reasons["invalid_title"], 1)
+        self.assertEqual(drop_reasons["missing_id"], 1)
         self.assertEqual(items[0].article_id, "12345")
         self.assertEqual(items[0].price, "750,000원")
         self.assertEqual(items[0].location, "서울 강남구 역삼동")
@@ -51,11 +53,12 @@ class TestBunjangFixtureParser(unittest.TestCase):
         snapshot = parse_html_snapshot(_read_fixture("bunjang_search_snapshot.html"))
 
         items, metrics = scraper._parse_snapshot_items(snapshot, "아이폰")
+        drop_reasons = cast(Mapping[str, Any], metrics["drop_reason_count"])
 
         self.assertEqual(len(items), 1)
         self.assertEqual(metrics["dom_card_count"], 2)
         self.assertEqual(metrics["items_after_data_pid"], 1)
-        self.assertEqual(metrics["drop_reason_count"]["invalid_title"], 1)
+        self.assertEqual(drop_reasons["invalid_title"], 1)
         self.assertEqual(items[0].article_id, "738030")
         self.assertEqual(items[0].price, "160,000원")
         self.assertEqual(items[0].location, "서울특별시 서초구 반포3동")

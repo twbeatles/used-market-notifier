@@ -213,8 +213,13 @@ class MessageTemplateManager:
         except Exception:
             # Fallback for non-PyQt environments
             try:
-                import pyperclip
-                pyperclip.copy(text)
+                import importlib
+
+                pyperclip = importlib.import_module("pyperclip")
+                copy_fn = getattr(pyperclip, "copy", None)
+                if not callable(copy_fn):
+                    return False
+                copy_fn(text)
                 return True
             except ImportError:
                 pass

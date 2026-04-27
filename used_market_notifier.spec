@@ -25,6 +25,13 @@ Notes:
 - Shared seller-candidate scanning and Danggeun best-effort location warnings
   added during the 2026-04 audit pass are source/runtime behavior changes only
   and do not require additional PyInstaller hidden imports.
+- The 2026-04 stabilization pass moved Playwright scrapers to an async
+  start/search/enrich/close lifecycle with retained browser contexts. This is
+  a source-level lifecycle change; Chromium runtime binaries are still not
+  bundled and must be installed on target machines.
+- URL normalization, schema-version metadata, notification skip telemetry, and
+  field-level settings normalization use only the standard library and existing
+  SQLite tables, so no extra bundled data files are required.
 - Build environments that have both `PyQt6` and `PyQt5` installed must exclude
   the older Qt bindings explicitly so PyInstaller does not abort on mixed-hook
   collection.
@@ -96,9 +103,11 @@ hiddenimports = [
 
     # Utilities
     "difflib",
+    "importlib",
     "json",
     "logging",
     "re",
+    "urllib.parse",
 ]
 
 # Playwright imports can be dynamic; collect submodules defensively.

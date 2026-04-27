@@ -56,6 +56,57 @@ class _FakeScraper:
         return None
 
 
+class _AsyncFakeScraper:
+    def __init__(self, items=None, enrich_callback=None):
+        self.items = list(items or [])
+        self.calls = 0
+        self.enrich_calls = 0
+        self.enrich_callback = enrich_callback
+        self.start_calls = 0
+        self.close_calls = 0
+        self.safe_calls = 0
+
+    async def start(self):
+        self.start_calls += 1
+
+    async def search(self, keyword: str, location: str | None = None):
+        _ = (keyword, location)
+        self.calls += 1
+        return list(self.items)
+
+    def safe_search(self, keyword: str, location: str | None = None):
+        _ = (keyword, location)
+        self.safe_calls += 1
+        return list(self.items)
+
+    def enrich_item(self, item: Item) -> Item:
+        self.enrich_calls += 1
+        if self.enrich_callback is not None:
+            return self.enrich_callback(item)
+        return Item(
+            platform=item.platform,
+            article_id=item.article_id,
+            title=item.title,
+            price=item.price,
+            link=item.link,
+            keyword=item.keyword,
+            thumbnail=item.thumbnail,
+            seller=item.seller or f"seller-{item.article_id}",
+            location=item.location or "Seoul",
+            sale_status=item.sale_status,
+            price_numeric=item.price_numeric,
+        )
+
+    async def enrich_item_async(self, item: Item) -> Item:
+        return self.enrich_item(item)
+
+    async def close(self):
+        self.close_calls += 1
+
+    def is_healthy(self):
+        return True
+
+
 class TestMonitorEngineBehaviors(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -267,6 +318,31 @@ class TestMonitorEngineBehaviors(unittest.IsolatedAsyncioTestCase):
 
         warning_count = statuses.count(MonitorEngine.DANGGEUN_LOCATION_WARNING)
         self.assertEqual(warning_count, 1)
+
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
+
+    async def test_async_scraper_search_and_enrich_are_awaited_without_safe_search(self):
+        engine = await self._make_engine(notifications_enabled=False, metadata_enrichment_enabled=True)
+        item = Item(
+            platform="danggeun",
+            article_id="async-1",
+            title="비동기 아이폰",
+            price="100,000원",
+            link="https://example.com/async-1",
+            keyword="아이폰",
+        )
+        scraper = _AsyncFakeScraper(items=[item])
+        engine.primary_scrapers["danggeun"] = scraper
+        engine.primary_scraper_kind["danggeun"] = "playwright"
+
+        kw = SearchKeyword(keyword="아이폰", platforms=["danggeun"])
+        new_count = await engine.search_keyword(kw, blocked_set=set())
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(scraper.calls, 1)
+        self.assertEqual(scraper.safe_calls, 0)
+        self.assertEqual(scraper.enrich_calls, 1)
 
         if engine._executor is not None:
             engine._executor.shutdown(wait=True, cancel_futures=True)

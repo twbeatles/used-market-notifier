@@ -289,6 +289,30 @@ class MonitorEngine:
         except Exception as e:
             self.logger.warning(f"Failed to close scraper '{platform}': {e}")
 
+    async def _close_scraper(self, platform: str, scraper: ScraperProtocol) -> None:
+        """Close sync or async scraper resources."""
+        close_fn = getattr(scraper, "close", None)
+        if close_fn is None:
+            return
+        try:
+            if self._executor is not None and not inspect.iscoroutinefunction(close_fn):
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(self._executor, close_fn)
+                return
+            result = close_fn()
+            if inspect.isawaitable(result):
+                await cast(Awaitable[object], result)
+        except Exception as e:
+            self.logger.warning(f"Failed to close scraper '{platform}': {e}")
+
+    async def _start_scraper(self, platform: str, scraper: ScraperProtocol) -> None:
+        start_fn = getattr(scraper, "start", None)
+        if not callable(start_fn):
+            return
+        result = start_fn()
+        if inspect.isawaitable(result):
+            await cast(Awaitable[object], result)
+
     def _check_scraper_health(self, scraper: object) -> bool:
         """Best-effort scraper driver health check."""
         try:
@@ -320,23 +344,27 @@ class MonitorEngine:
             self.primary_scraper_kind.pop(platform, None)
             self.fallback_scraper_kind.pop(platform, None)
             if old_primary is not None:
-                await loop.run_in_executor(self._executor, self._close_scraper_safe, platform, old_primary)
+                await self._close_scraper(platform, old_primary)
             if old_fallback is not None and old_fallback is not old_primary:
-                await loop.run_in_executor(self._executor, self._close_scraper_safe, platform, old_fallback)
+                await self._close_scraper(platform, old_fallback)
 
             resolved: list[tuple[str, ScraperProtocol]] = []
             for kind in engine_order:
-                if kind == "playwright":
-                    runtime_ok = await self._ensure_playwright_runtime()
-                    if not runtime_ok:
-                        continue
-
+                scraper: ScraperProtocol | None = None
                 try:
                     scraper = await loop.run_in_executor(self._executor, self._create_scraper, platform, headless, kind)
+                    assert scraper is not None
+                    if kind == "playwright":
+                        await self._start_scraper(platform, scraper)
                     resolved.append((kind, scraper))
                 except ScraperDependencyUnavailable as e:
                     self.logger.info(f"Engine unavailable for {platform} ({kind}): {e}")
                 except Exception as e:
+                    try:
+                        if scraper is not None:
+                            await self._close_scraper(platform, scraper)
+                    except Exception:
+                        pass
                     self.logger.warning(f"Failed to initialize {platform} ({kind}): {e}")
 
             if not resolved:
@@ -480,6 +508,11 @@ class MonitorEngine:
         return False
 
     async def _run_enrichment(self, scraper: ScraperProtocol, item: Item) -> Item:
+        async_enrich = getattr(scraper, "enrich_item_async", None)
+        if callable(async_enrich):
+            result = async_enrich(item)
+            if inspect.isawaitable(result):
+                return cast(Item, await cast(Awaitable[object], result))
         if self._executor is None:
             return scraper.enrich_item(item)
         loop = asyncio.get_running_loop()
@@ -626,6 +659,9 @@ class MonitorEngine:
                 queue_wait_ms = (perf_counter() - job.enqueued_at) * 1000 if job.enqueued_at else 0.0
                 result = await self._deliver_notification_channels(job, queue_wait_ms=queue_wait_ms)
                 if result.failed_channels and job.attempts < self.NOTIFICATION_MAX_RETRIES - 1:
+                    if self._stop_event is not None and self._stop_event.is_set():
+                        self.logger.info("Notification retry skipped because shutdown is in progress")
+                        continue
                     retry = NotificationJob(
                         item=job.item,
                         is_price_change=job.is_price_change,
@@ -642,6 +678,9 @@ class MonitorEngine:
                         f"channels={','.join(retry.target_channels)}"
                     )
                     await self._sleep_or_stop(backoff)
+                    if self._stop_event is not None and self._stop_event.is_set():
+                        self.logger.info("Notification retry cancelled after shutdown signal")
+                        continue
                     await queue.put(retry)
             except Exception as e:
                 self.logger.error(f"Notification worker error: {e}")
@@ -694,13 +733,16 @@ class MonitorEngine:
         """Send one notification job and track channel-level outcomes."""
         result = NotificationDeliveryResult()
         if not self.settings.settings.notifications_enabled:
+            self._log_notification_skip(job, "skipped_disabled", "global notifications disabled")
             return result
 
         schedule = self.settings.settings.notification_schedule
         if not schedule.is_active_now():
             self.logger.info("Notification skipped - outside scheduled hours")
+            self._log_notification_skip(job, "skipped_schedule", "outside scheduled hours")
             return result
         if not self.notifiers:
+            self._log_notification_skip(job, "skipped_no_channel", "no notifier channels configured")
             return result
 
         target_channels = {channel.strip().lower() for channel in (job.target_channels or []) if channel}
@@ -710,6 +752,7 @@ class MonitorEngine:
             if not target_channels or self._notifier_type(notifier) in target_channels
         ]
         if not target_notifiers:
+            self._log_notification_skip(job, "skipped_target_channel", "no target notifier matched retry scope")
             return result
 
         msg_preview = self._build_notification_preview(job)
@@ -768,6 +811,22 @@ class MonitorEngine:
         )
         return result
 
+    def _log_notification_skip(self, job: NotificationJob, status: str, reason: str) -> None:
+        self.logger.info("Notification %s: %s", status, reason)
+        if not job.listing_id:
+            return
+        try:
+            self.db.log_notification_delivery(
+                job.listing_id,
+                "system",
+                status,
+                attempt=job.attempts + 1,
+                error_message=reason,
+                rate_limited=False,
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to record notification skip telemetry: {e}")
+
     async def send_notifications(
         self,
         item: Item,
@@ -777,23 +836,7 @@ class MonitorEngine:
         listing_id: int | None = None,
     ) -> None:
         """Queue notifications so the search loop is never blocked by network I/O."""
-        if not self.settings.settings.notifications_enabled:
-            return
-        if self._notification_queue is None:
-            # Fallback (worker not ready yet): deliver inline.
-            await self._deliver_notification_channels(
-                NotificationJob(
-                    item=item,
-                    is_price_change=is_price_change,
-                    old_price=old_price,
-                    new_price=new_price,
-                    listing_id=listing_id,
-                    enqueued_at=perf_counter(),
-                )
-            )
-            return
-
-        job = NotificationJob(
+        base_job = NotificationJob(
             item=item,
             is_price_change=is_price_change,
             old_price=old_price,
@@ -801,7 +844,15 @@ class MonitorEngine:
             listing_id=listing_id,
             enqueued_at=perf_counter(),
         )
-        await self._notification_queue.put(job)
+        if not self.settings.settings.notifications_enabled:
+            self._log_notification_skip(base_job, "skipped_disabled", "global notifications disabled")
+            return
+        if self._notification_queue is None:
+            # Fallback (worker not ready yet): deliver inline.
+            await self._deliver_notification_channels(base_job)
+            return
+
+        await self._notification_queue.put(base_job)
         qsize = self._notification_queue.qsize()
         if qsize >= 20:
             self.logger.warning(f"Notification queue backlog size={qsize}")
@@ -898,17 +949,22 @@ class MonitorEngine:
                 started = perf_counter()
                 try:
                     async with semaphore:
-                        loop = asyncio.get_running_loop()
-                        items_raw = await loop.run_in_executor(
-                            self._executor,
-                            scraper.safe_search,
-                            keyword_config.keyword,
-                            keyword_config.location,
-                        )
+                        search_fn = getattr(scraper, "search", None)
+                        if callable(search_fn) and inspect.iscoroutinefunction(search_fn):
+                            items_raw = await search_fn(keyword_config.keyword, keyword_config.location)
+                        else:
+                            loop = asyncio.get_running_loop()
+                            items_raw = await loop.run_in_executor(
+                                self._executor,
+                                scraper.safe_search,
+                                keyword_config.keyword,
+                                keyword_config.location,
+                            )
                     error = None
                 except Exception as e:
                     items_raw = []
-                    error = str(e)
+                    kind = getattr(scraper, "get_last_failure_kind", lambda: None)() or "unknown"
+                    error = f"{kind}: {e}"
                 elapsed_ms = (perf_counter() - started) * 1000
                 self.logger.info(
                     f"[perf] scrape keyword='{keyword_config.keyword}' platform={platform} "
@@ -1306,7 +1362,9 @@ class MonitorEngine:
             try:
                 await asyncio.wait_for(queue.join(), timeout=self.NOTIFICATION_DRAIN_TIMEOUT)
             except asyncio.TimeoutError:
-                self.logger.warning("Notification queue drain timed out; forcing shutdown")
+                self.logger.warning(
+                    f"Notification queue drain timed out; forcing shutdown remaining_jobs={queue.qsize()}"
+                )
 
         if worker is not None and not worker.done():
             worker.cancel()
@@ -1354,13 +1412,9 @@ class MonitorEngine:
         self.fallback_scraper_kind.clear()
 
         scrapers = close_targets
-        if scrapers and self._executor is not None:
+        if scrapers:
             try:
-                loop = asyncio.get_running_loop()
-                close_tasks = [
-                    loop.run_in_executor(self._executor, self._close_scraper_safe, platform, scraper)
-                    for platform, scraper in scrapers
-                ]
+                close_tasks = [self._close_scraper(platform, scraper) for platform, scraper in scrapers]
                 if close_tasks:
                     await asyncio.wait_for(asyncio.gather(*close_tasks, return_exceptions=True), timeout=20.0)
             except Exception as e:

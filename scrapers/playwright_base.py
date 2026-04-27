@@ -110,6 +110,10 @@ class PlaywrightScraper(ABC):
         self.disable_images = disable_images
         self._context = context
         self._owned_context = False
+        self._playwright: Playwright | None = None
+        self._browser: Browser | None = None
+        self._started = False
+        self._last_failure_kind: str | None = None
         self._page: Optional[Page] = None
         self.use_stealth = use_stealth
         self.debug_mode = debug_mode
@@ -121,6 +125,22 @@ class PlaywrightScraper(ABC):
         
         # Track bot detection status
         self._bot_detection_passed = None
+
+    async def start(self) -> None:
+        """Start and retain a Playwright browser/context for repeated searches."""
+        if self._started and self._context:
+            return
+        try:
+            self._playwright = await async_playwright().start()
+            self._browser = await self._launch_browser(self._playwright)
+            self._context = await self._create_context(self._browser)
+            self._owned_context = True
+            self._started = True
+            self._last_failure_kind = None
+        except Exception:
+            self._last_failure_kind = "runtime_unavailable"
+            await self.close()
+            raise
         
     async def initialize(
         self,
@@ -147,6 +167,7 @@ class PlaywrightScraper(ABC):
         elif playwright:
             # Create browser and context
             browser = await self._launch_browser(playwright)
+            self._browser = browser
             self._context = await self._create_context(browser)
             self._owned_context = True
         else:
@@ -257,6 +278,7 @@ class PlaywrightScraper(ABC):
                 
             except Exception as e:
                 self.logger.warning(f"Navigation attempt {attempt + 1} failed: {e}")
+                self._last_failure_kind = "navigation_timeout"
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
         
@@ -325,11 +347,35 @@ class PlaywrightScraper(ABC):
                 loop.close()
 
     def safe_search(self, keyword: str, location: str | None = None) -> list[Item]:
-        """Synchronous entrypoint used by MonitorEngine's thread executor."""
-        return self._run_async(lambda: self._safe_search_async(keyword, location))
+        """Synchronous compatibility entrypoint."""
+        async def _search_session() -> list[Item]:
+            temporary_session = not self._started
+            if temporary_session:
+                await self.start()
+            try:
+                return await self._safe_search_async(keyword, location)
+            finally:
+                if temporary_session:
+                    await self.close()
+
+        return self._run_async(_search_session)
 
     def enrich_item(self, item: Item) -> Item:
         """Default Playwright enrichment hook; subclasses can override."""
+        async def _enrich_session() -> Item:
+            temporary_session = not self._started
+            if temporary_session:
+                await self.start()
+            try:
+                return await self.enrich_item_async(item)
+            finally:
+                if temporary_session:
+                    await self.close()
+
+        return self._run_async(_enrich_session)
+
+    async def enrich_item_async(self, item: Item) -> Item:
+        """Async metadata enrichment hook; subclasses can override."""
         return item
 
     @async_retry(max_attempts=3, delay=1.0)
@@ -343,6 +389,7 @@ class PlaywrightScraper(ABC):
         
         try:
             items = await self.search(keyword, location)
+            self._last_failure_kind = None if items else "parser_zero"
             
             if self.debugger:
                 self.debugger.log_items_found(len(items))
@@ -351,7 +398,11 @@ class PlaywrightScraper(ABC):
             return items
             
         except Exception as e:
-            self.logger.error(f"Search failed for '{keyword}': {e}")
+            if self._last_failure_kind is None:
+                self._last_failure_kind = "unknown"
+            self.logger.error(
+                f"Search failed for '{keyword}': kind={self._last_failure_kind} error={e}"
+            )
             
             # Capture error diagnostics
             if self.debug_mode and self.debugger and self._page:
@@ -485,5 +536,36 @@ class PlaywrightScraper(ABC):
                 await self._context.close()
                 self._context = None
                 self.logger.debug("Browser context closed")
+            if self._browser:
+                await self._browser.close()
+                self._browser = None
+            if self._playwright:
+                await self._playwright.stop()
+                self._playwright = None
+            self._started = False
         except Exception as e:
             self.logger.error(f"Error closing resources: {e}")
+
+    def is_healthy(self) -> bool:
+        """Return whether the retained Playwright resources appear usable."""
+        if self._last_failure_kind in {"runtime_unavailable", "blocked_or_empty"}:
+            return False
+        if not self._started:
+            return True
+        if self._context is None or self._browser is None:
+            return False
+        try:
+            return self._browser.is_connected()
+        except Exception:
+            return False
+
+    def get_last_failure_kind(self) -> str | None:
+        return self._last_failure_kind
+
+    @staticmethod
+    def _metric_int(metrics: dict[str, object], key: str) -> int:
+        value = metrics.get(key, 0)
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except Exception:
+            return 0

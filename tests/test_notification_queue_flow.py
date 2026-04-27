@@ -68,6 +68,18 @@ class DiscordNotifier:
         return dict(self._last_delivery_result)
 
 
+class AlwaysFailNotifier(DiscordNotifier):
+    async def send_item(self, item: Item, with_image: bool = True) -> bool:
+        _ = (item, with_image)
+        self.calls += 1
+        self._last_delivery_result = {
+            "success": False,
+            "error_message": "still failing",
+            "rate_limited": False,
+        }
+        return False
+
+
 class TestNotificationQueueFlow(unittest.IsolatedAsyncioTestCase):
     async def test_partial_channel_retry_and_delivery_log(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -118,6 +130,78 @@ class TestNotificationQueueFlow(unittest.IsolatedAsyncioTestCase):
 
                 engine._stop_event.set()
                 await engine._drain_notification_queue()
+            finally:
+                db.close()
+
+    async def test_shutdown_does_not_requeue_failed_notification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "test.db")
+            db = DatabaseManager(db_path)
+            try:
+                engine = MonitorEngine(_SettingsWrapper(), db=db)
+                failing = AlwaysFailNotifier()
+                engine.notifiers = [failing]
+                engine._notification_queue = asyncio.Queue()
+                engine._stop_event = asyncio.Event()
+
+                async def _set_stop(seconds: float) -> None:
+                    _ = seconds
+                    assert engine._stop_event is not None
+                    engine._stop_event.set()
+
+                engine._sleep_or_stop = _set_stop  # type: ignore[method-assign]
+                engine._notification_worker_task = asyncio.create_task(engine._notification_worker())
+
+                item = Item(
+                    platform="danggeun",
+                    article_id="a2",
+                    title="test item 2",
+                    price="10,000원",
+                    link="https://example.com/a2",
+                    keyword="test",
+                )
+                _, _, listing_id = db.add_listing(item)
+                assert listing_id is not None
+
+                await engine.send_notifications(item, listing_id=listing_id)
+                await asyncio.wait_for(engine._notification_queue.join(), timeout=3.0)
+
+                self.assertEqual(failing.calls, 1)
+                self.assertEqual(engine._notification_queue.qsize(), 0)
+                await engine._drain_notification_queue()
+            finally:
+                db.close()
+
+    async def test_disabled_notifications_record_skip_telemetry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "test.db")
+            db = DatabaseManager(db_path)
+            try:
+                settings = _SettingsWrapper()
+                settings.settings.notifications_enabled = False
+                engine = MonitorEngine(settings, db=db)
+                item = Item(
+                    platform="danggeun",
+                    article_id="a3",
+                    title="test item 3",
+                    price="10,000원",
+                    link="https://example.com/a3",
+                    keyword="test",
+                )
+                _, _, listing_id = db.add_listing(item)
+                assert listing_id is not None
+
+                await engine.send_notifications(item, listing_id=listing_id)
+
+                with db.lock:
+                    cur = db.conn.cursor()
+                    cur.execute(
+                        "SELECT notification_type, status FROM notification_delivery_log WHERE listing_id = ?",
+                        (listing_id,),
+                    )
+                    row = cur.fetchone()
+                self.assertEqual(row["notification_type"], "system")
+                self.assertEqual(row["status"], "skipped_disabled")
             finally:
                 db.close()
 
