@@ -241,6 +241,7 @@ class AppSettings:
     auto_tagging_enabled: bool = True
     tag_rules: list[TagRule] = field(default_factory=list)
     metadata_enrichment_enabled: bool = False
+    conditional_metadata_enrichment_enabled: bool = True
 
     # Scraper engine strategy
     # - playwright_primary: Playwright first, Selenium fallback

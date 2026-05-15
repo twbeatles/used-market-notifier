@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import re
 from urllib.parse import quote
 
@@ -14,9 +13,12 @@ from models import Item
 from .marketplace_parsers import (
     merge_item_metadata,
     normalize_location_value,
+    parse_bunjang_card_text,
     parse_bunjang_detail_payload,
+    parse_bunjang_search_items,
     parse_html_snapshot,
     pick_seller_candidate,
+    extract_bunjang_product_id,
 )
 from .playwright_base import PlaywrightScraper
 
@@ -42,6 +44,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
         "\ubc30\uc1a1\ube44\ud3ec\ud568",  # 배송비포함
         "\uad11\uace0",  # 광고
         "no title",
+        "ad",
     ]
 
     def __init__(self, headless: bool = True, disable_images: bool = True):
@@ -74,51 +77,12 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
 
     @classmethod
     def _parse_card_text_fallback(cls, text: str) -> tuple[str, str, str | None]:
-        lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
-        cleaned = [line for line in lines if line not in cls.BADGE_LINES and line != "·"]
-
-        if not cleaned:
-            return "", "N/A", None
-
-        title = cleaned[0]
-        price = "N/A"
-        price_idx = -1
-        for idx, line in enumerate(cleaned):
-            compact = line.replace(",", "").replace(" ", "")
-            if compact.isdigit():
-                price = f"{int(compact):,}원"
-                price_idx = idx
-                break
-            if compact.endswith("원") and compact[:-1].replace(",", "").isdigit():
-                digits = "".join(ch for ch in compact if ch.isdigit())
-                if digits:
-                    price = f"{int(digits):,}원"
-                    price_idx = idx
-                    break
-
-        if price_idx > 0:
-            title = cleaned[price_idx - 1]
-
-        location_text: str | None = None
-        for line in reversed(cleaned):
-            if line == title or cls._looks_like_time_line(line):
-                continue
-            compact = line.replace(",", "").replace(" ", "")
-            if compact.isdigit() or compact.endswith("원"):
-                continue
-            location_text = cls._normalize_location(line)
-            break
-
-        return title, price, location_text
+        parsed = parse_bunjang_card_text(text)
+        return parsed.title, parsed.price, parsed.location
 
     @staticmethod
     def _extract_pid_from_href(href: str) -> str | None:
-        if not href:
-            return None
-        m = re.search(r"/products/(\d+)", href)
-        if m:
-            return m.group(1)
-        return None
+        return extract_bunjang_product_id(href)
 
     @staticmethod
     def _extract_label_value(text: str, labels: tuple[str, ...]) -> str | None:
@@ -188,6 +152,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
     def _apply_detail_payload(item: Item, payload: dict[str, object]) -> Item:
         return merge_item_metadata(
             item,
+            title=payload.get("title"),
             seller=payload.get("seller"),
             location=payload.get("location"),
             price=payload.get("price"),
@@ -206,105 +171,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
         )
 
     def _parse_snapshot_items(self, snapshot, keyword: str) -> tuple[list[Item], dict[str, object]]:
-        metrics: dict[str, object] = {
-            "dom_card_count": 0,
-            "dom_product_link_count": 0,
-            "items_after_data_pid": 0,
-            "items_after_dom_fallback": 0,
-            "drop_reason_count": {},
-        }
-        drop_reasons: Counter[str] = Counter()
-        items: list[Item] = []
-        seen_pids: set[str] = set()
-
-        cards = [anchor for anchor in snapshot.anchors if anchor.attrs.get("data-pid")]
-        metrics["dom_card_count"] = len(cards)
-        for anchor in cards[: self.MAX_RESULTS]:
-            try:
-                pid = str(anchor.attrs.get("data-pid") or "").strip()
-                if not pid:
-                    drop_reasons["missing_id"] += 1
-                    continue
-                if pid in seen_pids:
-                    drop_reasons["duplicate_id"] += 1
-                    continue
-
-                raw_card_text = anchor.text
-                title, price, location_value = self._parse_card_text_fallback(raw_card_text)
-                if not self._is_valid_title(title):
-                    drop_reasons["invalid_title"] += 1
-                    continue
-
-                items.append(
-                    Item(
-                        platform="bunjang",
-                        article_id=pid,
-                        title=title,
-                        price=price,
-                        link=f"https://m.bunjang.co.kr/products/{pid}",
-                        keyword=keyword,
-                        thumbnail=anchor.image,
-                        seller=None,
-                        location=location_value,
-                    )
-                )
-                seen_pids.add(pid)
-            except Exception:
-                drop_reasons["parse_error"] += 1
-
-        metrics["items_after_data_pid"] = len(items)
-        if items:
-            metrics["drop_reason_count"] = dict(drop_reasons)
-            return items, metrics
-
-        product_links = [
-            anchor
-            for anchor in snapshot.anchors
-            if "/products/" in str(anchor.attrs.get("href") or "")
-        ]
-        metrics["dom_product_link_count"] = len(product_links)
-        for anchor in product_links[: self.MAX_RESULTS]:
-            try:
-                href = str(anchor.attrs.get("href") or "").strip()
-                if not href:
-                    drop_reasons["missing_href"] += 1
-                    continue
-                if href.startswith("/"):
-                    href = f"https://m.bunjang.co.kr{href}"
-
-                pid = self._extract_pid_from_href(href)
-                if not pid:
-                    drop_reasons["missing_id"] += 1
-                    continue
-                if pid in seen_pids:
-                    drop_reasons["duplicate_id"] += 1
-                    continue
-
-                title, price, location_value = self._parse_card_text_fallback(anchor.text)
-                if not self._is_valid_title(title):
-                    drop_reasons["invalid_title"] += 1
-                    continue
-
-                items.append(
-                    Item(
-                        platform="bunjang",
-                        article_id=pid,
-                        title=title,
-                        price=price,
-                        link=href,
-                        keyword=keyword,
-                        thumbnail=anchor.image,
-                        seller=None,
-                        location=location_value,
-                    )
-                )
-                seen_pids.add(pid)
-            except Exception:
-                drop_reasons["parse_error"] += 1
-
-        metrics["items_after_dom_fallback"] = len(items)
-        metrics["drop_reason_count"] = dict(drop_reasons)
-        return items, metrics
+        return parse_bunjang_search_items(snapshot, keyword, max_results=self.MAX_RESULTS)
 
     async def _dump_anomaly_if_needed(self, page, keyword: str, metrics: dict[str, object], items: list[Item]) -> None:
         candidate_count = self._metric_int(metrics, "dom_card_count") + self._metric_int(metrics, "dom_product_link_count")
@@ -356,7 +223,7 @@ class PlaywrightBunjangScraper(PlaywrightScraper):
             return []
 
         try:
-            await page.wait_for_selector("a[data-pid]", timeout=6000)
+            await page.wait_for_selector("a[href*='/products/'], a[data-pid]", timeout=6000)
         except Exception:
             pass
         await page.wait_for_timeout(800)

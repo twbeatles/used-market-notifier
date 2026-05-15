@@ -32,6 +32,14 @@ Notes:
 - URL normalization, schema-version metadata, notification skip telemetry, and
   field-level settings normalization use only the standard library and existing
   SQLite tables, so no extra bundled data files are required.
+- The 2026-05 live-site stabilization pass adds shared pure parser helpers for
+  Bunjang current/legacy cards, strict Joonggonara host/path validation, scrape
+  quality gates, conditional metadata enrichment, platform backoff, and an
+  enrichment TTL cache. These are source/runtime behavior changes using already
+  collected modules and standard-library helpers.
+- `scripts/live_smoke.py` is an opt-in development diagnostic for live site
+  structure checks. It is not imported by the app entrypoint and is intentionally
+  not bundled into the onefile executable.
 - Build environments that have both `PyQt6` and `PyQt5` installed must exclude
   the older Qt bindings explicitly so PyInstaller does not abort on mixed-hook
   collection.

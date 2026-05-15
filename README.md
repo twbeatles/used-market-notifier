@@ -268,6 +268,8 @@ used_market_notifier/
   "check_interval_seconds": 300,
   "headless_mode": true,
   "notifications_enabled": true,
+  "metadata_enrichment_enabled": false,
+  "conditional_metadata_enrichment_enabled": true,
   "scraper_mode": "playwright_primary",
   "fallback_on_empty_results": true,
   "max_fallback_per_cycle": 3,
@@ -324,6 +326,11 @@ used_market_notifier/
 | `selenium_primary` | Selenium 우선, 실패/빈결과 시 Playwright 폴백 |
 | `selenium_only` | Selenium만 사용 (폴백 없음) |
 
+### 메타데이터 보강 수집
+
+- `metadata_enrichment_enabled`: 모든 검색 결과에서 비어 있는 seller/location 정보를 제한적으로 보강합니다.
+- `conditional_metadata_enrichment_enabled`: 지역 필터 또는 차단 판매자 판별에 필요한 경우만 자동 보강합니다. 기본값은 `true`입니다.
+
 ### 데이터 정리
 
 `설정 > 유지보수`에서:
@@ -341,6 +348,7 @@ used_market_notifier/
 2. **브라우저 표시 모드**: `설정 > 일반 > 브라우저 표시` 활성화
 3. **Chrome 업데이트/재설치**: 브라우저가 너무 오래됐으면 페이지가 깨질 수 있습니다
 4. **로그 확인**: 앱의 `로그` 탭에서 에러 메시지 확인
+5. **라이브 스모크 확인**: `python scripts/live_smoke.py --keyword 아이폰`
 
 ### 알림이 안 올 때
 
@@ -488,7 +496,8 @@ This section is the current source of truth and supersedes older statements in t
 ## 2026-04 Audit Remediation Update
 
 - Joonggonara parsing / enrichment:
-  - Naver search results now accept only Joonggonara article links with numeric `articleid` values.
+  - Naver search uses the cafe article tab (`where=article&ssc=tab.cafe.all`) and accepts only strict Joonggonara cafe article URLs (`cafe.naver.com` / `m.cafe.naver.com`, `/joonggonara/{numeric_id}`).
+  - SmartStore, shopping, and ad URLs are rejected by host/path even when query strings contain `site:cafe.naver.com/joonggonara`.
   - known noise links are rejected before item creation (generic cafe links, URL-only anchors, time/video labels, placeholder text, numeric-only anchor text).
   - detail enrichment now waits for `iframe#cafe_main` and parses seller/location/price/title from the frame body, with outer-page fallback only when the iframe path is unavailable.
   - detail parsing now skips category/UI meta lines, supports `35만원`-style prices, and extracts station/dong-level transaction locations when present.
@@ -500,10 +509,12 @@ This section is the current source of truth and supersedes older statements in t
 - Observability:
   - Danggeun and Bunjang searches now log per-search candidate counters and drop reasons (`selector_count`, `jsonld_scripts`, `jsonld_items`, `parsed_items`, invalid-title drops, missing-id drops, parse-error drops).
   - when a Playwright search finds candidate DOM/data but still returns `0` parsed items, debug artifacts are dumped under `debug_output/`.
+  - malformed scrape batches are classified as `parser_malformed`, can trigger fallback, and also write debug artifacts when candidate DOM existed.
 - Metadata enrichment flow:
   - enrichment now uses one shared budget per platform/keyword/cycle.
   - pass 1 enriches only items that need seller/location for location filtering or blocked-seller decisions.
   - pass 2 spends any remaining budget on kept items that still lack seller/location for DB quality and notifications.
+  - `conditional_metadata_enrichment_enabled` defaults to `true`, so targeted seller/location enrichment can still run for filtering decisions even when global enrichment is off.
 - Packaging / tests:
   - `used_market_notifier.spec` now collects Playwright modules plus the `aiohttp` dependency tree used by Bunjang detail enrichment.
   - regression fixtures cover Danggeun, Bunjang, and Joonggonara live markup snapshots plus import safety without `selenium`.
@@ -529,6 +540,24 @@ This section is the current source of truth and supersedes older statements in t
   - Backup restore stops monitoring first and exits after restore to avoid stale DB connections.
   - `.gitignore` includes `*.pre_restore` restore snapshots.
   - `used_market_notifier.spec` documents the async lifecycle change and standard-library additions.
+
+## 2026-05 Live Site Stabilization Update
+
+- Bunjang search parsing:
+  - current product cards using `a[href*='/products/']` are the primary source; legacy `a[data-pid]` markup remains supported.
+  - card text in `price -> title -> time/count` order is parsed into the correct fields, while `AD`, price-only, count-only, and time tokens are never stored as titles or locations.
+  - Playwright and Selenium paths share the same pure parser helper, and detail API data can merge `product.name`, `product.price`, `product.saleStatus`, and `shop.name` into search results.
+- Joonggonara relevance filter:
+  - search URL generation is pinned to the Naver cafe article tab.
+  - result validation is host/path based with `urlsplit()`, not query-substring based, so shopping/smartstore/ad redirects are excluded before item creation.
+- Quality gate / fallback:
+  - scrape results with invalid-title ratios, platform/host mismatches, broken IDs, or too few valid titles are treated as malformed.
+  - malformed primary results record `parser_malformed`, can use the configured fallback scraper, and write `debug_output/` HTML/screenshot/summary artifacts when DOM candidates existed.
+- Metadata and operations:
+  - Danggeun location normalization trims trailing separators and time tokens such as `행당동·` or `서울 강남구 역삼동 · 끌올 1일 전`.
+  - conditional metadata enrichment is exposed in `settings.example.json`, `AppSettings`, normalization, and the settings dialog.
+  - per-cycle enrichment uses a TTL cache for repeated article IDs and platform backoff for 403/429/CAPTCHA-like responses.
+  - optional live checks live in `scripts/live_smoke.py`; they are intentionally separate from the default unit test suite.
 
 ### Encoding Hygiene Gate
 
@@ -564,7 +593,8 @@ This section is the current source of truth for the March 25, 2026 stabilization
   - the notification history UI now shows a 7-day channel health summary
 - Metadata enrichment:
   - `metadata_enrichment_enabled` defaults to `false`
-  - when enabled, seller/location enrichment uses a two-phase budget: targeted prefilter enrichment for location/seller-block decisions, then postfilter enrichment for kept items still missing metadata
+  - `conditional_metadata_enrichment_enabled` defaults to `true`
+  - seller/location enrichment uses a two-phase budget: targeted prefilter enrichment for location/seller-block decisions, then postfilter enrichment for kept items still missing metadata
   - enrichment is capped at `10` items per platform per keyword per cycle
   - failures are warning-only and do not discard the base search result
   - explicit scraper-provided `sale_status` values are persisted when available
@@ -592,5 +622,5 @@ This section is the current source of truth for the March 25, 2026 stabilization
 - Type checks:
   - `pyright .`
 - Current expected baseline after this update:
-  - `Ran 70 tests`
+  - `Ran 77 tests`
   - `OK`

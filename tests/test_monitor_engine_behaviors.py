@@ -322,6 +322,46 @@ class TestMonitorEngineBehaviors(unittest.IsolatedAsyncioTestCase):
         if engine._executor is not None:
             engine._executor.shutdown(wait=True, cancel_futures=True)
 
+    async def test_conditional_prefilter_enrichment_runs_when_global_enrichment_disabled(self):
+        engine = await self._make_engine(
+            notifications_enabled=False,
+            metadata_enrichment_enabled=False,
+            conditional_metadata_enrichment_enabled=True,
+        )
+        base_item = Item(
+            platform="danggeun",
+            article_id="conditional-loc-1",
+            title="강남 아이폰",
+            price="100,000원",
+            link="https://example.com/conditional-loc-1",
+            keyword="아이폰",
+            location=None,
+        )
+
+        def _enrich(item: Item) -> Item:
+            return Item(
+                platform=item.platform,
+                article_id=item.article_id,
+                title=item.title,
+                price=item.price,
+                link=item.link,
+                keyword=item.keyword,
+                seller="conditional-seller",
+                location="서울 강남구",
+            )
+
+        scraper = _FakeScraper(items=[base_item], enrich_callback=_enrich)
+        engine.primary_scrapers["danggeun"] = scraper
+        engine.primary_scraper_kind["danggeun"] = "playwright"
+
+        new_count = await engine.search_keyword(SearchKeyword(keyword="아이폰", location="강남", platforms=["danggeun"]))
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(scraper.enrich_calls, 1)
+
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
+
     async def test_async_scraper_search_and_enrich_are_awaited_without_safe_search(self):
         engine = await self._make_engine(notifications_enabled=False, metadata_enrichment_enabled=True)
         item = Item(
@@ -343,6 +383,47 @@ class TestMonitorEngineBehaviors(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(scraper.calls, 1)
         self.assertEqual(scraper.safe_calls, 0)
         self.assertEqual(scraper.enrich_calls, 1)
+
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
+
+    async def test_malformed_primary_results_trigger_fallback(self):
+        engine = await self._make_engine(notifications_enabled=False)
+        primary = _FakeScraper(
+            items=[
+                Item(
+                    platform="bunjang",
+                    article_id=f"bad-{i}",
+                    title=f"{10_000 + i:,}원",
+                    price=f"{10_000 + i:,}원",
+                    link=f"https://m.bunjang.co.kr/products/bad{i}",
+                    keyword="아이폰",
+                )
+                for i in range(3)
+            ]
+        )
+        fallback = _FakeScraper(
+            items=[
+                Item(
+                    platform="bunjang",
+                    article_id="good-1",
+                    title="아이폰 12 128GB",
+                    price="250,000원",
+                    link="https://m.bunjang.co.kr/products/407890722",
+                    keyword="아이폰",
+                )
+            ]
+        )
+        engine.primary_scrapers["bunjang"] = primary
+        engine.primary_scraper_kind["bunjang"] = "playwright"
+        engine.fallback_scrapers["bunjang"] = fallback
+        engine.fallback_scraper_kind["bunjang"] = "selenium"
+
+        new_count = await engine.search_keyword(SearchKeyword(keyword="아이폰", platforms=["bunjang"]))
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(fallback.calls, 1)
 
         if engine._executor is not None:
             engine._executor.shutdown(wait=True, cancel_futures=True)

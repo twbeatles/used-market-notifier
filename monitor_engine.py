@@ -24,6 +24,7 @@ from scrapers import (
     PlaywrightJoonggonaraScraper,
     ScraperDependencyUnavailable,
 )
+from scrapers.marketplace_parsers import evaluate_scrape_quality
 from settings_manager import SettingsManager
 
 
@@ -137,6 +138,8 @@ class MonitorEngine:
         self._cycle_fallback_counts: Optional[dict[str, int]] = None
         self._cycle_blocked_set: set[tuple[str, Optional[str]]] = set()
         self._cycle_danggeun_location_warning_keys: set[tuple[str, str]] = set()
+        self._platform_backoff_until: dict[str, float] = {}
+        self._enrichment_cache: dict[tuple[str, str], Item] = {}
 
         # Callbacks for UI updates
         self.on_new_item: Optional[Callable[[Item], None]] = None
@@ -326,6 +329,35 @@ class MonitorEngine:
             return True
         except Exception:
             return False
+
+    def _platform_is_backed_off(self, platform: str) -> bool:
+        until = self._platform_backoff_until.get(platform, 0.0)
+        if until <= perf_counter():
+            if until:
+                self._platform_backoff_until.pop(platform, None)
+            return False
+        remaining = max(0.0, until - perf_counter())
+        self.logger.warning(f"Skipping {platform} scrape due to temporary backoff ({remaining:.1f}s remaining)")
+        return True
+
+    def _maybe_schedule_platform_backoff(self, platform: str, reason: str | None) -> None:
+        text = str(reason or "").lower()
+        if not text:
+            return
+        if not any(token in text for token in ("http_403", "http_429", "captcha", "blocked", "too many requests")):
+            return
+        self._platform_backoff_until[platform] = perf_counter() + 300.0
+        self.logger.warning(f"Scheduled temporary scrape backoff: platform={platform} reason={reason}")
+
+    def _quality_failure_reason(self, platform: str, items: list[Item]) -> str | None:
+        report = evaluate_scrape_quality(platform, items)
+        if not report.get("malformed"):
+            return None
+        return (
+            "parser_malformed: "
+            f"total={report.get('total')} valid={report.get('valid_count')} "
+            f"malformed={report.get('malformed_count')} reasons={report.get('reasons')}"
+        )
 
     async def initialize_scrapers(self, platforms: Optional[list[str]] = None):
         """Initialize primary/fallback scrapers, optionally only for target platforms."""
@@ -523,6 +555,10 @@ class MonitorEngine:
         target_platform = str(platform or getattr(item, "platform", "") or "").strip().lower()
         if not target_platform or not self._needs_metadata_enrichment(item):
             return item
+        article_id = str(getattr(item, "article_id", "") or "").strip()
+        cache_key = (target_platform, article_id)
+        if article_id and cache_key in self._enrichment_cache:
+            return self._enrichment_cache[cache_key]
 
         current = item
         for use_fallback in (False, True):
@@ -547,6 +583,8 @@ class MonitorEngine:
                     f"engine={scraper_kind_map.get(target_platform, 'unknown')} error={e}"
                 )
 
+        if article_id:
+            self._enrichment_cache[cache_key] = current
         return current
 
     async def _enrich_items_with_budget(
@@ -558,11 +596,15 @@ class MonitorEngine:
         *,
         phase: str,
         predicate: Callable[[Item], bool],
+        force: bool = False,
     ) -> tuple[list[Item], int]:
         if (
             budget <= 0
             or not items
-            or not getattr(self.settings.settings, "metadata_enrichment_enabled", False)
+            or (
+                not force
+                and not getattr(self.settings.settings, "metadata_enrichment_enabled", False)
+            )
         ):
             return items, 0
 
@@ -934,6 +976,9 @@ class MonitorEngine:
             if self._cycle_platform_attempts is not None:
                 self._cycle_platform_attempts[platform] = self._cycle_platform_attempts.get(platform, 0) + 1
 
+            if self._platform_is_backed_off(platform):
+                return platform, [], 0, 0, False, "backoff"
+
             if not await self._ensure_scraper(platform, use_fallback=False):
                 return platform, [], 0, 0, False, "primary_unavailable"
 
@@ -965,6 +1010,15 @@ class MonitorEngine:
                     items_raw = []
                     kind = getattr(scraper, "get_last_failure_kind", lambda: None)() or "unknown"
                     error = f"{kind}: {e}"
+                if error is None:
+                    kind = getattr(scraper, "get_last_failure_kind", lambda: None)() or None
+                    if kind in {"http_403", "http_429", "captcha_or_blocked"}:
+                        error = kind
+                    else:
+                        quality_reason = self._quality_failure_reason(platform, items_raw)
+                        if quality_reason:
+                            error = quality_reason
+                            items_raw = []
                 elapsed_ms = (perf_counter() - started) * 1000
                 self.logger.info(
                     f"[perf] scrape keyword='{keyword_config.keyword}' platform={platform} "
@@ -974,13 +1028,14 @@ class MonitorEngine:
 
             started_total = perf_counter()
             primary_items, primary_error = await run_scrape(primary_scraper, primary_kind)
+            self._maybe_schedule_platform_backoff(platform, primary_error)
 
             fallback_used = False
             fallback_reason = ""
             fallback_items: list[Item] = []
 
             if primary_error:
-                fallback_reason = "primary_exception"
+                fallback_reason = "primary_malformed" if "parser_malformed" in primary_error else "primary_exception"
             elif (
                 len(primary_items) == 0
                 and bool(getattr(self.settings.settings, "fallback_on_empty_results", True))
@@ -1004,6 +1059,7 @@ class MonitorEngine:
                             fallback_used = True
                             self._increment_fallback_budget(platform)
                             fallback_items, fallback_error = await run_scrape(fallback_scraper, fallback_kind)
+                            self._maybe_schedule_platform_backoff(platform, fallback_error)
                             if fallback_error:
                                 self.logger.warning(
                                     f"Fallback scrape failed: platform={platform} "
@@ -1045,9 +1101,11 @@ class MonitorEngine:
         for platform in active_platforms:
             items_raw = platform_results.get(platform) or []
             raw_count = len(items_raw)
-            enrichment_budget = self.METADATA_ENRICHMENT_LIMIT if getattr(
-                self.settings.settings, "metadata_enrichment_enabled", False
-            ) else 0
+            metadata_enabled = bool(getattr(self.settings.settings, "metadata_enrichment_enabled", False))
+            conditional_enabled = bool(
+                getattr(self.settings.settings, "conditional_metadata_enrichment_enabled", True)
+            )
+            enrichment_budget = self.METADATA_ENRICHMENT_LIMIT if (metadata_enabled or conditional_enabled) else 0
 
             items_prefilter, used_prefilter = await self._enrich_items_with_budget(
                 platform,
@@ -1060,8 +1118,9 @@ class MonitorEngine:
                     kw,
                     blocked,
                 ),
+                force=conditional_enabled,
             )
-            enrichment_budget = max(0, enrichment_budget - used_prefilter)
+            enrichment_budget = max(0, enrichment_budget - used_prefilter) if metadata_enabled else 0
 
             # Apply per-keyword filters (price/location/exclude keywords)
             items: list[Item] = []
@@ -1173,6 +1232,7 @@ class MonitorEngine:
         self._cycle_platform_attempts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
         self._cycle_fallback_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
         self._cycle_danggeun_location_warning_keys = set()
+        self._enrichment_cache = {}
         blocked_sellers = self.db.get_blocked_sellers()
         self._cycle_blocked_set = {
             (row.get("seller_name"), row.get("platform")) for row in blocked_sellers if row.get("seller_name")

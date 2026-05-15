@@ -715,7 +715,8 @@ This section is the latest baseline and overrides older text in this document if
 ## 2026-04 Audit Remediation Update
 
 - Joonggonara parsing / enrichment:
-  - Naver result parsing now accepts only article links with numeric `articleid` values.
+  - Naver search uses the cafe article tab (`where=article&ssc=tab.cafe.all`) and accepts only strict Joonggonara cafe article URLs (`cafe.naver.com` / `m.cafe.naver.com`, `/joonggonara/{numeric_id}`).
+  - SmartStore, shopping, and ad URLs are rejected by host/path even when query strings contain `site:cafe.naver.com/joonggonara`.
   - noise anchors such as generic cafe links, bare URLs, time/video labels, placeholder text, and numeric-only anchors are filtered before item creation.
   - enrichment opens the article, waits for `iframe#cafe_main`, and parses seller/location/price/title from frame content before considering an outer-page fallback.
   - detail parsing now skips category/UI meta lines, supports `35만원`-style price text, and extracts station/dong-level transaction locations when present.
@@ -727,10 +728,12 @@ This section is the latest baseline and overrides older text in this document if
 - Search observability:
   - Danggeun and Bunjang now log candidate counts and drop reasons per search.
   - Playwright automatically writes anomaly diagnostics to `debug_output/` when candidate DOM/data exists but parsed results still collapse to zero.
+  - malformed batches are classified as `parser_malformed`, can trigger fallback, and write debug artifacts when DOM candidates existed.
 - Metadata enrichment flow:
   - enrichment uses a shared cap of `10` items per platform per keyword per cycle.
   - pass 1 runs only where seller/location is needed for filtering or blocked-seller checks.
   - pass 2 uses the remaining budget for kept items that still need seller/location for persistence and notifications.
+  - `conditional_metadata_enrichment_enabled` defaults to `true`, allowing targeted prefilter enrichment even when global metadata enrichment is off.
 - Packaging / regression coverage:
   - `used_market_notifier.spec` now collects the `aiohttp` dependency tree used by Bunjang detail enrichment.
   - regression fixtures cover Danggeun JSON-LD/card markup, Bunjang card markup plus detail API JSON, and Joonggonara search/iframe markup.
@@ -756,6 +759,25 @@ This section is the latest baseline and overrides older text in this document if
   - backup restore stops monitoring and exits after restore to avoid stale DB handles.
   - `.gitignore` includes `*.pre_restore` restore snapshots.
   - `used_market_notifier.spec` documents async lifecycle and standard-library additions.
+
+## 2026-05 Live Site Stabilization Update
+
+- Bunjang search parsing:
+  - current `a[href*='/products/']` product cards are primary, while legacy `a[data-pid]` cards remain supported.
+  - price-first card text is parsed as price/title/time instead of storing the price as the title.
+  - `AD`, price-only, count-only, and time tokens are filtered before title/location persistence.
+  - Playwright and Selenium Bunjang scrapers share the same pure parser helper and can merge detail API `product.name`, `product.price`, `product.saleStatus`, and `shop.name`.
+- Joonggonara search filtering:
+  - Naver search URL generation is pinned to the cafe article tab.
+  - result acceptance is strict host/path validation with `urlsplit()`, so shopping/smartstore/ad redirects are rejected before item creation.
+  - iframe/detail body fallback remains available for metadata enrichment.
+- Quality gate / operations:
+  - malformed primary results record `parser_malformed`, can use fallback, and write HTML/screenshot/summary artifacts under `debug_output/`.
+  - MonitorEngine keeps platform backoff for 403/429/CAPTCHA-like responses and a per-cycle TTL enrichment cache by article ID.
+  - `scripts/live_smoke.py --keyword 아이폰` is the opt-in live-site check; default unit tests stay network-free.
+- Settings:
+  - `conditional_metadata_enrichment_enabled` is exposed through `AppSettings`, settings normalization/load-save, `settings.example.json`, and the settings UI.
+  - Danggeun location normalization trims trailing separators/time tokens such as `행당동·`.
 
 ## 2026-03 Consistency Update (Type Safety + Encoding)
 
@@ -802,8 +824,9 @@ Use this section as the latest implementation baseline for March 25, 2026.
   - delivery failures and rate-limit events are read from `notification_delivery_log`
 - Metadata enrichment:
   - `metadata_enrichment_enabled` defaults to `False`
+  - `conditional_metadata_enrichment_enabled` defaults to `True`
   - enrichment is best-effort and limited to 10 missing-metadata items per platform per keyword per cycle
-  - enrichment now uses a targeted prefilter pass for location/seller-block decisions, then a postfilter pass for kept items still missing metadata
+  - enrichment uses a targeted prefilter pass for location/seller-block decisions, then a postfilter pass for kept items still missing metadata
   - supported paths may enrich seller/location from detail pages; unsupported paths no-op safely
 - Import/runtime safety:
   - the package remains importable in Playwright-only environments even if `selenium` is not installed
@@ -821,6 +844,6 @@ Use this section as the latest implementation baseline for March 25, 2026.
 
 ### Verification Baseline
 
-- `python -m unittest discover -s tests -q` -> `Ran 70 tests` / `OK`
+- `python -m unittest discover -s tests -q` -> `Ran 77 tests` / `OK`
 - in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available

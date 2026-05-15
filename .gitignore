@@ -18,6 +18,8 @@ ENV/
 .coverage
 htmlcov/
 .tox/
+playwright-report/
+test-results/
 
 # Build artifacts (PyInstaller etc.)
 build/
@@ -29,6 +31,12 @@ dist/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Secrets / machine-local environment
+.env
+.env.*
+!.env.example
+!.env.sample
 
 # App runtime / local data (do not commit)
 settings.json

@@ -141,6 +141,13 @@ class SettingsDialog(QDialog):
         self.metadata_enrichment_check.setStyleSheet("font-size: 10pt;")
         monitor_layout.addRow("", self.metadata_enrichment_check)
 
+        self.conditional_metadata_enrichment_check = QCheckBox("필터/차단 판단에 필요한 경우만 보강 수집")
+        self.conditional_metadata_enrichment_check.setToolTip(
+            "지역 필터 또는 차단 판매자 판별에 필요한 seller/location 정보가 비어 있을 때만 제한적으로 보강합니다."
+        )
+        self.conditional_metadata_enrichment_check.setStyleSheet("font-size: 10pt;")
+        monitor_layout.addRow("", self.conditional_metadata_enrichment_check)
+
         scraper_row = QHBoxLayout()
         self.scraper_mode_combo = QComboBox()
         self.scraper_mode_combo.addItem("Playwright 우선 + Selenium fallback", "playwright_primary")
@@ -497,6 +504,10 @@ class SettingsDialog(QDialog):
         self.interval_spin.setValue(s.check_interval_seconds)
         self.headless_check.setChecked(s.headless_mode)
         self.metadata_enrichment_check.setChecked(getattr(s, "metadata_enrichment_enabled", False))
+        if hasattr(self, "conditional_metadata_enrichment_check"):
+            self.conditional_metadata_enrichment_check.setChecked(
+                getattr(s, "conditional_metadata_enrichment_enabled", True)
+            )
         if hasattr(self, "scraper_mode_combo"):
             idx = self.scraper_mode_combo.findData(getattr(s, "scraper_mode", "playwright_primary"))
             self.scraper_mode_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -604,6 +615,8 @@ class SettingsDialog(QDialog):
         s.check_interval_seconds = self.interval_spin.value()
         s.headless_mode = self.headless_check.isChecked()
         s.metadata_enrichment_enabled = self.metadata_enrichment_check.isChecked()
+        if hasattr(self, "conditional_metadata_enrichment_check"):
+            s.conditional_metadata_enrichment_enabled = self.conditional_metadata_enrichment_check.isChecked()
         if hasattr(self, "scraper_mode_combo"):
             s.scraper_mode = self.scraper_mode_combo.currentData()
         if hasattr(self, "fallback_on_empty_check"):

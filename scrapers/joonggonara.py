@@ -149,7 +149,7 @@ class JoonggonaraScraper(SeleniumScraper):
         encoded = quote(keyword)
         url = (
             "https://search.naver.com/search.naver"
-            f"?where=article&query={encoded}%20site%3Acafe.naver.com%2Fjoonggonara"
+            f"?where=article&ssc=tab.cafe.all&query={encoded}%20site%3Acafe.naver.com%2Fjoonggonara"
         )
 
         self.logger.info(f"Visiting {url}")
