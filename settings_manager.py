@@ -280,6 +280,9 @@ class SettingsManager:
             'cleanup_exclude_noted': settings.cleanup_exclude_noted,
             'auto_tagging_enabled': settings.auto_tagging_enabled,
             'metadata_enrichment_enabled': getattr(settings, 'metadata_enrichment_enabled', False),
+            'conditional_metadata_enrichment_enabled': getattr(
+                settings, 'conditional_metadata_enrichment_enabled', True
+            ),
             'scraper_mode': getattr(settings, 'scraper_mode', 'playwright_primary'),
             'fallback_on_empty_results': getattr(settings, 'fallback_on_empty_results', True),
             'max_fallback_per_cycle': getattr(settings, 'max_fallback_per_cycle', 3),
@@ -455,6 +458,9 @@ class SettingsManager:
             cleanup_exclude_noted=self._as_bool(data, 'cleanup_exclude_noted', True),
             auto_tagging_enabled=self._as_bool(data, 'auto_tagging_enabled', True),
             metadata_enrichment_enabled=self._as_bool(data, 'metadata_enrichment_enabled', False),
+            conditional_metadata_enrichment_enabled=self._as_bool(
+                data, 'conditional_metadata_enrichment_enabled', True
+            ),
             scraper_mode=scraper_mode,
             fallback_on_empty_results=self._as_bool(data, 'fallback_on_empty_results', True),
             max_fallback_per_cycle=self._as_int(data, 'max_fallback_per_cycle', 3, min_value=0, max_value=50),

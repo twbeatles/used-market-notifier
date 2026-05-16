@@ -21,6 +21,7 @@ class TestSettingsRecovery(unittest.TestCase):
             valid_settings = {
                 "headless_mode": False,
                 "metadata_enrichment_enabled": True,
+                "conditional_metadata_enrichment_enabled": False,
                 "notifiers": [],
                 "keywords": [],
             }
@@ -32,6 +33,7 @@ class TestSettingsRecovery(unittest.TestCase):
 
             self.assertFalse(manager.settings.headless_mode)
             self.assertTrue(manager.settings.metadata_enrichment_enabled)
+            self.assertFalse(manager.settings.conditional_metadata_enrichment_enabled)
             self.assertTrue(manager.load_recovery_state["recovered_from_backup"])
             self.assertFalse(manager.load_recovery_state["used_default"])
             self.assertEqual(manager.load_recovery_state["recovered_backup_path"], backup_path)

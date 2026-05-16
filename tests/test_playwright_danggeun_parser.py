@@ -1,6 +1,6 @@
 import unittest
 
-from scrapers.marketplace_parsers import pick_seller_candidate
+from scrapers.marketplace_parsers import normalize_location_value, pick_seller_candidate
 from scrapers.playwright_danggeun import PlaywrightDanggeunScraper
 
 
@@ -38,6 +38,10 @@ class TestPlaywrightDanggeunParser(unittest.TestCase):
         self.assertEqual(title, "아이폰15프로 256기가 네츄럴티타늄 판매")
         self.assertEqual(price, "750,000원")
         self.assertEqual(location, "여의도동")
+
+    def test_location_normalization_trims_separator_and_time(self):
+        self.assertEqual(normalize_location_value("행당동·"), "행당동")
+        self.assertEqual(normalize_location_value("서울 강남구 역삼동 · 끌올 1일 전"), "서울 강남구 역삼동")
 
     def test_pick_seller_candidate_uses_danggeun_profile_aria_fallback(self):
         value = pick_seller_candidate(

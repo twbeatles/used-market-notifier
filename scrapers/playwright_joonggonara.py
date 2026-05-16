@@ -90,7 +90,7 @@ class PlaywrightJoonggonaraScraper(PlaywrightScraper):
         encoded = quote(keyword)
         url = (
             "https://search.naver.com/search.naver"
-            f"?where=article&query={encoded}%20site%3Acafe.naver.com%2Fjoonggonara"
+            f"?where=article&ssc=tab.cafe.all&query={encoded}%20site%3Acafe.naver.com%2Fjoonggonara"
         )
 
         ok = await self.navigate_with_retry(url, wait_until="domcontentloaded", max_retries=2)

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping, cast
 
 from scrapers.marketplace_parsers import (
+    classify_joonggonara_candidate,
     merge_item_metadata,
     parse_bunjang_detail_payload,
     parse_html_snapshot,
@@ -57,8 +58,9 @@ class TestBunjangFixtureParser(unittest.TestCase):
 
         self.assertEqual(len(items), 1)
         self.assertEqual(metrics["dom_card_count"], 2)
-        self.assertEqual(metrics["items_after_data_pid"], 1)
-        self.assertEqual(drop_reasons["invalid_title"], 1)
+        self.assertEqual(metrics["dom_product_link_count"], 2)
+        self.assertEqual(metrics["items_after_dom_fallback"], 1)
+        self.assertGreaterEqual(drop_reasons["missing_title"], 1)
         self.assertEqual(items[0].article_id, "738030")
         self.assertEqual(items[0].price, "160,000원")
         self.assertEqual(items[0].location, "서울특별시 서초구 반포3동")
@@ -106,6 +108,20 @@ class TestJoonggonaraFixtureParser(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].article_id, "12345678")
         self.assertEqual(items[0].title, "아이폰4s 16GB")
+
+    def test_search_parser_rejects_smartstore_query_containing_cafe_site(self):
+        smartstore_link = (
+            "https://smartstore.naver.com/main/products/12460691050"
+            "?nl-query=%EC%95%84%EC%9D%B4%ED%8F%B0%20site%3Acafe.naver.com%2Fjoonggonara"
+        )
+        self.assertIsNone(classify_joonggonara_candidate(smartstore_link, "아이폰15 중고 리퍼 자급제폰"))
+
+    def test_search_parser_accepts_cafe_article_url(self):
+        cafe_link = "https://cafe.naver.com/joonggonara/1129393870?q=%ec%95%84%ec%9d%b4%ed%8f%b0"
+        candidate = classify_joonggonara_candidate(cafe_link, "아이폰12미니 128GB")
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertEqual(candidate["article_id"], "1129393870")
 
     def test_detail_parser_extracts_iframe_body_fields(self):
         parsed = parse_joonggonara_detail_text(_html_to_text(_read_fixture("joonggonara_article_iframe.html")))

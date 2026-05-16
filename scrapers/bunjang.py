@@ -12,7 +12,10 @@ from .base import Item
 from .marketplace_parsers import (
     merge_item_metadata,
     normalize_location_value,
+    parse_bunjang_card_text,
     parse_bunjang_detail_payload,
+    parse_bunjang_search_items,
+    parse_html_snapshot,
     pick_seller_candidate,
 )
 from .selenium_base import By, EC, SeleniumScraper, WebDriverWait
@@ -35,7 +38,7 @@ class BunjangScraper(SeleniumScraper):
     # Invalid title patterns to filter out
     INVALID_TITLE_PATTERNS = [
         "배송비포함", "검수가능", "제목 없음", "No Title",
-        "판매완료", "예약중", "광고"
+        "판매완료", "예약중", "광고", "AD"
     ]
 
     def __init__(self, headless: bool = True, disable_images: bool = True,
@@ -73,41 +76,8 @@ class BunjangScraper(SeleniumScraper):
 
     @classmethod
     def _parse_card_text_fallback(cls, text: str) -> tuple[str, str, str | None]:
-        lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
-        cleaned = [line for line in lines if line not in cls.BADGE_LINES and line != "·"]
-        if not cleaned:
-            return "제목 없음", "N/A", None
-
-        title = cleaned[0]
-        price = "N/A"
-        price_idx = -1
-        for idx, line in enumerate(cleaned):
-            compact = line.replace(",", "").replace(" ", "")
-            if compact.isdigit():
-                price = f"{int(compact):,}원"
-                price_idx = idx
-                break
-            if compact.endswith("원") and compact[:-1].replace(",", "").isdigit():
-                digits = "".join(ch for ch in compact if ch.isdigit())
-                if digits:
-                    price = f"{int(digits):,}원"
-                    price_idx = idx
-                    break
-
-        if price_idx > 0:
-            title = cleaned[price_idx - 1]
-
-        location_text: str | None = None
-        for line in reversed(cleaned):
-            if line == title or cls._looks_like_time_line(line):
-                continue
-            compact = line.replace(",", "").replace(" ", "")
-            if compact.isdigit() or compact.endswith("원"):
-                continue
-            location_text = cls._normalize_location(line)
-            break
-
-        return title, price, location_text
+        parsed = parse_bunjang_card_text(text)
+        return parsed.title or "제목 없음", parsed.price, parsed.location
 
     @staticmethod
     def _extract_label_value(text: str, labels: tuple[str, ...]) -> str | None:
@@ -175,6 +145,7 @@ class BunjangScraper(SeleniumScraper):
     def _apply_detail_payload(item: Item, payload: dict[str, object]) -> Item:
         return merge_item_metadata(
             item,
+            title=payload.get("title"),
             seller=payload.get("seller"),
             location=payload.get("location"),
             price=payload.get("price"),
@@ -228,91 +199,23 @@ class BunjangScraper(SeleniumScraper):
 
         items = []
         try:
-            # Wait for items to load (using data-pid selector which targets legitimate product items)
+            # Wait for current product links or legacy data-pid cards.
             try:
                 WebDriverWait(self.driver, self.wait_time).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-pid]"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/products/'], a[data-pid]"))
                 )
             except Exception:
-                # If no items found, check if "No results" message exists or just return empty
-                self.logger.info("No items found on Bunjang (Timeout waiting for a[data-pid])")
+                self.logger.info("No items found on Bunjang (Timeout waiting for product links)")
                 return []
 
-            product_links = self.driver.find_elements(By.CSS_SELECTOR, "a[data-pid]")
-
-            for link_el in product_links:
-                try:
-                    # 1. Extract ID and Link
-                    pid = link_el.get_attribute("data-pid")
-                    if not pid:
-                        continue
-                    link = f"https://m.bunjang.co.kr/products/{pid}"
-
-                    raw_card_text = (link_el.text or "").strip()
-                    parsed_title, parsed_price, parsed_location = self._parse_card_text_fallback(raw_card_text)
-
-                    # 2. Extract Title (2nd div -> 1st div)
-                    try:
-                        title_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(2) > div:nth-of-type(1)")
-                        title = title_el.text.strip() if title_el else parsed_title
-                    except Exception:
-                        title = parsed_title
-
-                    # 3. Extract Price (2nd div -> 2nd div -> 1st div)
-                    price = "N/A"
-                    try:
-                        price_el = link_el.find_element(
-                            By.CSS_SELECTOR,
-                            "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)"
-                        )
-                        if price_el:
-                            price = self._normalize_price_text(price_el.text)
-                    except Exception:
-                        price = "N/A"
-                    if price == "N/A":
-                        price = parsed_price
-
-                    # 4. Extract Location (3rd div)
-                    location_value: str | None = None
-                    try:
-                        loc_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(3)")
-                        if loc_el:
-                            location_value = self._normalize_location(loc_el.text.strip())
-                    except Exception:
-                        pass
-                    if location_value is None:
-                        location_value = parsed_location
-
-                    # 5. Extract Image (1st div -> img)
-                    img_url = ""
-                    try:
-                        img_el = link_el.find_element(By.CSS_SELECTOR, "div:nth-of-type(1) img")
-                        if img_el:
-                            img_url = img_el.get_attribute("src")
-                    except Exception:
-                        pass
-
-                    # Use the validation method
-                    if not self._is_valid_title(title):
-                        continue
-
-                    item = Item(
-                        platform="bunjang",
-                        article_id=pid,
-                        title=title,
-                        price=price,
-                        link=link,
-                        keyword=keyword,
-                        thumbnail=img_url,
-                        seller=None,
-                        location=location_value,
-                    )
-                    items.append(item)
-
-                except Exception as e:
-                    # Skip individual item errors
-                    self.logger.debug(f"Error parsing item: {e}")
-                    continue
+            snapshot = parse_html_snapshot(self.driver.page_source)
+            items, metrics = parse_bunjang_search_items(snapshot, keyword)
+            self.logger.info(
+                f"Bunjang Selenium parse metrics keyword='{keyword}' "
+                f"dom_product_link_count={metrics.get('dom_product_link_count', 0)} "
+                f"dom_card_count={metrics.get('dom_card_count', 0)} "
+                f"items={len(items)} drop_reason_count={metrics.get('drop_reason_count', {})}"
+            )
 
         except Exception as e:
             self.logger.error(f"Error parsing Bunjang items: {e}")

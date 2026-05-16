@@ -9,6 +9,7 @@
   "confirm_link_open": true,
   "notifications_enabled": false,
   "metadata_enrichment_enabled": false,
+  "conditional_metadata_enrichment_enabled": true,
   "scraper_mode": "playwright_primary",
   "fallback_on_empty_results": true,
   "max_fallback_per_cycle": 3,

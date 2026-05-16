@@ -267,9 +267,13 @@ class PlaywrightScraper(ABC):
                 
                 if response and response.status >= 400:
                     self.logger.warning(f"HTTP {response.status} for {url}")
+                    if response.status in {403, 429}:
+                        self._last_failure_kind = f"http_{response.status}"
                     if self.debugger:
                         self.debugger.log_warning(f"HTTP {response.status}")
                         await self.debugger.take_screenshot(page, f"http_error_{response.status}")
+                    if response.status in {403, 429}:
+                        return False
                 
                 if self.debug_mode and self.debugger:
                     await self.debugger.take_screenshot(page, "navigation_complete")
@@ -389,6 +393,9 @@ class PlaywrightScraper(ABC):
         
         try:
             items = await self.search(keyword, location)
+            if await self._page_looks_blocked():
+                self._last_failure_kind = "captcha_or_blocked"
+                return []
             self._last_failure_kind = None if items else "parser_zero"
             
             if self.debugger:
@@ -409,6 +416,24 @@ class PlaywrightScraper(ABC):
                 await capture_on_error(self._page, self.debugger, e, f"search_{keyword}")
                 await self.debugger.finalize("failed")
             raise
+
+    async def _page_looks_blocked(self) -> bool:
+        if self._page is None:
+            return False
+        try:
+            text = (await self._page.locator("body").inner_text(timeout=1000) or "").lower()
+        except Exception:
+            return False
+        indicators = (
+            "captcha",
+            "보안문자",
+            "자동입력",
+            "비정상적인 접근",
+            "잠시 후 다시 시도",
+            "access denied",
+            "too many requests",
+        )
+        return any(token in text for token in indicators)
     
     async def wait_and_check(
         self, 
