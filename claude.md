@@ -47,18 +47,18 @@ graph TD
 
 ### 핵심 클래스 상세
 
-#### 1. MonitorEngine (`monitor_engine.py`)
+#### 1. MonitorEngine (`monitor_engine.py` facade, canonical: `engine/`)
 
 ```python
 class MonitorEngine:
     """핵심 모니터링 엔진
-    
+
     책임:
     - 키워드별 주기적 스크래핑
     - 중복 체크 및 새 매물 감지
     - 가격 변동 추적
     - 알림 발송 조율
-    
+
     콜백 시그니처:
     - on_status_update: Callable[[str], None]
     - on_new_item: Callable[[Item], None]
@@ -77,12 +77,12 @@ class MonitorEngine:
 | `start()` / `stop()` | 비동기 모니터링 루프 제어 |
 | `send_notifications(item)` | 모든 활성 채널로 알림 전송 |
 
-#### 2. DatabaseManager (`db.py`)
+#### 2. DatabaseManager (`db.py` facade, canonical: `storage/`)
 
 ```python
 class DatabaseManager:
     """SQLite 데이터베이스 관리자 (Thread Safe)
-    
+
     테이블 구조:
     - listings: 매물 정보 (platform, article_id, title, price, ...)
     - price_history: 가격 변동 이력
@@ -110,7 +110,7 @@ class DatabaseManager:
 ```python
 class AutoTagger:
     """제목 분석 기반 자동 태깅 시스템
-    
+
     기본 규칙:
     - A급: A급, 에이급, 상태좋음, 최상, S급
     - 풀박스: 풀박스, 미개봉, 새제품
@@ -135,7 +135,7 @@ add_rule(name, keywords, color, icon)      # 규칙 추가
 ```python
 class MessageTemplateManager:
     """판매자 메시지 템플릿 시스템
-    
+
     변수:
     - {title}: 상품 제목
     - {price}: 판매 가격
@@ -161,8 +161,26 @@ class MessageTemplateManager:
 > 참고: 현재 앱은 `scraper_mode` 설정에 따라 Playwright/Selenium 이중 엔진을 사용합니다.
 > 기본값은 `playwright_primary`이며, Playwright 런타임이 없으면 Selenium으로 자동 강등됩니다.
 > 당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터이며, 요청 지역 정확도를 보장하지 않습니다.
+> 가격문의, N/A 등 가격 미상 매물은 누락 방지를 위해 가격 필터를 통과합니다.
 
 ## 📁 디렉토리별 상세 역할
+
+### 2026-06 패키지 분할 기준
+
+기존 public import 경로는 호환 facade로 유지됩니다. 실제 구현을 찾을 때는 아래 canonical 패키지를 우선 확인하세요.
+
+| 기존 경로 | 현재 canonical 구현 |
+|----------|---------------------|
+| `monitor_engine.py` | `engine/monitor.py`, `engine/search_flow.py`, `engine/runtime.py`, `engine/notification_runtime.py`, `engine/metadata.py`, `engine/scrapers.py` |
+| `db.py` | `storage/database.py`, `storage/schema.py`, `storage/listings.py`, `storage/stats.py`, `storage/favorites.py`, `storage/notifications.py`, `storage/filters.py`, `storage/maintenance.py` |
+| `settings_manager.py` | `app_settings/manager.py`, `app_settings/serialization.py`, `app_settings/recovery.py`, `app_settings/presets.py` |
+| `scrapers/marketplace_parsers.py` | `scrapers/parsers/html_snapshot.py`, `normalization.py`, `metadata.py`, `quality.py`, `urls.py`, `bunjang.py`, `joonggonara.py` |
+| `gui/settings_dialog.py` | `gui/settings_panels/dialog.py`, `workers.py`, `editors.py` |
+| `gui/keyword_manager.py` | `gui/widgets/keyword/cards.py`, `dialog.py`, `widget.py` |
+| `gui/listings_widget.py` | `gui/widgets/listings/browser.py` |
+| `gui/stats_widget.py` | `gui/widgets/stats/dashboard.py` |
+
+패키지 분할은 기능 변경이 아니라 책임 분리입니다. 기존 `from db import DatabaseManager`, `from monitor_engine import MonitorEngine`, `from settings_manager import SettingsManager`, `from scrapers.marketplace_parsers import ...` import는 계속 지원됩니다.
 
 ### `/scrapers` - 플랫폼 스크래퍼
 
@@ -314,10 +332,10 @@ CREATE TABLE price_history (...)
 # ✅ 타입 힌트 필수
 def add_listing(self, item: Item) -> tuple[bool, dict | None, int]:
     """매물 추가 또는 업데이트
-    
+
     Args:
         item: 추가할 매물 객체
-        
+
     Returns:
         (is_new, price_change_info, listing_id)
     """
@@ -342,7 +360,7 @@ class MonitorThread(QThread):
     new_item = pyqtSignal(object)
     price_change = pyqtSignal(object, str, str)
     error = pyqtSignal(str)
-    
+
     def run(self):
         # 백그라운드 작업
         self.status_update.emit("검색 중...")
@@ -403,7 +421,7 @@ CATPPUCCIN = {
     'surface0': '#313244',
     'surface1': '#45475a',
     'surface2': '#585b70',
-    
+
     # 텍스트
     'text': '#cdd6f4',
     'subtext1': '#bac2de',
@@ -411,7 +429,7 @@ CATPPUCCIN = {
     'overlay2': '#9399b2',
     'overlay1': '#7f849c',
     'overlay0': '#6c7086',
-    
+
     # 강조색
     'rosewater': '#f5e0dc',
     'flamingo': '#f2cdcd',
@@ -457,7 +475,7 @@ QFrame#glassCard:hover {
 
 /* 그라디언트 버튼 */
 QPushButton {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #89b4fa, stop:1 #74c7ec);
     color: #1e1e2e;
     border: none;
@@ -496,7 +514,7 @@ sqlite3 listings.db
 
 ```sql
 -- 최근 매물
-SELECT id, platform, title, price, created_at 
+SELECT id, platform, title, price, created_at
 FROM listings ORDER BY created_at DESC LIMIT 10;
 
 -- 가격 변동 내역
@@ -506,9 +524,9 @@ JOIN listings l ON ph.listing_id = l.id
 ORDER BY ph.changed_at DESC;
 
 -- 플랫폼별 통계
-SELECT platform, COUNT(*) as count, 
+SELECT platform, COUNT(*) as count,
        AVG(CAST(REPLACE(REPLACE(price, ',', ''), '원', '') AS INTEGER)) as avg_price
-FROM listings 
+FROM listings
 WHERE price NOT LIKE '%만원%'
 GROUP BY platform;
 
@@ -585,9 +603,9 @@ SALE_STATUS = {'for_sale': '판매중', 'reserved': '예약중', 'sold': '판매
 ### 새 설정 항목 추가
 
 1. `models.py`의 `AppSettings`에 필드 추가
-2. `settings_manager.py`의 `_to_dict()` 업데이트
-3. `settings_manager.py`의 `_from_dict()` 업데이트 (기본값 처리)
-4. `gui/settings_dialog.py`에 UI 추가
+2. `app_settings/serialization.py`의 직렬화/역직렬화 업데이트
+3. `app_settings/recovery.py`의 복구/정규화 경로 확인
+4. `gui/settings_panels/dialog.py` 또는 관련 worker/editor에 UI 추가
 
 ### 새 알림 채널 추가
 
@@ -595,7 +613,7 @@ SALE_STATUS = {'for_sale': '판매중', 'reserved': '예약중', 'sold': '판매
 2. `BaseNotifier` 상속
 3. `send_message()`, `send_item()`, `send_price_change()` 구현
 4. `notifiers/__init__.py`에 export 추가
-5. `monitor_engine.py`의 `initialize_notifiers()` 업데이트
+5. `engine/notification_runtime.py`의 `initialize_notifiers()` 업데이트
 6. `models.py`에 `NotificationType` 추가
 7. 설정 UI 추가
 
@@ -618,7 +636,7 @@ SALE_STATUS = {'for_sale': '판매중', 'reserved': '예약중', 'sold': '판매
 ## 📝 자주 묻는 질문
 
 ### Q: 스크래핑이 안 될 때?
-A: 
+A:
 1. 네트워크 연결 확인
 2. Headless 모드 비활성화 (`설정 > 일반 > 브라우저 표시`)
 3. `scrapers/debug.py` 활용하여 스크린샷 저장
@@ -635,7 +653,7 @@ A:
 
 ### Q: UI가 느릴 때?
 A:
-1. DB 인덱스 확인 (`db.py`의 `create_tables()`)
+1. DB 인덱스 확인 (`storage/schema.py`의 schema/migration 경로)
 2. 페이지네이션 사용 확인 (`DEFAULT_PAGE_SIZE`)
 3. 캐시 TTL 조정 (`DB_CACHE_TTL_SECONDS`)
 4. 대용량 테이블 정리 (`설정 > 백업/정리`)
@@ -779,6 +797,20 @@ This section is the latest baseline and overrides older text in this document if
   - `conditional_metadata_enrichment_enabled` is exposed through `AppSettings`, settings normalization/load-save, `settings.example.json`, and the settings UI.
   - Danggeun location normalization trims trailing separators/time tokens such as `행당동·`.
 
+## 2026-06 Package Split + Audit Remediation Update
+
+- Large modules were split into SOLID-oriented packages while keeping legacy import facades stable.
+- Canonical implementation paths are now `engine/`, `storage/`, `app_settings/`, `scrapers/parsers/`, `gui/settings_panels/`, and `gui/widgets/*`.
+- `used_market_notifier.spec` explicitly collects the new local split packages for PyInstaller onefile builds.
+- `.codegraph/` is a workspace-local analysis index and must stay ignored.
+- Implemented audit remediations:
+  - notification shutdown handles `asyncio.CancelledError` and still reaches scraper/executor cleanup.
+  - backup restore validates ZIP entries against manifest/basename allowlists and blocks path traversal.
+  - startup system notifications use the same enabled/schedule policy as new-item and price-change notifications.
+  - all external GUI link openings use the shared `gui.link_utils.open_external_url()` policy.
+  - keyword editor rejects positive `min_price > max_price` ranges.
+  - live smoke supports `--summary-file PATH`.
+
 ## 2026-03 Consistency Update (Type Safety + Encoding)
 
 - Repository type baseline is pinned via `pyrightconfig.json`:
@@ -844,6 +876,6 @@ Use this section as the latest implementation baseline for March 25, 2026.
 
 ### Verification Baseline
 
-- `python -m unittest discover -s tests -q` -> `Ran 77 tests` / `OK`
+- `python -m unittest discover -s tests -q` -> `Ran 91 tests` / `OK`
 - in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available

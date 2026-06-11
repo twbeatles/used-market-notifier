@@ -39,25 +39,44 @@
 ```
 used_market_notifier/
 ├── main.py                 # 애플리케이션 진입점 (GUI/CLI 모드)
-├── monitor_engine.py       # 핵심 모니터링 엔진
-├── db.py                   # SQLite 데이터베이스 관리자
+├── monitor_engine.py       # 호환 facade -> engine.monitor.MonitorEngine
+├── db.py                   # 호환 facade -> storage.database.DatabaseManager
 ├── models.py               # 데이터 모델 (dataclass 기반)
-├── settings_manager.py     # JSON 기반 설정 관리
+├── settings_manager.py     # 호환 facade -> app_settings.manager.SettingsManager
 ├── constants.py            # 전역 상수 정의
 ├── auto_tagger.py          # 자동 태깅 시스템
 ├── backup_manager.py       # 백업/복원 관리
 ├── export_manager.py       # CSV/Excel 내보내기
 ├── message_templates.py    # 판매자 메시지 템플릿
+├── engine/                 # 모니터링 엔진 내부 구현
+│   ├── monitor.py
+│   ├── scrapers.py
+│   ├── search_flow.py
+│   ├── metadata.py
+│   ├── notification_runtime.py
+│   └── runtime.py
+├── storage/                # SQLite 저장소 내부 구현
+│   ├── database.py
+│   ├── schema.py
+│   ├── listings.py
+│   ├── stats.py
+│   ├── favorites.py
+│   ├── notifications.py
+│   ├── filters.py
+│   └── maintenance.py
+├── app_settings/           # 설정 직렬화/복구/preset 구현
 ├── gui/                    # PyQt6 UI 컴포넌트
 │   ├── main_window.py      # 메인 윈도우
 │   ├── styles.py           # Catppuccin 테마 스타일시트
-│   ├── keyword_manager.py  # 키워드 관리 위젯
-│   ├── settings_dialog.py  # 설정 다이얼로그
-│   ├── listings_widget.py  # 매물 목록 브라우저
+│   ├── keyword_manager.py  # 호환 facade -> gui.widgets.keyword
+│   ├── settings_dialog.py  # 호환 facade -> gui.settings_panels
+│   ├── listings_widget.py  # 호환 facade -> gui.widgets.listings
 │   ├── favorites_widget.py # 즐겨찾기 관리
-│   ├── stats_widget.py     # 통계 대시보드
+│   ├── stats_widget.py     # 호환 facade -> gui.widgets.stats
 │   ├── components.py       # 재사용 UI 컴포넌트
 │   ├── charts.py           # 차트 위젯
+│   ├── settings_panels/    # 설정 dialog/workers/editors
+│   ├── widgets/            # keyword/listings/stats 내부 위젯
 │   └── ...
 ├── scrapers/               # 플랫폼별 스크래퍼
 │   ├── base.py             # 추상 베이스 클래스
@@ -66,7 +85,9 @@ used_market_notifier/
 │   ├── debug.py            # 스크래핑 디버거
 │   ├── danggeun.py         # 당근마켓
 │   ├── bunjang.py          # 번개장터
-│   └── joonggonara.py      # 중고나라
+│   ├── joonggonara.py      # 중고나라
+│   ├── marketplace_parsers.py # 호환 facade -> scrapers.parsers
+│   └── parsers/            # HTML snapshot/정규화/품질/플랫폼 파서
 └── notifiers/              # 알림 모듈
     ├── base.py             # 추상 베이스 클래스
     ├── telegram_notifier.py
@@ -79,12 +100,12 @@ used_market_notifier/
 ```
 [MonitorEngine]
       │
-      ├── 1. settings_manager.py → 키워드/설정 로드
+      ├── 1. app_settings/manager.py → 키워드/설정 로드
       │
       ├── 2. scrapers/*.py → 플랫폼별 검색 실행
       │   └── stealth.py → 봇 탐지 우회
       │
-      ├── 3. db.py → 중복 체크, 저장, 가격 변동 추적
+      ├── 3. storage/database.py → 중복 체크, 저장, 가격 변동 추적
       │   └── auto_tagger.py → 자동 태깅
       │
       ├── 4. notifiers/*.py → 알림 전송
@@ -182,7 +203,7 @@ list_backups()            # 백업 목록 조회
 
 **기본 템플릿:**
 - 기본 문의
-- 가격 문의  
+- 가격 문의
 - 직거래 문의
 - 상태 문의
 - 구성품 문의
@@ -260,14 +281,14 @@ CATPPUCCIN = {
    - **이유**: 수정 시 플랫폼 차단 위험
 
 3. **데이터베이스 스키마**
-   - `db.py`의 `create_tables()` 메서드
+   - `storage/schema.py`의 schema/migration 경로
    - **이유**: 기존 데이터 호환성
 
 ### ⚡ 수정 시 주의 영역
 
 | 영역 | 주의사항 |
 |------|----------|
-| `monitor_engine.py` | 비동기 흐름, QThread 상호작용 |
+| `engine/` + `monitor_engine.py` facade | 비동기 흐름, QThread 상호작용 |
 | GUI 시그널 | 메인 스레드에서만 UI 업데이트 |
 | JSON 직렬화 | 기존 설정 파일 호환성 |
 | 알림 메시지 | 이모지, 한글 인코딩 |
@@ -281,7 +302,7 @@ CATPPUCCIN = {
 # ✅ 타입 힌트 필수
 def add_listing(self, item: Item) -> tuple[bool, dict | None, int]:
     """매물 추가 또는 업데이트
-    
+
     Returns:
         (is_new, price_change_info, listing_id)
     """
@@ -409,8 +430,8 @@ SELECT platform, COUNT(*) FROM listings GROUP BY platform;
 
 ### 새 기능 추가 체크리스트
 - [ ] `models.py`에 데이터 클래스 추가
-- [ ] `settings_manager.py`에 설정 항목 추가
-- [ ] `db.py`에 테이블/쿼리 추가
+- [ ] `models.py`, `app_settings/serialization.py`, `app_settings/recovery.py`에 설정 항목 추가
+- [ ] `storage/schema.py` 및 관련 `storage/*` mixin에 테이블/쿼리 추가
 - [ ] GUI 컴포넌트 구현
 - [ ] `gui/styles.py` 스타일 추가
 - [ ] 테스트 및 검증
@@ -423,7 +444,7 @@ from models import Item
 class NewPlatformScraper(PlaywrightScraper):
     PLATFORM = "new_platform"
     BASE_URL = "https://example.com"
-    
+
     async def search(self, keyword: str, location: str = None) -> list[Item]:
         # 1. 검색 페이지 이동
         # 2. 결과 파싱
@@ -563,6 +584,25 @@ This section is the source of truth for current behavior and supersedes older Se
   - `conditional_metadata_enrichment_enabled` is exposed through `AppSettings`, settings normalization/load-save, `settings.example.json`, and the settings UI.
   - Danggeun location normalization trims trailing separators/time tokens such as `행당동·`.
 
+## 2026-06 Package Split + Audit Remediation Update
+
+- 기존 public import는 유지하되 실제 구현은 책임별 패키지로 분할되었습니다.
+- Canonical 구현 위치:
+  - `engine/`: 모니터링 lifecycle, 검색 흐름, 알림 runtime/policy, scraper lifecycle, metadata enrichment
+  - `storage/`: schema/migration, listing persistence/query, statistics, favorites/notes, notification logs, seller filters, maintenance
+  - `app_settings/`: settings serialization, recovery, presets
+  - `scrapers/parsers/`: HTML snapshot, normalization, metadata merge, quality gates, URL validation, platform parsers
+  - `gui/settings_panels/`, `gui/widgets/*`: 대형 GUI 파일의 worker/dialog/widget 구현
+- `used_market_notifier.spec`는 새 local split packages를 명시 수집합니다.
+- `.codegraph/`는 로컬 CodeGraph 인덱스이며 Git에 포함하지 않습니다.
+- 구현 완료된 감사 개선:
+  - shutdown 중 notification worker `CancelledError` 처리
+  - backup ZIP restore manifest/basename allowlist 및 path traversal 차단
+  - startup system notification의 전역 enabled/schedule 정책 일관화
+  - 모든 외부 링크 열기의 shared `http`/`https` allowlist + 확인 정책 적용
+  - 키워드 가격 범위 `min_price > max_price` 저장 차단
+  - live smoke `--summary-file PATH` 지원
+
 ## 2026-03 Consistency Update (Type Safety + Encoding)
 
 - Repository type baseline is fixed by `pyrightconfig.json`:
@@ -610,6 +650,6 @@ Treat this as the current baseline for the March 25, 2026 stabilization pass.
 
 ### Verification Baseline
 
-- `python -m unittest discover -s tests -q` -> `Ran 77 tests` / `OK`
+- `python -m unittest discover -s tests -q` -> `Ran 91 tests` / `OK`
 - in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available

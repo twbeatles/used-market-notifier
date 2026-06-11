@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QColor, QDesktopServices
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -18,6 +18,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from .link_utils import open_external_url
 
 
 class NotificationHistoryWidget(QWidget):
@@ -193,14 +195,4 @@ class NotificationHistoryWidget(QWidget):
         if not url:
             return
 
-        if hasattr(self.engine, "settings") and self.engine.settings.settings.confirm_link_open:
-            confirm = QMessageBox.question(
-                self,
-                "링크 열기",
-                f"다음 링크로 이동할까요?\n{url}",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if confirm != QMessageBox.StandardButton.Yes:
-                return
-
-        QDesktopServices.openUrl(QUrl(str(url)))
+        open_external_url(self, self.engine, url, title_item.text())

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from db import DatabaseManager
-from models import AppSettings, Item
+from models import AppSettings, Item, NotificationSchedule
 from monitor_engine import MonitorEngine
 
 
@@ -16,10 +16,12 @@ class _SettingsWrapper:
 class TelegramNotifier:
     def __init__(self):
         self.calls = 0
+        self.message_calls = 0
         self._last_delivery_result = {"success": False, "error_message": None, "rate_limited": False}
 
     async def send_message(self, text: str) -> bool:
         _ = text
+        self.message_calls += 1
         self._last_delivery_result = {"success": True, "error_message": None, "rate_limited": False}
         return True
 
@@ -81,6 +83,97 @@ class AlwaysFailNotifier(DiscordNotifier):
 
 
 class TestNotificationQueueFlow(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_notification_worker_does_not_escape_drain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(os.path.join(tmp, "test.db"))
+            engine = MonitorEngine(_SettingsWrapper(), db=db)
+            engine._notification_queue = asyncio.Queue()
+            engine._stop_event = asyncio.Event()
+
+            async def _never_finishes():
+                await asyncio.sleep(60)
+
+            engine._notification_worker_task = asyncio.create_task(_never_finishes())
+            try:
+                await asyncio.wait_for(engine._drain_notification_queue(), timeout=2.0)
+            finally:
+                await engine.close()
+                db.close()
+
+            self.assertIsNone(engine._notification_worker_task)
+            self.assertIsNone(engine._notification_queue)
+
+    async def test_start_system_message_respects_disabled_notifications(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(os.path.join(tmp, "test.db"))
+            engine: MonitorEngine | None = None
+            try:
+                settings = _SettingsWrapper()
+                settings.settings.notifications_enabled = False
+                engine = MonitorEngine(settings, db=db)
+                notifier = TelegramNotifier()
+
+                async def _initialize_scrapers():
+                    engine.primary_scrapers["danggeun"] = object()  # type: ignore[assignment]
+
+                def _initialize_notifiers():
+                    engine.notifiers = [notifier]
+
+                async def _run_cycle():
+                    engine.running = False
+                    if engine._stop_event is not None:
+                        engine._stop_event.set()
+                    return 0
+
+                engine.initialize_scrapers = _initialize_scrapers  # type: ignore[method-assign]
+                engine.initialize_notifiers = _initialize_notifiers  # type: ignore[method-assign]
+                engine.run_cycle = _run_cycle  # type: ignore[method-assign]
+
+                await engine.start()
+                self.assertEqual(notifier.message_calls, 0)
+            finally:
+                if engine is not None:
+                    await engine.close()
+                db.close()
+
+    async def test_start_system_message_respects_inactive_schedule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(os.path.join(tmp, "test.db"))
+            engine: MonitorEngine | None = None
+            try:
+                settings = _SettingsWrapper()
+                settings.settings.notification_schedule = NotificationSchedule(
+                    enabled=True,
+                    start_hour=23,
+                    end_hour=23,
+                    days=[0, 1, 2, 3, 4, 5, 6],
+                )
+                engine = MonitorEngine(settings, db=db)
+                notifier = TelegramNotifier()
+
+                async def _initialize_scrapers():
+                    engine.primary_scrapers["danggeun"] = object()  # type: ignore[assignment]
+
+                def _initialize_notifiers():
+                    engine.notifiers = [notifier]
+
+                async def _run_cycle():
+                    engine.running = False
+                    if engine._stop_event is not None:
+                        engine._stop_event.set()
+                    return 0
+
+                engine.initialize_scrapers = _initialize_scrapers  # type: ignore[method-assign]
+                engine.initialize_notifiers = _initialize_notifiers  # type: ignore[method-assign]
+                engine.run_cycle = _run_cycle  # type: ignore[method-assign]
+
+                await engine.start()
+                self.assertEqual(notifier.message_calls, 0)
+            finally:
+                if engine is not None:
+                    await engine.close()
+                db.close()
+
     async def test_partial_channel_retry_and_delivery_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = os.path.join(tmp, "test.db")

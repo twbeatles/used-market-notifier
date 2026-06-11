@@ -41,6 +41,12 @@ def _urls(keyword: str) -> dict[str, str]:
     }
 
 
+def write_summary_file(results: list[dict[str, object]], summary_file: str | Path) -> None:
+    path = Path(summary_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 async def _inspect_platform(page, platform: str, url: str, keyword: str, save_artifacts: bool) -> dict[str, object]:
     response = await page.goto(url, wait_until="domcontentloaded", timeout=25_000)
     await page.wait_for_timeout(2500)
@@ -96,6 +102,7 @@ async def _main() -> int:
     parser.add_argument("--keyword", default="아이폰")
     parser.add_argument("--platform", choices=["all", "danggeun", "bunjang", "joonggonara"], default="all")
     parser.add_argument("--no-artifacts", action="store_true", help="Do not write debug_output artifacts on failure.")
+    parser.add_argument("--summary-file", help="Write the JSON smoke summary to this path.")
     args = parser.parse_args()
 
     urls = _urls(args.keyword)
@@ -111,6 +118,9 @@ async def _main() -> int:
                 await _inspect_platform(page, platform, urls[platform], args.keyword, not args.no_artifacts)
             )
         await browser.close()
+
+    if args.summary_file:
+        write_summary_file(results, args.summary_file)
 
     print(json.dumps(results, ensure_ascii=False, indent=2))
     return 0 if all(result["ok"] for result in results) else 1

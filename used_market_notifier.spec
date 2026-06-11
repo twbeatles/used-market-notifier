@@ -1,4 +1,4 @@
-﻿# -*- mode: python ; coding: utf-8 -*-
+# -*- mode: python ; coding: utf-8 -*-
 """
 UsedMarketNotifier - optimized onefile build configuration.
 
@@ -37,6 +37,12 @@ Notes:
   quality gates, conditional metadata enrichment, platform backoff, and an
   enrichment TTL cache. These are source/runtime behavior changes using already
   collected modules and standard-library helpers.
+- The 2026-06 package split keeps legacy import facades (`db.py`,
+  `monitor_engine.py`, `settings_manager.py`, `scrapers/marketplace_parsers.py`,
+  and major `gui/*_widget.py` modules) while moving canonical implementations
+  into `storage/`, `engine/`, `app_settings/`, `scrapers/parsers/`,
+  `gui/settings_panels/`, and `gui/widgets/`. The local packages are collected
+  explicitly below so onefile builds do not depend on facade-only discovery.
 - `scripts/live_smoke.py` is an opt-in development diagnostic for live site
   structure checks. It is not imported by the app entrypoint and is intentionally
   not bundled into the onefile executable.
@@ -126,6 +132,21 @@ except Exception:
 
 # aiohttp and its helper packages may resolve parts of the stack lazily.
 for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", "propcache"):
+    try:
+        hiddenimports += collect_submodules(package_name)
+    except Exception:
+        pass
+
+# Local split packages are imported through compatibility facades in normal
+# source runs. Collect them explicitly for packaging resilience.
+for package_name in (
+    "app_settings",
+    "engine",
+    "storage",
+    "scrapers.parsers",
+    "gui.settings_panels",
+    "gui.widgets",
+):
     try:
         hiddenimports += collect_submodules(package_name)
     except Exception:

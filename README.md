@@ -163,6 +163,7 @@ python main.py --cli
 2. 검색 키워드 입력 (예: "맥북 프로 M2")
 3. 옵션 설정:
    - **가격 범위**: 최소/최대 가격
+     - `가격문의`, `N/A` 등 가격 미상 매물은 누락 방지를 위해 가격 필터를 통과합니다.
    - **지역**: 당근마켓 best-effort 지역 필터
    - **제외 키워드**: "부품", "고장" 등
    - **플랫폼**: 검색할 플랫폼 선택
@@ -225,28 +226,49 @@ python main.py --cli
 ```
 used_market_notifier/
 ├── main.py              # 진입점 (GUI/CLI 모드)
-├── monitor_engine.py    # 핵심 모니터링 엔진
-├── db.py                # SQLite 데이터베이스
-├── settings_manager.py  # 설정 관리
+├── monitor_engine.py    # 호환 facade -> engine.monitor.MonitorEngine
+├── db.py                # 호환 facade -> storage.database.DatabaseManager
+├── settings_manager.py  # 호환 facade -> app_settings.manager.SettingsManager
 ├── models.py            # 데이터 모델
 ├── constants.py         # 상수 정의
 ├── auto_tagger.py       # 자동 태깅
 ├── backup_manager.py    # 백업/복원
 ├── export_manager.py    # 내보내기
 ├── message_templates.py # 메시지 템플릿
+├── engine/              # 모니터링 엔진 내부 구현
+│   ├── monitor.py       # MonitorEngine 조립
+│   ├── scrapers.py      # 스크래퍼 수명주기/폴백 생성
+│   ├── search_flow.py   # 검색/필터/저장 흐름
+│   ├── metadata.py      # 판매자/지역 메타데이터 보강
+│   ├── notification_runtime.py
+│   └── runtime.py       # start/stop/close 루프
+├── storage/             # SQLite 저장소 구현
+│   ├── database.py      # DatabaseManager 조립
+│   ├── schema.py        # 스키마/마이그레이션
+│   ├── listings.py      # 매물 저장/조회
+│   ├── stats.py         # 통계/대시보드
+│   ├── favorites.py     # 즐겨찾기/메모
+│   ├── notifications.py # 알림 로그
+│   ├── filters.py       # 판매자 차단
+│   └── maintenance.py   # 정리/내보내기 보조
+├── app_settings/        # 설정 직렬화/복구/preset 구현
 ├── gui/                 # UI 컴포넌트
 │   ├── main_window.py   # 메인 윈도우
 │   ├── styles.py        # 테마 스타일시트
-│   ├── keyword_manager.py
-│   ├── settings_dialog.py
-│   ├── listings_widget.py
+│   ├── keyword_manager.py   # 호환 facade -> gui.widgets.keyword
+│   ├── settings_dialog.py   # 호환 facade -> gui.settings_panels
+│   ├── listings_widget.py   # 호환 facade -> gui.widgets.listings
 │   ├── favorites_widget.py
-│   ├── stats_widget.py
+│   ├── stats_widget.py      # 호환 facade -> gui.widgets.stats
+│   ├── settings_panels/     # 설정 dialog/workers/editors
+│   ├── widgets/             # keyword/listings/stats 내부 위젯
 │   └── ...
 ├── scrapers/            # 플랫폼 스크래퍼 (Playwright 우선 + Selenium 폴백)
 │   ├── danggeun.py      # 당근마켓
 │   ├── bunjang.py       # 번개장터
 │   ├── joonggonara.py   # 중고나라
+│   ├── marketplace_parsers.py # 호환 facade -> scrapers.parsers
+│   ├── parsers/         # HTML snapshot/정규화/품질/플랫폼 파서
 │   ├── playwright_danggeun.py
 │   ├── playwright_bunjang.py
 │   ├── playwright_joonggonara.py
@@ -576,6 +598,32 @@ This section is the current source of truth and supersedes older statements in t
    - `primary_engine`, `primary_count`, `fallback_used`, `fallback_count`, `fallback_reason`, `elapsed_ms`
 4. Confirm new listings are persisted in DB.
 
+## 2026-06 Package Split + Audit Remediation Update
+
+- Compatibility facades are preserved for existing imports:
+  - `db.py` -> `storage.database.DatabaseManager`
+  - `monitor_engine.py` -> `engine.monitor.MonitorEngine`
+  - `settings_manager.py` -> `app_settings.manager.SettingsManager`
+  - `scrapers/marketplace_parsers.py` -> `scrapers.parsers`
+  - `gui/keyword_manager.py`, `gui/listings_widget.py`, `gui/stats_widget.py`, `gui/settings_dialog.py` -> split GUI packages.
+- New canonical implementation packages:
+  - `storage/` for schema, listings, statistics, favorites/notes, notification logs, seller filters, and maintenance.
+  - `engine/` for scraper lifecycle, metadata enrichment, notification policy/runtime, search flow, and start/stop lifecycle.
+  - `app_settings/` for settings normalization, serialization, recovery, and preset operations.
+  - `scrapers/parsers/` for HTML snapshots, normalization, URL validation, quality gates, and platform-specific parser helpers.
+  - `gui/settings_panels/` and `gui/widgets/*` for dialog workers/editors and large widget internals.
+- Audit remediation status:
+  - notification worker cancellation is handled explicitly during shutdown.
+  - backup restore uses manifest/basename allowlists and path traversal checks instead of raw `extractall()`.
+  - startup system notifications obey `notifications_enabled` and active schedule.
+  - external link opening uses a shared `http`/`https` allowlist + optional confirmation helper.
+  - keyword editing rejects invalid price ranges where both bounds are positive and `min_price > max_price`.
+  - live smoke supports `--summary-file PATH`; the last verified run produced `.tmp/live_smoke_summary.json`.
+- Current verification baseline:
+  - `python -m unittest discover -s tests -q` -> `Ran 91 tests` / `OK`
+  - `pyright .` -> `0 errors, 0 warnings`
+  - `python scripts/live_smoke.py --keyword 아이폰 --platform all --no-artifacts --summary-file .tmp/live_smoke_summary.json` -> all platforms `ok: true`
+
 ## 2026-03 Consistency Update (Data Integrity + Notification Reliability)
 
 This section is the current source of truth for the March 25, 2026 stabilization work.
@@ -622,5 +670,5 @@ This section is the current source of truth for the March 25, 2026 stabilization
 - Type checks:
   - `pyright .`
 - Current expected baseline after this update:
-  - `Ran 77 tests`
+  - `Ran 91 tests`
   - `OK`
