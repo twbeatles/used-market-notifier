@@ -45,7 +45,8 @@ used_market_notifier/
 ├── settings_manager.py     # 호환 facade -> app_settings.manager.SettingsManager
 ├── constants.py            # 전역 상수 정의
 ├── auto_tagger.py          # 자동 태깅 시스템
-├── backup_manager.py       # 백업/복원 관리
+├── backup_manager.py       # 호환 facade -> backup.manager.BackupManager
+├── backup/                 # 백업/복원 구현 (런타임 ZIP: backup/backup_*.zip)
 ├── export_manager.py       # CSV/Excel 내보내기
 ├── message_templates.py    # 판매자 메시지 템플릿
 ├── engine/                 # 모니터링 엔진 내부 구현
@@ -66,21 +67,28 @@ used_market_notifier/
 │   └── maintenance.py
 ├── app_settings/           # 설정 직렬화/복구/preset 구현
 ├── gui/                    # PyQt6 UI 컴포넌트
-│   ├── main_window.py      # 메인 윈도우
-│   ├── styles.py           # Catppuccin 테마 스타일시트
+│   ├── main_window.py      # 호환 facade -> gui.main.window
+│   ├── styles.py           # 호환 facade -> gui.theme
 │   ├── keyword_manager.py  # 호환 facade -> gui.widgets.keyword
 │   ├── settings_dialog.py  # 호환 facade -> gui.settings_panels
 │   ├── listings_widget.py  # 호환 facade -> gui.widgets.listings
-│   ├── favorites_widget.py # 즐겨찾기 관리
+│   ├── favorites_widget.py # 호환 facade -> gui.widgets.favorites
+│   ├── export_dialog.py    # 호환 facade -> gui.export
+│   ├── compare_dialog.py   # 호환 facade -> gui.compare
 │   ├── stats_widget.py     # 호환 facade -> gui.widgets.stats
-│   ├── components.py       # 재사용 UI 컴포넌트
+│   ├── main/               # MainWindow, MonitorThread
+│   ├── theme/              # Catppuccin/dark/light palette
+│   ├── components/         # GlassCard, StatCard, PlatformBadge, Toast 등
+│   ├── export/             # ExportDialog mixin 패키지
+│   ├── compare/            # CompareDialog mixin 패키지
 │   ├── charts.py           # 차트 위젯
-│   ├── settings_panels/    # 설정 dialog/workers/editors
-│   ├── widgets/            # keyword/listings/stats 내부 위젯
+│   ├── settings_panels/    # 설정 dialog/workers/editors/mixins
+│   ├── widgets/            # keyword/listings/stats/favorites 내부 위젯
 │   └── ...
 ├── scrapers/               # 플랫폼별 스크래퍼
 │   ├── base.py             # 추상 베이스 클래스
-│   ├── playwright_base.py  # Playwright 기반 베이스
+│   ├── playwright_base.py  # 호환 facade -> scrapers.playwright
+│   ├── playwright/         # PlaywrightScraper mixin 패키지
 │   ├── stealth.py          # 봇 탐지 우회 (15가지 기법)
 │   ├── debug.py            # 스크래핑 디버거
 │   ├── danggeun.py         # 당근마켓
@@ -226,7 +234,7 @@ list_backups()            # 백업 목록 조회
 
 ## 🎨 UI 컴포넌트 가이드
 
-### 재사용 컴포넌트 (`gui/components.py`)
+### 재사용 컴포넌트 (`gui/components/`)
 
 | 컴포넌트 | 용도 |
 |----------|------|
@@ -590,9 +598,14 @@ This section is the source of truth for current behavior and supersedes older Se
 - Canonical 구현 위치:
   - `engine/`: 모니터링 lifecycle, 검색 흐름, 알림 runtime/policy, scraper lifecycle, metadata enrichment
   - `storage/`: schema/migration, listing persistence/query, statistics, favorites/notes, notification logs, seller filters, maintenance
-  - `app_settings/`: settings serialization, recovery, presets
+  - `app_settings/` (+ `mixins/`): settings serialization/deserialization, recovery, presets
+  - `backup/`: `BackupManager` 구현 (`backup_manager.py` facade)
   - `scrapers/parsers/`: HTML snapshot, normalization, metadata merge, quality gates, URL validation, platform parsers
-  - `gui/settings_panels/`, `gui/widgets/*`: 대형 GUI 파일의 worker/dialog/widget 구현
+  - `scrapers/playwright/`: Playwright lifecycle/navigation/search-runtime/debug/filter mixins
+  - `gui/main/`, `gui/theme/`, `gui/components/`: 메인 윈도우, 테마, 재사용 UI 컴포넌트
+  - `gui/export/`, `gui/compare/`, `gui/widgets/favorites/`: export/compare/favorites mixin 패키지
+  - `gui/settings_panels/` (+ mixins), `gui/widgets/*` (+ listings/stats mixins): 대형 GUI worker/dialog/widget 구현
+- 런타임 백업 ZIP은 `backup/backup_*.zip`에 저장되며, Git에는 `backup/` Python 패키지만 추적합니다.
 - `used_market_notifier.spec`는 새 local split packages를 명시 수집합니다.
 - `.codegraph/`는 로컬 CodeGraph 인덱스이며 Git에 포함하지 않습니다.
 - 구현 완료된 감사 개선:

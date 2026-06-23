@@ -121,9 +121,17 @@
 
 3단계: 구조 개선
 
-- 완료: `storage/`, `engine/`, `app_settings/`, `scrapers/parsers/`, `gui/settings_panels/`, `gui/widgets/*`로 package split
+- 완료: `storage/`, `engine/`, `app_settings/`, `scrapers/parsers/`, `gui/settings_panels/`, `gui/widgets/*`로 1차 package split
+- 완료: 2차/3차 분할
+  - `app_settings/mixins/` (+ `deserialization.py` 분리)
+  - `gui/widgets/listings|stats/favorites` mixin 패키지
+  - `gui/export/`, `gui/compare/`, `gui/main/`, `gui/theme/`, `gui/components/`
+  - `backup/` (`backup_manager.py` facade)
+  - `scrapers/playwright/` (`playwright_base.py` facade)
 - 완료: 기존 legacy import path는 facade/re-export로 유지
 - 완료: `used_market_notifier.spec`, README, Claude/Gemini docs, `.gitignore`를 새 구조에 맞게 갱신
+  - `.gitignore`는 `backup/` Python 패키지는 추적하고 `backup/backup_*.zip`만 제외
+  - workspace-local `agent-tools/`, `mcps/`는 Git 제외
 
 ## 6. Test Recommendations
 

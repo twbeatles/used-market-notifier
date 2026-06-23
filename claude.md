@@ -173,12 +173,20 @@ class MessageTemplateManager:
 |----------|---------------------|
 | `monitor_engine.py` | `engine/monitor.py`, `engine/search_flow.py`, `engine/runtime.py`, `engine/notification_runtime.py`, `engine/metadata.py`, `engine/scrapers.py` |
 | `db.py` | `storage/database.py`, `storage/schema.py`, `storage/listings.py`, `storage/stats.py`, `storage/favorites.py`, `storage/notifications.py`, `storage/filters.py`, `storage/maintenance.py` |
-| `settings_manager.py` | `app_settings/manager.py`, `app_settings/serialization.py`, `app_settings/recovery.py`, `app_settings/presets.py` |
+| `settings_manager.py` | `app_settings/manager.py`, `app_settings/mixins/*` (serialization + deserialization split) |
 | `scrapers/marketplace_parsers.py` | `scrapers/parsers/html_snapshot.py`, `normalization.py`, `metadata.py`, `quality.py`, `urls.py`, `bunjang.py`, `joonggonara.py` |
-| `gui/settings_dialog.py` | `gui/settings_panels/dialog.py`, `workers.py`, `editors.py` |
+| `gui/settings_dialog.py` | `gui/settings_panels/dialog.py`, `workers.py`, `editors.py`, `mixins/*` |
 | `gui/keyword_manager.py` | `gui/widgets/keyword/cards.py`, `dialog.py`, `widget.py` |
-| `gui/listings_widget.py` | `gui/widgets/listings/browser.py` |
-| `gui/stats_widget.py` | `gui/widgets/stats/dashboard.py` |
+| `gui/listings_widget.py` | `gui/widgets/listings/browser.py`, `mixins/*` |
+| `gui/stats_widget.py` | `gui/widgets/stats/dashboard.py`, `mixins/*` |
+| `gui/favorites_widget.py` | `gui/widgets/favorites/widget.py`, `edit_dialog.py`, `mixins/*` |
+| `gui/export_dialog.py` | `gui/export/dialog.py`, `mixins/*` |
+| `gui/compare_dialog.py` | `gui/compare/dialog.py`, `mixins/*` |
+| `gui/main_window.py` | `gui/main/window.py`, `threads.py` |
+| `gui/styles.py` | `gui/theme/palette.py`, `dark.py`, `light.py` |
+| `gui/components.py` | `gui/components/*` (`__init__.py` re-export) |
+| `backup_manager.py` | `backup/manager.py` |
+| `playwright_base.py` | `scrapers/playwright/base.py`, `mixins/*`, `retry.py` |
 
 패키지 분할은 기능 변경이 아니라 책임 분리입니다. 기존 `from db import DatabaseManager`, `from monitor_engine import MonitorEngine`, `from settings_manager import SettingsManager`, `from scrapers.marketplace_parsers import ...` import는 계속 지원됩니다.
 
@@ -800,7 +808,8 @@ This section is the latest baseline and overrides older text in this document if
 ## 2026-06 Package Split + Audit Remediation Update
 
 - Large modules were split into SOLID-oriented packages while keeping legacy import facades stable.
-- Canonical implementation paths are now `engine/`, `storage/`, `app_settings/`, `scrapers/parsers/`, `gui/settings_panels/`, and `gui/widgets/*`.
+- Canonical implementation paths are now `engine/`, `storage/`, `app_settings/`, `backup/`, `scrapers/parsers/`, `scrapers/playwright/`, `gui/main/`, `gui/theme/`, `gui/components/`, `gui/export/`, `gui/compare/`, `gui/settings_panels/`, and `gui/widgets/*`.
+- Runtime backup ZIP archives use `backup/backup_*.zip`; only archives are gitignored, not the `backup/` Python package.
 - `used_market_notifier.spec` explicitly collects the new local split packages for PyInstaller onefile builds.
 - `.codegraph/` is a workspace-local analysis index and must stay ignored.
 - Implemented audit remediations:

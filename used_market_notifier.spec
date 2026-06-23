@@ -39,10 +39,17 @@ Notes:
   collected modules and standard-library helpers.
 - The 2026-06 package split keeps legacy import facades (`db.py`,
   `monitor_engine.py`, `settings_manager.py`, `scrapers/marketplace_parsers.py`,
-  and major `gui/*_widget.py` modules) while moving canonical implementations
-  into `storage/`, `engine/`, `app_settings/`, `scrapers/parsers/`,
-  `gui/settings_panels/`, and `gui/widgets/`. The local packages are collected
+  `backup_manager.py`, `playwright_base.py`, `gui/export_dialog.py`,
+  `gui/compare_dialog.py`, `gui/favorites_widget.py`, `gui/main_window.py`,
+  `gui/styles.py`, and major `gui/*_widget.py` modules) while moving canonical
+  implementations into `storage/`, `engine/`, `app_settings/`, `backup/`,
+  `scrapers/parsers/`, `scrapers/playwright/`, `gui/settings_panels/`,
+  `gui/widgets/`, `gui/main/`, `gui/theme/`, `gui/components/`, `gui/export/`,
+  `gui/compare/`, and `gui/widgets/favorites/`. The local packages are collected
   explicitly below so onefile builds do not depend on facade-only discovery.
+- Runtime backup ZIP archives still live under `backup/backup_*.zip` on disk, but
+  that directory is also the Python package root for `BackupManager`; only ZIP
+  snapshots are gitignored, not the package source.
 - `scripts/live_smoke.py` is an opt-in development diagnostic for live site
   structure checks. It is not imported by the app entrypoint and is intentionally
   not bundled into the onefile executable.
@@ -141,11 +148,25 @@ for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", 
 # source runs. Collect them explicitly for packaging resilience.
 for package_name in (
     "app_settings",
+    "app_settings.mixins",
+    "backup",
     "engine",
     "storage",
     "scrapers.parsers",
     "gui.settings_panels",
+    "gui.settings_panels.mixins",
     "gui.widgets",
+    "gui.widgets.listings.mixins",
+    "gui.widgets.stats.mixins",
+    "gui.main",
+    "gui.theme",
+    "gui.components",
+    "gui.export",
+    "gui.compare",
+    "gui.widgets.favorites",
+    "gui.widgets.favorites.mixins",
+    "scrapers.playwright",
+    "scrapers.playwright.mixins",
 ):
     try:
         hiddenimports += collect_submodules(package_name)

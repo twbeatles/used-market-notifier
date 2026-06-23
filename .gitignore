@@ -53,6 +53,12 @@ listings.db-*
 *.log
 *.log.*
 
-# Local dumps/backups (do not commit)
-backup/
+# Local dumps/backups (do not commit runtime archives; keep backup/ Python package tracked)
+backup/backup_*.zip
+backup/temp_restore/
+
+# Agent / IDE harness artifacts (workspace-local)
+agent-tools/
+mcps/
+
 debug_output/

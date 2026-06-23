@@ -232,7 +232,8 @@ used_market_notifier/
 ├── models.py            # 데이터 모델
 ├── constants.py         # 상수 정의
 ├── auto_tagger.py       # 자동 태깅
-├── backup_manager.py    # 백업/복원
+├── backup_manager.py    # 호환 facade -> backup.manager.BackupManager
+├── backup/              # 백업/복원 구현 (런타임 ZIP: backup/backup_*.zip)
 ├── export_manager.py    # 내보내기
 ├── message_templates.py # 메시지 템플릿
 ├── engine/              # 모니터링 엔진 내부 구현
@@ -253,22 +254,31 @@ used_market_notifier/
 │   └── maintenance.py   # 정리/내보내기 보조
 ├── app_settings/        # 설정 직렬화/복구/preset 구현
 ├── gui/                 # UI 컴포넌트
-│   ├── main_window.py   # 메인 윈도우
-│   ├── styles.py        # 테마 스타일시트
+│   ├── main_window.py   # 호환 facade -> gui.main.window
+│   ├── styles.py        # 호환 facade -> gui.theme
 │   ├── keyword_manager.py   # 호환 facade -> gui.widgets.keyword
 │   ├── settings_dialog.py   # 호환 facade -> gui.settings_panels
 │   ├── listings_widget.py   # 호환 facade -> gui.widgets.listings
-│   ├── favorites_widget.py
+│   ├── favorites_widget.py  # 호환 facade -> gui.widgets.favorites
+│   ├── export_dialog.py     # 호환 facade -> gui.export
+│   ├── compare_dialog.py    # 호환 facade -> gui.compare
 │   ├── stats_widget.py      # 호환 facade -> gui.widgets.stats
-│   ├── settings_panels/     # 설정 dialog/workers/editors
-│   ├── widgets/             # keyword/listings/stats 내부 위젯
+│   ├── main/                # MainWindow, MonitorThread
+│   ├── theme/               # Catppuccin/dark/light palette + styles facade
+│   ├── components/          # GlassCard, StatCard, PlatformBadge, Toast 등
+│   ├── export/              # ExportDialog mixin 패키지
+│   ├── compare/             # CompareDialog mixin 패키지
+│   ├── settings_panels/     # 설정 dialog/workers/editors/mixins
+│   ├── widgets/             # keyword/listings/stats/favorites 내부 위젯
 │   └── ...
 ├── scrapers/            # 플랫폼 스크래퍼 (Playwright 우선 + Selenium 폴백)
 │   ├── danggeun.py      # 당근마켓
 │   ├── bunjang.py       # 번개장터
 │   ├── joonggonara.py   # 중고나라
 │   ├── marketplace_parsers.py # 호환 facade -> scrapers.parsers
+│   ├── playwright_base.py     # 호환 facade -> scrapers.playwright
 │   ├── parsers/         # HTML snapshot/정규화/품질/플랫폼 파서
+│   ├── playwright/      # PlaywrightScraper lifecycle/navigation/runtime mixins
 │   ├── playwright_danggeun.py
 │   ├── playwright_bunjang.py
 │   ├── playwright_joonggonara.py
@@ -308,7 +318,7 @@ used_market_notifier/
 
 > 참고:
 > - 리포지토리에는 `settings.example.json`만 포함됩니다. 실제 실행을 위해서는 `settings.json`을 생성해 토큰/웹훅 등을 채워주세요.
-> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/`, `debug_output/`, `.tmp/` 등은 로컬 런타임 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
+> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/backup_*.zip`, `debug_output/`, `.tmp/`, `agent-tools/`, `mcps/` 등은 로컬 런타임/워크스페이스 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
 > - 과거 레거시 설정/알림 샘플 코드는 `legacy/`에 있으며, 현재 메인 앱에서는 사용하지 않습니다.
 
 ### 데이터 파일
@@ -318,7 +328,7 @@ used_market_notifier/
 | `settings.json` | 사용자 설정 |
 | `listings.db` | 매물 데이터베이스 |
 | `notifier.log` | 로그 파일 |
-| `backup/` | 자동 백업 폴더 |
+| `backup/backup_*.zip` | 자동 백업 ZIP 아카이브 (`backup/` 패키지와 동일 디렉터리) |
 | `debug_output/` | Playwright 디버거 산출물(스크린샷/HTML/네트워크 로그) |
 
 ---
@@ -609,9 +619,13 @@ This section is the current source of truth and supersedes older statements in t
 - New canonical implementation packages:
   - `storage/` for schema, listings, statistics, favorites/notes, notification logs, seller filters, and maintenance.
   - `engine/` for scraper lifecycle, metadata enrichment, notification policy/runtime, search flow, and start/stop lifecycle.
-  - `app_settings/` for settings normalization, serialization, recovery, and preset operations.
+  - `app_settings/` (+ `app_settings/mixins/`) for settings normalization, serialization, deserialization, recovery, and preset operations.
+  - `backup/` for `BackupManager` restore/manifest logic (`backup_manager.py` facade).
   - `scrapers/parsers/` for HTML snapshots, normalization, URL validation, quality gates, and platform-specific parser helpers.
-  - `gui/settings_panels/` and `gui/widgets/*` for dialog workers/editors and large widget internals.
+  - `scrapers/playwright/` for Playwright lifecycle/navigation/search-runtime/debug/filter mixins (`playwright_base.py` facade).
+  - `gui/main/`, `gui/theme/`, `gui/components/` for main window threads, theme palettes, and reusable UI primitives.
+  - `gui/export/`, `gui/compare/`, `gui/widgets/favorites/` for export/compare/favorites mixin packages.
+  - `gui/settings_panels/` (+ mixins) and `gui/widgets/*` (+ listings/stats mixins) for dialog workers/editors and large widget internals.
 - Audit remediation status:
   - notification worker cancellation is handled explicitly during shutdown.
   - backup restore uses manifest/basename allowlists and path traversal checks instead of raw `extractall()`.
@@ -659,7 +673,7 @@ This section is the current source of truth for the March 25, 2026 stabilization
 - CLI / packaging:
   - `python main.py --headless` is a session-only override and does not rewrite `settings.json`
   - `used_market_notifier.spec` excludes `tests` and `legacy` from onefile builds
-  - `.gitignore` must ignore `settings.broken-*.json`, `*.pre_restore`, rotated logs like `notifier.log.1`, and workspace-local temp directories such as `.tmp/`
+  - `.gitignore` must ignore `settings.broken-*.json`, `*.pre_restore`, rotated logs like `notifier.log.1`, workspace-local temp directories such as `.tmp/`, `agent-tools/`, `mcps/`, and runtime backup archives `backup/backup_*.zip` (not the `backup/` Python package)
 
 ### Verification Baseline
 

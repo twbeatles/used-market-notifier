@@ -1,5 +1,6 @@
-"""Keyword preset settings extension point."""
+"""Compatibility facade for settings presets."""
 
+from .mixins.presets import PresetSettingsMixin
 from .manager import SettingsManager
 
-__all__ = ["SettingsManager"]
+__all__ = ["SettingsManager", "PresetSettingsMixin"]

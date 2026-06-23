@@ -15,6 +15,10 @@ class TestFacadeImports(unittest.TestCase):
             SettingsProvider,
         )
         from settings_manager import SettingsManager
+        from app_settings import SETTINGS_FILE
+        from app_settings.serialization import SettingsSerializationMixin
+        from app_settings.recovery import SettingsRecoveryMixin
+        from app_settings.presets import PresetSettingsMixin
 
         self.assertTrue(DatabaseManager)
         self.assertTrue(MonitorEngine)
@@ -26,6 +30,10 @@ class TestFacadeImports(unittest.TestCase):
         self.assertTrue(ScraperProtocol)
         self.assertTrue(NotifierProtocol)
         self.assertTrue(SettingsManager)
+        self.assertEqual(SETTINGS_FILE, "settings.json")
+        self.assertTrue(SettingsSerializationMixin)
+        self.assertTrue(SettingsRecoveryMixin)
+        self.assertTrue(PresetSettingsMixin)
 
     def test_legacy_parser_imports_still_work(self):
         from scrapers import marketplace_parsers as parsers
@@ -77,6 +85,14 @@ class TestFacadeImports(unittest.TestCase):
             TagRuleEditDialog,
         )
         from gui.stats_widget import StatsWidget
+        from gui.main_window import MainWindow, MaintenanceCleanupThread, MonitorThread
+        from gui.styles import CATPPUCCIN_MOCHA, DARK_STYLE, LIGHT_STYLE, PLATFORM_INFO
+        from gui.components import GlassCard, PulsingDot, StatCard
+        from backup_manager import BackupManager
+        from gui.export_dialog import ExportDialog
+        from gui.compare_dialog import CompareDialog
+        from gui.favorites_widget import FavoritesEditDialog, FavoritesWidget
+        from scrapers.playwright_base import PlaywrightScraper, async_retry
 
         self.assertTrue(KeywordCard)
         self.assertTrue(KeywordEditDialog)
@@ -88,6 +104,23 @@ class TestFacadeImports(unittest.TestCase):
         self.assertTrue(MessageTemplateEditDialog)
         self.assertTrue(NotificationTestThread)
         self.assertTrue(StatsWidget)
+        self.assertTrue(MainWindow)
+        self.assertTrue(MonitorThread)
+        self.assertTrue(MaintenanceCleanupThread)
+        self.assertTrue(DARK_STYLE)
+        self.assertTrue(LIGHT_STYLE)
+        self.assertTrue(CATPPUCCIN_MOCHA)
+        self.assertTrue(PLATFORM_INFO)
+        self.assertTrue(GlassCard)
+        self.assertTrue(PulsingDot)
+        self.assertTrue(StatCard)
+        self.assertTrue(BackupManager)
+        self.assertTrue(ExportDialog)
+        self.assertTrue(CompareDialog)
+        self.assertTrue(FavoritesEditDialog)
+        self.assertTrue(FavoritesWidget)
+        self.assertTrue(PlaywrightScraper)
+        self.assertTrue(async_retry)
 
 
 if __name__ == "__main__":
