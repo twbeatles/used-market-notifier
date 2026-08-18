@@ -1,688 +1,437 @@
-# 🛒 중고거래 알리미 (Used Market Notifier)
+# 🥕 중고거래 알리미 (Used Market Notifier)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/PyQt6-6.4+-green.svg" alt="PyQt6">
-  <img src="https://img.shields.io/badge/Selenium-4.x-orange.svg" alt="Selenium">
-  <img src="https://img.shields.io/badge/Playwright-1.50+-blue.svg" alt="Playwright">
-  <img src="https://img.shields.io/badge/SQLite3-DB-blueviolet.svg" alt="SQLite3">
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/PyQt6-6.4+-41CD52?style=flat-square&logo=qt&logoColor=white" alt="PyQt6">
+  <img src="https://img.shields.io/badge/Playwright-1.50+-2EAD33?style=flat-square&logo=playwright&logoColor=white" alt="Playwright">
+  <img src="https://img.shields.io/badge/Selenium-4.x-43B02A?style=flat-square&logo=selenium&logoColor=white" alt="Selenium">
+  <img src="https://img.shields.io/badge/SQLite3-WAL_Mode-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite3">
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License">
 </p>
 
 <p align="center">
-  <strong>당근마켓, 번개장터, 중고나라를 실시간으로 모니터링하여<br>
-  원하는 상품이 올라오면 즉시 알림을 받으세요!</strong>
+  <strong>당근마켓 🥕 · 번개장터 ⚡ · 중고나라 🛒</strong>의 매물을 실시간으로 감지하고,<br>
+  원하는 조건의 상품이 등록되거나 가격이 인하되면 <strong>텔레그램 / 디스코드 / 슬랙</strong>으로 즉시 알려주는 스마트 중고거래 모니터링 프로그램입니다.
 </p>
 
 ---
 
-## ✨ 주요 기능
+## 📑 목차
 
-### 🔍 스마트 검색
-| 기능 | 설명 |
-|------|------|
-| **다중 플랫폼** | 당근마켓 🥕, 번개장터 ⚡, 중고나라 🛒 동시 검색 |
-| **무제한 키워드** | 원하는 만큼 키워드 등록 가능 |
-| **가격 필터** | 최소/최대 가격 범위 설정 |
-| **지역 필터** | 당근마켓 best-effort 지역 필터 + 정확도 경고 |
-| **제외 키워드** | 불필요한 매물 자동 필터링 |
-| **키워드 그룹** | 관련 키워드 그룹화 관리 |
-| **개별 설정** | 키워드별 검색 주기, 알림 토글 |
-
-### 📢 실시간 알림
-
-| 플랫폼 | 설정 방법 |
-|--------|----------|
-| **Telegram** | Bot Token + Chat ID |
-| **Discord** | Webhook URL |
-| **Slack** | Webhook URL |
-
-**알림 기능:**
-- ✅ 새 상품 알림
-- ✅ 가격 인하 알림
-- ✅ 알림 스케줄 (요일/시간 설정)
-- ✅ 키워드별 알림 토글
-- ✅ 테스트 알림 전송
-
-### 📊 데이터 관리
-
-| 기능 | 설명 |
-|------|------|
-| **즐겨찾기** | 관심 매물 저장, 메모 추가 |
-| **가격 추적** | 가격 변동 이력 자동 기록 |
-| **통계 대시보드** | 플랫폼별/일별 통계, 차트 |
-| **매물 비교** | 여러 매물 나란히 비교 |
-| **내보내기** | CSV, Excel 형식 지원 |
-| **자동 백업** | 주기적 백업, 복원 기능 |
-| **데이터 정리** | 오래된 매물 자동 삭제 |
-
-### 🏷️ 자동 태깅 시스템
-
-상품 제목을 분석하여 자동으로 태그를 부여합니다:
-
-| 태그 | 트리거 키워드 | 아이콘 |
-|------|--------------|--------|
-| A급 | A급, 에이급, 상태좋음, 최상, S급 | ✨ |
-| 풀박스 | 풀박스, 미개봉, 새제품, 미사용 | 📦 |
-| 급처 | 급처, 급매, 빨리, 오늘만 | 🔥 |
-| 네고가능 | 네고가능, 네고, 협의가능 | 💬 |
-| 택포 | 택포, 택배포함, 무배 | 📮 |
-| 직거래 | 직거래, 직거래만 | 🤝 |
-| 정품 | 정품, 구매영수증, 보증서 | ✅ |
-
-### 💬 메시지 템플릿
-
-판매자에게 보낼 메시지를 미리 작성해두세요:
-
-- **기본 문의** - "아직 판매중인가요?"
-- **가격 문의** - "네고 가능할까요?"
-- **직거래 문의** - "직거래 가능하실까요?"
-- **상태 문의** - "상세한 상태가 어떻게 되나요?"
-- **플랫폼 전용 템플릿** - 당근 안부인사, 번개장터 빠른문의
-
-**사용 가능한 변수:**
-- `{title}` - 상품 제목
-- `{price}` - 판매 가격
-- `{seller}` - 판매자 이름
-- `{location}` - 지역
-- `{target_price}` - 내 목표 가격
-
-### 🎨 모던 UI
-
-- **Catppuccin Mocha 테마**: 세련된 다크 테마
-- **라이트 모드 지원**: 시스템 설정 연동
-- **글래스모피즘 카드**: 반투명 효과
-- **부드러운 애니메이션**: 호버, 전환 효과
-- **시스템 트레이**: 백그라운드 실행
-- **토스트 알림**: 인앱 알림
-
-### ⌨️ 단축키
-
-| 단축키 | 기능 |
-|--------|------|
-| `F5` | 현재 탭 새로고침 |
-| `Ctrl+S` | 모니터링 시작/정지 |
-| `Ctrl+,` | 설정 열기 |
-| `Ctrl+N` | 새 키워드 추가 |
-| `Enter` | 선택 항목 열기 |
-| `Ctrl+F` | 제목 검색 (전체 매물) |
-| `F` | 즐겨찾기 추가 (전체 매물) |
-| `F1` | 단축키 도움말 |
+1. [✨ 주요 특징](#-주요-특징)
+2. [🚀 빠른 시작 가이드](#-빠른-시작-가이드)
+   - [방법 1: 실행 파일(.exe) 사용 (일반 사용자)](#방법-1-실행-파일exe-사용-일반-사용자)
+   - [방법 2: 소스 코드 직접 실행 (개발자)](#방법-2-소스-코드-직접-실행-개발자)
+3. [🖥️ 화면별 상세 사용법](#️-화면별-상세-사용법)
+   - [1. 🔍 키워드 관리](#1--키워드-관리)
+   - [2. 📋 전체 매물 조회](#2--전체-매물-조회)
+   - [3. 📊 통계 대시보드](#3--통계-대시보드)
+   - [4. ⭐ 즐겨찾기 및 목표가 알림](#4--즐겨찾기-및-목표가-알림)
+   - [5. 📢 알림 내역 & 헬스 체크](#5--알림-내역--헬스-체크)
+   - [6. 📋 실시간 시스템 로그](#6--실시간-시스템-로그)
+4. [⚙️ 상세 설정 가이드](#️-상세-설정-가이드)
+   - [일반 설정 (모니터링 & 엔진 제어)](#-일반-설정-모니터링--엔진-제어)
+   - [알림 채널 연동 (텔레그램, 디스코드, 슬랙)](#-알림-채널-연동-텔레그램-디스코드-슬랙)
+   - [알림 스케줄 (방해금지 시간대)](#-알림-스케줄-방해금지-시간대)
+   - [판매자 차단 관리](#-판매자-차단-관리)
+   - [데이터 유지보수 (백업/복원 및 클린업)](#-데이터-유지보수-백업복원-및-클린업)
+   - [자동 태깅 규칙 커스텀](#-자동-태깅-규칙-커스텀)
+   - [판매자 문의 메시지 템플릿](#-판매자-문의-메시지-템플릿)
+5. [💻 CLI 및 백그라운드 모드](#-cli-및-백그라운드-모드)
+6. [⌨️ 단축키 일람표](#️-단축키-일람표)
+7. [🏗️ 시스템 아키텍처 & 안정성 메커니즘](#️-시스템-아키텍처--안정성-메커니즘)
+8. [🛠️ 개발, 테스트 및 빌드](#️-개발-테스트-및-빌드)
+9. [❓ 자주 묻는 질문 & 문제 해결 (FAQ)](#-자주-묻는-질문--문제-해결-faq)
+10. [🛡️ 주의사항 & 라이선스](#️-주의사항--라이선스)
 
 ---
 
-## 🚀 시작하기
+## ✨ 주요 특징
 
-### 방법 1: 실행 파일 (권장)
+- **3대 중고 플랫폼 동시 크롤링**: 당근마켓, 번개장터, 중고나라 매물을 한 곳에서 통합 검색
+- **하이브리드 듀얼 스크래핑 엔진**: 고속 비동기 `Playwright`를 기본으로 사용하며, 실패/빈 결과 발생 시 `Selenium`으로 자동 대체(Fallback)
+- **실시간 다채널 알림**: Telegram, Discord, Slack 웹훅 연동 지원 (채널별 지수 백오프 재시도 탑재)
+- **정밀한 필터링**: 최소/최대 가격 범위, 불필요한 키워드 제외, 당근 지역 필터, 업자/비매너 판매자 차단
+- **스마트 자동 태깅 & 상태 추적**: 상품명을 분석하여 `✨ A급`, `📦 풀박스`, `🔥 급처`, `💬 네고가능` 등의 태그 자동 부여 및 판매 상태(판매중/예약중/판매완료) 자동 갱신
+- **데이터 분석 & 시각화**: 플랫폼별/일별 등록 통계, 키워드별 최저/평균/최고 가격 분석, 가격 변동 그래프 제공
+- **편의 기능**: 판매자 문의 템플릿 원클릭 복사, 매물 다중 비교(Compare), CSV / Excel 데이터 내보내기
+- **데이터 안전성**: SQLite WAL 모드 동시성 제어, ZIP 기반 자동 백업/복구 시스템, 오래된 매물 자동 정리
 
-1. [Releases](https://github.com/twbeatles/used-market-notifier/releases)에서 최신 버전 다운로드
-2. `UsedMarketNotifier.exe` 실행
-3. 키워드 추가하고 모니터링 시작!
+---
 
-### 방법 2: 소스 코드 실행
+## 🚀 빠른 시작 가이드
 
+### 방법 1: 실행 파일(.exe) 사용 (일반 사용자)
+
+1. [GitHub Releases](https://github.com/twbeatles/used-market-notifier/releases)에서 최신 버전의 `UsedMarketNotifier.exe`를 다운로드합니다.
+2. 다운로드한 파일을 원하는 폴더로 이동 후 실행합니다.
+3. 앱이 실행되면 상단 **설정 (⚙️)**에서 알림 채널(텔레그램, 디스코드 등)을 연결하고, **키워드**를 등록한 뒤 **▶ 모니터링 시작**을 누르면 끝납니다.
+
+---
+
+### 방법 2: 소스 코드 직접 실행 (개발자)
+
+#### 1. 저장소 클론 및 가상환경 구성
 ```bash
-# 저장소 클론
 git clone https://github.com/twbeatles/used-market-notifier.git
 cd used-market-notifier
 
-# 가상환경 생성 (선택)
+# 가상환경 생성 및 활성화
 python -m venv venv
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # macOS/Linux
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+```
 
-# 의존성 설치
+#### 2. 패키지 및 브라우저 드라이버 설치
+```bash
+# 필수 의존성 패키지 설치
 pip install -r requirements.txt
 
-# 브라우저 준비 (Playwright + Selenium)
-# - Playwright Chromium 런타임 설치 (권장)
+# Playwright Chromium 런타임 설치 (필수)
 python -m playwright install chromium
-# - Chrome(또는 Chromium 기반 브라우저)이 설치되어 있어야 합니다.
-# - 드라이버는 webdriver-manager가 자동으로 내려받습니다.
+```
+> **참고**: Selenium 폴백을 위해 Chrome 브라우저가 시스템에 설치되어 있어야 합니다. (ChromeDriver는 `webdriver-manager`가 자동 관리)
 
-# 실행
+#### 3. 설정 파일 준비 및 실행
+```bash
+# 기본 설정 템플릿 복사 (최초 1회)
+# settings.json이 없으면 실행 시 자동 생성되지만, 예시 파일을 기반으로 구성할 수 있습니다.
+cp settings.example.json settings.json
+
+# GUI 모드 실행
 python main.py
+```
 
-# regression tests (team standard)
+---
+
+## 🖥️ 화면별 상세 사용법
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  🥕 중고거래 알리미    🥕 당근마켓 · ⚡ 번개장터 · 🛒 중고나라   [▶ 시작] [⚙️ 설정]  │
+├─────────┬───────────┬─────────┬──────────┬───────────┬─────────────────┤
+│ 🔍 키워드 │ 📋 전체매물 │ 📊 통계  │ ⭐ 즐겨찾기│ 📢 알림내역│ 📋 로그         │
+└─────────┴───────────┴─────────┴──────────┴───────────┴─────────────────┘
+```
+
+### 1. 🔍 키워드 관리
+모니터링할 검색 키워드를 등록하고 세부 옵션을 설정하는 화면입니다.
+
+- **`+ 새 키워드 추가` / `Ctrl+N`**:
+  - **키워드**: 검색할 상품명 입력 (예: `맥북 프로 M3`, `아이폰 15 Pro`)
+  - **검색 플랫폼**: 당근마켓, 번개장터, 중고나라 중 원하는 플랫폼 체크
+  - **가격 범위**: 최소 가격 ~ 최대 가격 지정 (0원/미설정 시 전체 범위, 가격문의 매물은 누락 방지를 위해 항상 포함)
+  - **제외 키워드**: 쉼표(`,`)로 구분하여 원치 않는 단어 필터링 (예: `케이스, 부품용, 파손, 정크, 매입`)
+  - **지역 (당근마켓)**: 특정 동/구 단위 지역 필터 입력
+  - **검색 주기 / 알림 여부**: 키워드별 개별 검색 주기(초) 및 알림 전송 토글
+- **프리셋 기능**: 자주 사용하는 가격대나 플랫폼 조합을 프리셋으로 저장하여 새 키워드 등록 시 원클릭 적용
+
+---
+
+### 2. 📋 전체 매물 조회
+수집된 모든 중고 매물을 테이블 형태로 실시간 탐색하는 메인 브라우저입니다.
+
+- **실시간 검색 및 필터링**:
+  - 제목 검색창(`Ctrl+F`), 플랫폼별(당근/번개/중고나라) 필터, 판매 상태(전체/판매중/예약중/판매완료) 필터
+- **테이블 인터랙션**:
+  - **더블 클릭**: 해당 상품의 웹 상세 페이지로 즉시 이동
+  - **단축키 `F`**: 선택한 상품을 즉시 즐겨찾기에 추가
+- **우클릭 컨텍스트 메뉴**:
+  - 🔗 **링크 열기**: 브라우저에서 상품 페이지 방문
+  - ⭐ **즐겨찾기 추가**: 메모 및 희망 목표가를 지정하여 관심 목록에 저장
+  - 🚫 **판매자 차단**: 해당 판매자의 이후 모든 매물 알림을 영구 차단
+  - 💬 **메시지 작성**: 템플릿을 기반으로 판매자에게 보낼 문의글 생성 및 클립보드 복사
+  - 📊 **매물 비교**: 2개 이상의 매물을 선택 후 나란히 비교 창(`CompareDialog`) 실행
+- **데이터 내보내기**: 상단 **내보내기** 버튼을 통해 현재 필터링된 매물들을 CSV 또는 Excel(`.xlsx`) 파일로 추출
+
+---
+
+### 3. 📊 통계 대시보드
+수집된 데이터를 시각적으로 분석하여 시장 동향을 파악할 수 있습니다.
+
+- **핵심 지표 카드**: 전체 수집 매물 수, 플랫폼별 분포 비율(당근/번개/중고나라)
+- **키워드별 시세 분석**: 키워드별 매물 수, **최저가 / 평균 시세 / 최고가** 요약
+- **가격 변동 타임라인**: 등록 이후 가격이 인하되거나 인상된 내역 추적
+- **일별 수집 트렌드 차트**: 최근 7일간의 신규 등록 추이 시각화
+
+---
+
+### 4. ⭐ 즐겨찾기 및 목표가 알림
+관심 있는 매물들을 모아 집중 모니터링하는 전용 보관함입니다.
+
+- **목표가 도달 시각 알림**:
+  - 매물 등록 시 희망 **목표 가격(Target Price)**을 입력해 두면, 판매자가 가격을 내려 목표가 이하가 되었을 때 가격 텍스트가 **초록색 강조 표시**됩니다.
+- **개인 메모 작성**: 판매자와의 대화 내용, 직거래 약속 장소, 제품 상태 특이사항 등을 기록
+- **수정 / 삭제**: 우클릭 메뉴 또는 행을 클릭하여 메모와 목표가를 언제든지 업데이트
+
+---
+
+### 5. 📢 알림 내역 & 헬스 체크
+메신저로 발송된 알림 기록과 채널 전송 상태를 모니터링합니다.
+
+- **알림 발송 로그**: 신규 매물 등록(`🆕 New item`) 및 가격 변동(`📉 Price change`) 알림 이력
+- **7일 채널 헬스 요약**:
+  - Telegram, Discord, Slack별 발송 성공 횟수, 실패 횟수, 전송률(%)을 집계하여 메신저 API 토큰 만료나 웹훅 오류를 즉시 인지 가능
+
+---
+
+### 6. 📋 실시간 시스템 로그
+엔진의 크롤링 주기, 각 플랫폼별 수집 속도, HTTP 응답 상태, 오류 스택트레이스를 실시간으로 출력합니다.
+- 로그는 최대 5MB 크기의 `notifier.log` 파일로 3개까지 자동 로테이션(Rolling) 보관됩니다.
+
+---
+
+## ⚙️ 상세 설정 가이드
+
+메인 윈도우 우측 상단의 **⚙️ 설정** 버튼(또는 `Ctrl+,`)을 눌러 환경설정 다이얼로그를 엽니다.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ ⚙️ 설정                                                                │
+├────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────────────────┤
+│일반│텔레그램│디스코드│ 슬랙 │스케줄│차단관리│유지보수│자동태깅│메시지 템플릿      │
+└────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────────────────┘
+```
+
+### ⚙️ 일반 설정 (모니터링 & 엔진 제어)
+- **검색 주기**: 기본 300초 (60초 ~ 3600초 설정 가능)
+- **백그라운드 모드 (Headless)**: 브라우저 창을 띄우지 않고 백그라운드에서 크롤링 (권장: 체크)
+- **스크래퍼 엔진 선택**:
+  - `Playwright 우선 + Selenium fallback` *(기본 권장값)*
+  - `Selenium 우선 + Playwright fallback`
+  - `Selenium 전용 (Fallback 미사용)`
+- **Fallback 조건 & 최대 횟수**: 기본 엔진 검색 결과가 0개일 때 보조 엔진을 실행할지 여부 및 사이클당 최대 대체 횟수 지정
+- **메타데이터 보강 수집 (Metadata Enrichment)**:
+  - `필터/차단 판단에 필요한 경우만 보강 수집`: 지역 필터 판정 및 차단 판매자 조회가 필요할 때만 상세 페이지를 조회하여 리소스를 절약합니다.
+- **테마 설정**: 다크 모드 (Catppuccin Mocha), 라이트 모드, 시스템 기본 테마
+- **창 동작**: 닫기 시 트레이로 최소화, 윈도우 시작 시 자동 실행, 링크 열기 전 확인 팝업
+
+---
+
+### 📲 알림 채널 연동 (텔레그램, 디스코드, 슬랙)
+
+> ⚠️ **중요**: 알림을 수신하려면 일반 설정의 **"🔔 알림 받기"**가 체크되어 있어야 합니다.
+
+#### 1. 텔레그램 (Telegram) 연동
+1. 텔레그램에서 [@BotFather](https://t.me/BotFather)를 검색하고 대화를 시작합니다.
+2. `/newbot` 명령어를 입력하고 안내에 따라 봇 이름과 사용자명을 생성합니다.
+3. 발급된 **HTTP API 토큰**을 복사하여 앱의 `봇 토큰` 란에 입력합니다.
+4. [@userinfobot](https://t.me/userinfobot)으로 이동해 대화를 시작하여 본인의 고유 **Id (숫자)**를 확인하고 `Chat ID` 란에 입력합니다.
+5. **🔔 테스트** 버튼을 클릭하여 테스트 메시지가 도착하는지 확인합니다.
+
+#### 2. 디스코드 (Discord) 연동
+1. 알림을 받을 디스코드 서버의 채널 설정(⚙️) → **연동** → **웹후크(Webhook)**를 클릭합니다.
+2. **새 웹후크 만들기**를 누르고 이름을 지정한 뒤 **웹후크 URL 복사**를 클릭합니다.
+3. 앱의 디스코드 탭에 붙여넣고 **활성화** 체크 후 **🔔 테스트**를 누릅니다.
+
+#### 3. 슬랙 (Slack) 연동
+1. [Slack API Apps](https://api.slack.com/apps)에서 새 앱을 생성하거나 기존 워크스페이스의 **Incoming Webhooks**를 활성화합니다.
+2. 알림을 수신할 채널을 선택하고 생성된 Webhook URL을 복사합니다.
+3. 앱의 슬랙 탭에 URL을 등록하고 테스트합니다.
+
+---
+
+### ⏰ 알림 스케줄 (방해금지 시간대)
+야간이나 업무 시간 중 알림 소리를 끄고 싶을 때 스케줄러를 구성합니다.
+- **요일 선택**: 월, 화, 수, 목, 금, 토, 일 개별 토글
+- **시간대 설정**: 시작 시간 ~ 종료 시간 설정 (예: `08:00` ~ `23:00`, 야간 시간대인 `23:00` ~ `07:00` 지원)
+
+---
+
+### 🚫 판매자 차단 관리
+- 매물 목록에서 차단한 비매너 거래자나 업자 목록이 표시됩니다.
+- 차단된 판매자의 매물은 알림 전송 대상에서 자동 제외되며, 필요 시 목록에서 선택 후 **🔓 차단 해제**할 수 있습니다.
+
+---
+
+### 🧰 데이터 유지보수 (백업/복원 및 클린업)
+- **자동 백업**: 지정한 주기(기본 7일)마다 DB와 설정을 압축한 `backup_YYYYMMDD_HHMMSS.zip`을 자동 생성
+- **수동 백업 및 복원**: **지금 백업 생성** 버튼으로 즉시 저장하거나, 목록에서 백업본을 골라 **선택 백업 복원** 가능
+- **오래된 매물 자동 클린업**:
+  - `N일 이전 매물 삭제` (기본 30일)
+  - `즐겨찾기 제외` 및 `메모/상태가 있는 항목 보호` 옵션 제공
+  - **미리보기 새로고침**으로 몇 개의 매물이 정리될지 사전에 안전하게 확인 가능
+
+---
+
+### 🏷️ 자동 태깅 규칙 커스텀
+상품 제목을 실시간 분석하여 시각적 배지를 부여합니다.
+
+| 기본 태그 | 트리거 키워드 예시 | 아이콘 |
+|:---|:---|:---:|
+| **A급** | `A급`, `에이급`, `상태좋음`, `최상`, `S급`, `새것같음` | ✨ |
+| **풀박스** | `풀박스`, `풀박`, `미개봉`, `새제품`, `미사용`, `풀구성` | 📦 |
+| **급처** | `급처`, `급매`, `빨리`, `오늘만`, `가격내림`, `급처분` | 🔥 |
+| **네고가능** | `네고가능`, `네고`, `협의가능`, `절충가능`, `이유있는네고` | 💬 |
+| **택포** | `택포`, `택배포함`, `무배`, `무료배송`, `반택포` | 📮 |
+| **직거래** | `직거래`, `직거래만`, `직접수령`, `대면거래` | 🤝 |
+| **정품** | `정품`, `구매영수증`, `영수증있음`, `보증서`, `국내정발` | ✅ |
+
+> **커스텀**: 설정에서 원하는 단어 조합과 고유 색상/아이콘으로 새 태그 규칙을 자유롭게 추가할 수 있습니다.
+
+---
+
+### 💬 판매자 문의 메시지 템플릿
+매물 목록에서 우클릭 시 복사할 수 있는 문의 템플릿을 사전 등록합니다.
+
+**치환 변수:**
+- `{title}`: 상품 제목
+- `{price}`: 판매 가격
+- `{seller}`: 판매자 이름
+- `{location}`: 거래 지역
+- `{target_price}`: 사용자가 설정한 희망 목표가
+- `{platform}`: 마켓 플랫폼명 (당근마켓/번개장터/중고나라)
+
+**예시 템플릿:**
+```text
+안녕하세요 {seller}님! 등록하신 [{title}] 매물 보고 연락드렸습니다.
+혹시 직거래({location}) 가능하실까요?
+```
+
+---
+
+## 💻 CLI 및 백그라운드 모드
+
+GUI 없이 콘솔 환경(Linux 서버, 라즈베리 파이, 백그라운드 서비스)에서 모니터링만 수행할 때 사용합니다.
+
+```bash
+# 기본 CLI 모드로 실행 (settings.json 설정 기반)
+python main.py --cli
+
+# 현재 세션만 헤드리스 브라우저 강제 적용
+python main.py --cli --headless
+
+# 백그라운드 실행 (Linux/macOS)
+nohup python main.py --cli > /dev/null 2>&1 &
+```
+
+---
+
+## ⌨️ 단축키 일람표
+
+| 단축키 | 동작 | 지원 화면 |
+|:---|:---|:---|
+| `Ctrl + S` | 모니터링 시작 / 일시정지 토글 | 공통 |
+| `Ctrl + ,` | 환경설정 다이얼로그 열기 | 공통 |
+| `Ctrl + N` | 새 검색 키워드 등록 창 열기 | 공통 / 키워드 탭 |
+| `F5` | 현재 선택된 탭 데이터 새로고침 | 공통 |
+| `F1` | 단축키 안내 팝업 | 공통 |
+| `Ctrl + F` | 매물 제목 검색창으로 포커스 이동 | 전체 매물 탭 |
+| `Enter` | 선택된 매물의 웹 링크 열기 | 전체 매물 / 즐겨찾기 탭 |
+| `F` | 선택된 매물을 즉시 즐겨찾기에 추가 | 전체 매물 탭 |
+| `Esc` | 열려 있는 팝업 또는 다이얼로그 닫기 | 다이얼로그 공통 |
+
+---
+
+## 🏗️ 시스템 아키텍처 & 안정성 메커니즘
+
+```
+used-market-notifier/
+├── main.py                     # 애플리케이션 엔트리포인트 (CLI / GUI 디스패치)
+├── models.py                   # 핵심 데이터 모델 (Item, SearchKeyword, AppSettings 등)
+├── constants.py                # 시스템 상수 및 플랫폼 식별자
+├── monitor_engine.py           # 모니터링 오케스트레이션 엔진
+├── settings_manager.py         # JSON 설정 입출력, 마이그레이션, 자동 복구 매니저
+├── db.py                       # SQLite 기반 데이터베이스 관리자 (스레드 세이프)
+│
+├── engine/                     # 모니터링 코어 패키지
+│   ├── monitor.py              # 검색 사이클 및 스케줄러 관리
+│   ├── search_flow.py          # 수집 -> 필터링 -> 태깅 -> 저장 파이프라인
+│   ├── scrapers.py             # 스크래퍼 인스턴스 라이프사이클 및 Fallback 조정
+│   ├── metadata.py             # 판매자/위치 메타데이터 2단계 보강 수집
+│   └── notification_runtime.py # 비동기 알림 큐 & 채널별 재시도 워커
+│
+├── scrapers/                   # 플랫폼별 크롤러 패키지
+│   ├── base.py                 # 스크래퍼 추상 베이스 클래스
+│   ├── playwright/             # 고속 Playwright 브라우저 엔진 및 Stealth 믹스인
+│   ├── parsers/                # HTML DOM 파서, 정규화, 품질 게이트
+│   ├── bunjang.py              # 번개장터 스크래퍼 (API 우선 + DOM 파싱)
+│   ├── danggeun.py             # 당근마켓 스크래퍼 (JSON-LD 우선 파싱)
+│   └── joonggonara.py          # 중고나라 스크래퍼 (네이버 카페 탭 검색 & iframe 파싱)
+│
+├── storage/                    # 데이터 저장소 패키지
+│   ├── database.py             # DatabaseManager 조립
+│   ├── schema.py               # 테이블 생성 및 스키마 버전 관리
+│   ├── listings.py             # 매물 등록, 중복 방지 (article_id / URL)
+│   ├── stats.py                # 통계 집계 쿼리 (TTL 캐싱 적용)
+│   ├── favorites.py            # 즐겨찾기, 목표가 및 메모 관리
+│   └── maintenance.py          # 오래된 데이터 정리 및 백업 보조
+│
+├── gui/                        # PyQt6 GUI 컴포넌트 패키지
+│   ├── main/                   # MainWindow, 백그라운드 모니터 스레드
+│   ├── settings_panels/        # 설정 다이얼로그 (일반/알림/스케줄/유지보수 등)
+│   ├── widgets/                # 키워드, 매물, 통계, 즐겨찾기, 로그 위젯
+│   ├── components/             # 커스텀 UI 카드, 뱃지, 토스트 알림
+│   ├── compare/                # 매물 다중 비교 다이얼로그
+│   └── theme/                  # 다크/라이트 테마 팔레트 (Catppuccin)
+│
+└── notifiers/                  # 알림 발송 패키지 (Telegram, Discord, Slack)
+```
+
+### 안정성 보장 기술
+1. **첫 검색 사이클 알림 방지**: 프로그램 시작 시 DB에 없는 대량의 기존 매물이 한꺼번에 알림으로 쏟아지는 현상을 방지하기 위해, 최초 1회 수집 데이터는 알림 없이 DB에만 등록됩니다.
+2. **비동기 독립 알림 큐**: 크롤링 검색 루프가 네트워크 알림 발송 지연에 영향을 받지 않도록 별도의 비동기 큐(`asyncio.Queue`)와 전용 워커에서 알림을 처리합니다.
+3. **채널별 독립 재시도**: 디스코드 전송 실패가 텔레그램이나 슬랙 발송에 영향을 주지 않으며, 실패한 채널만 지수 백오프(최대 3회)로 재시도합니다.
+4. **설정 파일 자동 복구**: 예기치 않은 종료로 `settings.json`이 깨지더라도 백업 파일에서 유효한 상태를 찾아 자동 복구합니다.
+
+---
+
+## 🛠️ 개발, 테스트 및 빌드
+
+### 1. 테스트 실행
+```bash
+# 전체 단위/통합 회귀 테스트 실행 (90+ 테스트 케이스)
 python -m unittest discover -s tests -q
 ```
 
-### CLI 모드 (백그라운드 실행)
-
+### 2. 정적 타입 검사
 ```bash
-python main.py --cli
+# Pyright 타입 검사 (Python 3.10 기준)
+pyright .
 ```
 
----
-
-## 📖 사용 방법
-
-### 1. 키워드 등록
-
-1. **키워드 탭**에서 `+ 키워드 추가` 버튼 클릭
-2. 검색 키워드 입력 (예: "맥북 프로 M2")
-3. 옵션 설정:
-   - **가격 범위**: 최소/최대 가격
-     - `가격문의`, `N/A` 등 가격 미상 매물은 누락 방지를 위해 가격 필터를 통과합니다.
-   - **지역**: 당근마켓 best-effort 지역 필터
-   - **제외 키워드**: "부품", "고장" 등
-   - **플랫폼**: 검색할 플랫폼 선택
-4. 저장
-
-### 2. 알림 설정
-
-> 참고: Telegram/Discord/Slack 채널을 활성화해도, 전역 설정 `notifications_enabled`가 `true`여야 실제 알림이 전송됩니다.
-
-> 참고: 당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터로 동작합니다. 요청 지역 정확도는 보장되지 않으며, 앱에서 경고를 표시합니다.
-
-1. **설정** (⚙️) 버튼 클릭
-2. 원하는 알림 채널 탭 선택:
-
-**Telegram 설정:**
-1. [@BotFather](https://t.me/BotFather)에서 봇 생성
-2. 봇 토큰 복사
-3. [@userinfobot](https://t.me/userinfobot)에서 Chat ID 확인
-4. 설정에 입력 후 "테스트" 버튼으로 확인
-
-**Discord 설정:**
-1. Discord 서버 설정 → 연동 → 웹훅
-2. 새 웹훅 생성 → URL 복사
-3. 설정에 입력 후 "테스트" 버튼으로 확인
-
-**Slack 설정:**
-1. Slack 앱 설정 → Incoming Webhooks 활성화
-2. 웹훅 URL 복사
-3. 설정에 입력 후 "테스트" 버튼으로 확인
-
-### 3. 모니터링 시작
-
-1. 헤더의 **▶ 시작** 버튼 클릭 (또는 `Ctrl+S`)
-2. 상태 표시줄에서 진행 상황 확인
-3. 새 상품 발견 시 자동 알림
-
-### 4. 매물 관리
-
-**매물 목록 탭:**
-- 검색으로 매물 필터링
-- 플랫폼/판매상태 필터
-- 더블클릭으로 상세 페이지 열기
-- 우클릭 메뉴: 즐겨찾기, 판매자 차단, 메시지 작성
-
-**즐겨찾기 탭:**
-- 관심 매물 저장
-- 메모 및 목표 가격 설정
-- 가격 변동 알림
-
-**통계 탭:**
-- 플랫폼별 매물 분포
-- 일별 수집 통계
-- 가격 변동 이력
-- CSV/Excel 내보내기
-
----
-
-## 📁 프로젝트 구조
-
-```
-used_market_notifier/
-├── main.py              # 진입점 (GUI/CLI 모드)
-├── monitor_engine.py    # 호환 facade -> engine.monitor.MonitorEngine
-├── db.py                # 호환 facade -> storage.database.DatabaseManager
-├── settings_manager.py  # 호환 facade -> app_settings.manager.SettingsManager
-├── models.py            # 데이터 모델
-├── constants.py         # 상수 정의
-├── auto_tagger.py       # 자동 태깅
-├── backup_manager.py    # 호환 facade -> backup.manager.BackupManager
-├── backup/              # 백업/복원 구현 (런타임 ZIP: backup/backup_*.zip)
-├── export_manager.py    # 내보내기
-├── message_templates.py # 메시지 템플릿
-├── engine/              # 모니터링 엔진 내부 구현
-│   ├── monitor.py       # MonitorEngine 조립
-│   ├── scrapers.py      # 스크래퍼 수명주기/폴백 생성
-│   ├── search_flow.py   # 검색/필터/저장 흐름
-│   ├── metadata.py      # 판매자/지역 메타데이터 보강
-│   ├── notification_runtime.py
-│   └── runtime.py       # start/stop/close 루프
-├── storage/             # SQLite 저장소 구현
-│   ├── database.py      # DatabaseManager 조립
-│   ├── schema.py        # 스키마/마이그레이션
-│   ├── listings.py      # 매물 저장/조회
-│   ├── stats.py         # 통계/대시보드
-│   ├── favorites.py     # 즐겨찾기/메모
-│   ├── notifications.py # 알림 로그
-│   ├── filters.py       # 판매자 차단
-│   └── maintenance.py   # 정리/내보내기 보조
-├── app_settings/        # 설정 직렬화/복구/preset 구현
-├── gui/                 # UI 컴포넌트
-│   ├── main_window.py   # 호환 facade -> gui.main.window
-│   ├── styles.py        # 호환 facade -> gui.theme
-│   ├── keyword_manager.py   # 호환 facade -> gui.widgets.keyword
-│   ├── settings_dialog.py   # 호환 facade -> gui.settings_panels
-│   ├── listings_widget.py   # 호환 facade -> gui.widgets.listings
-│   ├── favorites_widget.py  # 호환 facade -> gui.widgets.favorites
-│   ├── export_dialog.py     # 호환 facade -> gui.export
-│   ├── compare_dialog.py    # 호환 facade -> gui.compare
-│   ├── stats_widget.py      # 호환 facade -> gui.widgets.stats
-│   ├── main/                # MainWindow, MonitorThread
-│   ├── theme/               # Catppuccin/dark/light palette + styles facade
-│   ├── components/          # GlassCard, StatCard, PlatformBadge, Toast 등
-│   ├── export/              # ExportDialog mixin 패키지
-│   ├── compare/             # CompareDialog mixin 패키지
-│   ├── settings_panels/     # 설정 dialog/workers/editors/mixins
-│   ├── widgets/             # keyword/listings/stats/favorites 내부 위젯
-│   └── ...
-├── scrapers/            # 플랫폼 스크래퍼 (Playwright 우선 + Selenium 폴백)
-│   ├── danggeun.py      # 당근마켓
-│   ├── bunjang.py       # 번개장터
-│   ├── joonggonara.py   # 중고나라
-│   ├── marketplace_parsers.py # 호환 facade -> scrapers.parsers
-│   ├── playwright_base.py     # 호환 facade -> scrapers.playwright
-│   ├── parsers/         # HTML snapshot/정규화/품질/플랫폼 파서
-│   ├── playwright/      # PlaywrightScraper lifecycle/navigation/runtime mixins
-│   ├── playwright_danggeun.py
-│   ├── playwright_bunjang.py
-│   ├── playwright_joonggonara.py
-│   └── stealth.py       # 봇 탐지 우회
-└── notifiers/           # 알림 모듈
-    ├── telegram_notifier.py
-    ├── discord_notifier.py
-    └── slack_notifier.py
+### 3. 실제 사이트 스모크 테스트
+```bash
+# 실제 플랫폼 대상 라이브 검색 파싱 검증 스크립트
+python scripts/live_smoke.py --keyword 아이폰 --platform all --no-artifacts
 ```
 
----
-
-## ⚙️ 설정 파일
-
-### settings.json
-
-```json
-{
-  "check_interval_seconds": 300,
-  "headless_mode": true,
-  "notifications_enabled": true,
-  "metadata_enrichment_enabled": false,
-  "conditional_metadata_enrichment_enabled": true,
-  "scraper_mode": "playwright_primary",
-  "fallback_on_empty_results": true,
-  "max_fallback_per_cycle": 3,
-  "minimize_to_tray": true,
-  "auto_start_monitoring": false,
-  "theme_mode": "dark",
-  "keywords": [...],
-  "notifiers": [...],
-  "auto_backup_enabled": true,
-  "auto_backup_interval_days": 7,
-  "auto_tagging_enabled": true
-}
+### 4. PyInstaller 실행 파일 패키징
+```bash
+# 단일 실행 파일(.exe) 빌드
+pyinstaller used_market_notifier.spec
 ```
-
-> 참고:
-> - 리포지토리에는 `settings.example.json`만 포함됩니다. 실제 실행을 위해서는 `settings.json`을 생성해 토큰/웹훅 등을 채워주세요.
-> - `settings.json`, `listings.db*`, `notifier.log`, `__pycache__/`, `backup/backup_*.zip`, `debug_output/`, `.tmp/`, `agent-tools/`, `mcps/` 등은 로컬 런타임/워크스페이스 데이터로서 Git에 포함되지 않도록 `.gitignore` 처리되어 있습니다.
-> - 과거 레거시 설정/알림 샘플 코드는 `legacy/`에 있으며, 현재 메인 앱에서는 사용하지 않습니다.
-
-### 데이터 파일
-
-| 파일 | 설명 |
-|------|------|
-| `settings.json` | 사용자 설정 |
-| `listings.db` | 매물 데이터베이스 |
-| `notifier.log` | 로그 파일 |
-| `backup/backup_*.zip` | 자동 백업 ZIP 아카이브 (`backup/` 패키지와 동일 디렉터리) |
-| `debug_output/` | Playwright 디버거 산출물(스크린샷/HTML/네트워크 로그) |
+> 빌드 완료 후 `dist/UsedMarketNotifier.exe` 파일이 생성됩니다.
 
 ---
 
-## 🔧 고급 설정
+## ❓ 자주 묻는 질문 & 문제 해결 (FAQ)
 
-### 검색 주기 조정
+### Q1. "검색 결과가 0개입니다"라고 뜨며 매물이 안 잡혀요.
+- **A**: 해당 플랫폼의 HTML 구조가 변경되었거나 일시적으로 IP가 제한되었을 수 있습니다.
+  1. `설정 > 일반`에서 **백그라운드 모드** 체크를 해제하여 브라우저가 정상적으로 페이지를 로딩하는지 눈으로 확인해 보세요.
+  2. 스크래퍼 모드가 `Playwright 우선`으로 되어 있다면 `Selenium 우선`으로 전환해 보세요.
+  3. `python -m playwright install chromium` 명령어로 브라우저 바이너리가 최신인지 확인합니다.
 
-기본 검색 주기는 5분입니다. `설정 > 일반`에서 변경 가능합니다.
+### Q2. 텔레그램 알림이 오지 않습니다.
+- **A**: 
+  1. `설정 > 일반`에서 **"🔔 알림 받기"**에 체크가 되어 있는지 확인합니다.
+  2. 봇 생성 후 텔레그램 채팅방에서 **`/start`**를 한 번이라도 입력해야 봇이 사용자에게 메시지를 보낼 수 있습니다.
+  3. 설정 화면의 **🔔 테스트** 버튼을 눌러 에러 팝업 내용을 확인해 보세요.
 
-| 주기 | 권장 상황 |
-|------|----------|
-| 1분 | 급한 매물 모니터링 (IP 차단 위험) |
-| 5분 | 일반적인 사용 (기본값) |
-| 10분 | 장기 모니터링 |
+### Q3. 당근마켓 지역 필터가 정확하지 않은 것 같아요.
+- **A**: 당근마켓 웹 검색은 접속 위치 세션을 기반으로 결과를 제공하는 특성이 있습니다. 프로그램은 검색된 매물 텍스트에서 지역명을 정규식으로 대조하여 후처리 필터링하므로, 동 단위 정보가 명시되지 않은 매물은 누락 방지를 위해 다소 넓게 잡힐 수 있습니다.
 
-### 브라우저 설정
-
-- **Headless 모드**: 브라우저 창 숨김 (기본)
-- **브라우저 표시**: 디버깅용
-
-### 스크래퍼 모드
-
-| 모드 | 설명 |
-|------|------|
-| `playwright_primary` | Playwright 우선, 실패/빈결과 시 Selenium 폴백 |
-| `selenium_primary` | Selenium 우선, 실패/빈결과 시 Playwright 폴백 |
-| `selenium_only` | Selenium만 사용 (폴백 없음) |
-
-### 메타데이터 보강 수집
-
-- `metadata_enrichment_enabled`: 모든 검색 결과에서 비어 있는 seller/location 정보를 제한적으로 보강합니다.
-- `conditional_metadata_enrichment_enabled`: 지역 필터 또는 차단 판매자 판별에 필요한 경우만 자동 보강합니다. 기본값은 `true`입니다.
-
-### 데이터 정리
-
-`설정 > 유지보수`에서:
-- 오래된 매물 자동 삭제 (기본 30일)
-- 즐겨찾기/메모 있는 매물 보호
-- 백업 보관 개수 설정
+### Q4. 오래 켜두었더니 프로그램이 무거워집니다.
+- **A**: 수집된 매물이 많아지면 DB 크기가 증가합니다. `설정 > 유지보수` 탭에서 **자동 클린업**을 활성화하여 30일 이상 지난 과거 매물을 자동으로 정리하도록 설정해 주세요.
 
 ---
 
-## 🐛 문제 해결
+## 🛡️ 주의사항 & 라이선스
 
-### 스크래핑이 안 될 때
-
-1. **네트워크 확인**: 인터넷 연결 상태 확인
-2. **브라우저 표시 모드**: `설정 > 일반 > 브라우저 표시` 활성화
-3. **Chrome 업데이트/재설치**: 브라우저가 너무 오래됐으면 페이지가 깨질 수 있습니다
-4. **로그 확인**: 앱의 `로그` 탭에서 에러 메시지 확인
-5. **라이브 스모크 확인**: `python scripts/live_smoke.py --keyword 아이폰`
-
-### 알림이 안 올 때
-
-1. **알림 활성화 확인**: `설정 > 일반 > 알림 활성화`
-2. **채널 설정 확인**: 토큰/웹훅 URL 재확인
-3. **테스트 전송**: 각 채널의 "테스트" 버튼 사용
-4. **스케줄 확인**: 요일/시간 설정 확인
-
-### UI가 느릴 때
-
-1. **데이터 정리**: 오래된 매물 삭제
-2. **백업 정리**: 불필요한 백업 삭제
-3. **재시작**: 프로그램 재시작
-
----
-
-## 📝 최근 업데이트
-
-### v2.1 (2026-01)
-
-**스크래핑 안정성 대폭 개선:**
-- ✅ Selenium 드라이버 세션 자동 복구
-- ✅ 연속 빈 결과 감지 및 경고 (3회 연속 시 알림)
-- ✅ 중고나라 헤드리스 모드 지원 개선
-- ✅ 검색 결과 최신순 정렬 추가
-- ✅ 스크래핑 소요 시간 로깅
-
-**알림 시스템 강화:**
-- ✅ Discord/Slack 알림 재시도 로직 (3회, 지수 백오프)
-- ✅ Telegram 재시도 안정성 개선
-- ✅ 상세 오류 메시지 표시
-
-**UI/UX 개선:**
-- ✅ 키워드 입력 유효성 검사 (빈값, 플랫폼 미선택 방지)
-- ✅ 통계 위젯 메모리 누수 수정 (DB/타이머 정리)
-- ✅ 내보내기 오류 메시지 상세화
-- ✅ 즐겨찾기 테이블 정렬 기능
-
-**코어 기능:**
-- ✅ 자동 태깅 시스템 연동 완료
-- ✅ 백업 매니저 GUI 연동
-- ✅ 판매 상태 자동 감지
-- ✅ 가격 정규화 유틸리티 추가
-
-### v2.0 (2026-01)
-
-- ✅ **자동 태깅 시스템**: 제목 분석 기반 태그 자동 부여
-- ✅ **메시지 템플릿**: 판매자 문의 메시지 템플릿
-- ✅ **매물 비교**: 여러 매물 나란히 비교
-- ✅ **백업/복원**: 자동 백업, 이전 데이터 복원
-- ✅ **UI 개선**: 글래스모피즘, 애니메이션
-- ✅ **스크래핑 안정화**: Selenium 기반 안정성 개선
-- ✅ **가격 추적**: 가격 변동 이력 및 알림
-
-### v1.5 (2025-12)
-
-- ✅ 크롤링 아키텍처 재설계
-- ✅ 토스트 알림 추가
-- ✅ 테이블 가독성 개선
-- ✅ 스레드 안정성 개선
-
----
-
-## 🛡️ 주의사항
-
-- 이 프로그램은 **개인 사용 목적**으로만 사용하세요.
-- 과도한 크롤링은 **IP 차단**을 유발할 수 있습니다.
-- 각 플랫폼의 **이용약관**을 준수하세요.
-- 상업적 목적의 데이터 수집은 **금지**됩니다.
-- 위치/판매자 정보는 플랫폼과 페이지 구조에 따라 제공이 제한될 수 있습니다. 기본 정책은 상세 페이지를 추가로 열지 않는(best-effort) 방식이라 일부 정보가 비어 있을 수 있습니다.
-
----
-
-## 📄 라이선스
-
-MIT License
-
----
-
-## 💡 기여하기
-
-버그 제보, 기능 제안, Pull Request 환영합니다!
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 2026-02 Consistency Update (Dual Engine + Packaging)
-
-This section is the current source of truth and supersedes older statements in this file when conflicts exist.
-
-- Scraper mode supports three values:
-  - `playwright_primary` (default)
-  - `selenium_primary`
-  - `selenium_only`
-- Fallback is triggered only when:
-  - primary scraper raises an exception, or
-  - primary result count is 0 and `fallback_on_empty_results=true`, and
-  - per-platform fallback count is below `max_fallback_per_cycle`.
-- Result merge dedupe key order:
-  - primary key: `(platform, article_id)`
-  - secondary key: `url/link`
-- Danggeun location policy:
-  - if location filter is set, unknown location items are excluded for `danggeun`.
-  - app/runtime warns that Danggeun location filtering is best-effort and does not guarantee requested-region accuracy.
-- Joonggonara title validity filter:
-  - completion keywords are checked by substring match (not exact match).
-
-## 2026-03 Consistency Update (Danggeun/Bunjang Parser)
-
-- Danggeun parser behavior:
-  - `article_id` extraction now supports numeric IDs, slug tokens, and deterministic hash fallback.
-  - JSON-LD parsing is primary and result intake is capped at top `120` items per search.
-  - DOM fallback selector is narrowed to search-result cards only:
-    - `a[data-gtm='search_article'][href^='/kr/buy-sell/']`
-  - seller enrichment now scans multiple candidate nodes and can recover seller names from profile `aria-label` values when visible text is empty.
-- Bunjang parser behavior:
-  - Unknown location text (`지역정보 없음` variants) is normalized to `None`.
-  - Card text fallback parser removes badge lines (`배송비포함`, `검수가능`) before title/price/location extraction.
-  - Detail enrichment is API-first, but still falls back to DOM for missing seller/location fields after partial API responses.
-- Location policy impact:
-  - Danggeun remains strict when keyword location filter is set.
-  - Non-Danggeun platforms keep best-effort behavior with unknown location values.
-
-### Runtime / Build Notes
-
-- Required setup for Playwright path:
-  - `python -m playwright install chromium`
-- Team-standard regression command:
-  - `python -m unittest discover -s tests -q`
-- Onefile build command:
-  - `pyinstaller used_market_notifier.spec`
-- Type-check gate command:
-  - `pyright .`
-- Type-check baseline is pinned in `pyrightconfig.json`:
-  - `pythonVersion=3.10`
-  - `typeCheckingMode=standard`
-- PyInstaller spec (`used_market_notifier.spec`) includes Playwright Python modules.
-- PyInstaller onefile build intentionally excludes `matplotlib`; chart widgets fall back gracefully when unavailable.
-- Chromium runtime binaries are not bundled in the EXE.
-- If Playwright runtime is unavailable at startup, engine automatically degrades to Selenium mode with warning logs.
-
-## 2026-04 Audit Remediation Update
-
-- Joonggonara parsing / enrichment:
-  - Naver search uses the cafe article tab (`where=article&ssc=tab.cafe.all`) and accepts only strict Joonggonara cafe article URLs (`cafe.naver.com` / `m.cafe.naver.com`, `/joonggonara/{numeric_id}`).
-  - SmartStore, shopping, and ad URLs are rejected by host/path even when query strings contain `site:cafe.naver.com/joonggonara`.
-  - known noise links are rejected before item creation (generic cafe links, URL-only anchors, time/video labels, placeholder text, numeric-only anchor text).
-  - detail enrichment now waits for `iframe#cafe_main` and parses seller/location/price/title from the frame body, with outer-page fallback only when the iframe path is unavailable.
-  - detail parsing now skips category/UI meta lines, supports `35만원`-style prices, and extracts station/dong-level transaction locations when present.
-- Bunjang enrichment / sale status:
-  - detail enrichment is API-first and uses the Bunjang product-detail API for seller, location, price, and explicit sale status.
-  - seller extraction selectors were updated to the current `/shop/.../products` shape.
-  - scraper-provided sale status is normalized to `for_sale`, `reserved`, `sold`, or `unknown`, and DB writes prefer that explicit value over title heuristics.
-  - when the detail API omits `seller` or `location`, DOM fallback still tries to fill the missing fields from valid seller candidates and `직거래지역` / `거래지역` labels.
-- Observability:
-  - Danggeun and Bunjang searches now log per-search candidate counters and drop reasons (`selector_count`, `jsonld_scripts`, `jsonld_items`, `parsed_items`, invalid-title drops, missing-id drops, parse-error drops).
-  - when a Playwright search finds candidate DOM/data but still returns `0` parsed items, debug artifacts are dumped under `debug_output/`.
-  - malformed scrape batches are classified as `parser_malformed`, can trigger fallback, and also write debug artifacts when candidate DOM existed.
-- Metadata enrichment flow:
-  - enrichment now uses one shared budget per platform/keyword/cycle.
-  - pass 1 enriches only items that need seller/location for location filtering or blocked-seller decisions.
-  - pass 2 spends any remaining budget on kept items that still lack seller/location for DB quality and notifications.
-  - `conditional_metadata_enrichment_enabled` defaults to `true`, so targeted seller/location enrichment can still run for filtering decisions even when global enrichment is off.
-- Packaging / tests:
-  - `used_market_notifier.spec` now collects Playwright modules plus the `aiohttp` dependency tree used by Bunjang detail enrichment.
-  - regression fixtures cover Danggeun, Bunjang, and Joonggonara live markup snapshots plus import safety without `selenium`.
-
-## 2026-04 Stabilization Follow-up
-
-- Playwright lifecycle:
-  - Playwright scrapers now use retained async `start/search/enrich/close` resources instead of launching a browser per search/enrichment call.
-  - `MonitorEngine` awaits async scrapers directly and keeps Selenium/sync scraper compatibility through the executor path.
-  - Playwright health checks now reflect retained browser/context state and recent runtime/parser failures.
-- Settings resilience:
-  - valid JSON settings are normalized field-by-field instead of quarantining the whole file for a single bad value.
-  - `load_recovery_state.normalized_fields` records corrected fields for UI/log diagnostics.
-- Data integrity:
-  - `listings.normalized_url` is backfilled and indexed.
-  - listing writes use `(platform, article_id)` first, then `(platform, normalized_url)` as a secondary duplicate key.
-  - schema version is stored in `meta.schema_version` and startup integrity checks verify required columns.
-- Notification telemetry:
-  - disabled/scheduled-out/no-channel notification decisions are recorded in `notification_delivery_log` with `system` / `skipped_*` statuses.
-  - shutdown no longer requeues failed notification retries.
-- GUI / packaging / repo hygiene:
-  - Settings UI exposes scraper mode, fallback-on-empty, and per-cycle fallback budget.
-  - Backup restore stops monitoring first and exits after restore to avoid stale DB connections.
-  - `.gitignore` includes `*.pre_restore` restore snapshots.
-  - `used_market_notifier.spec` documents the async lifecycle change and standard-library additions.
-
-## 2026-05 Live Site Stabilization Update
-
-- Bunjang search parsing:
-  - current product cards using `a[href*='/products/']` are the primary source; legacy `a[data-pid]` markup remains supported.
-  - card text in `price -> title -> time/count` order is parsed into the correct fields, while `AD`, price-only, count-only, and time tokens are never stored as titles or locations.
-  - Playwright and Selenium paths share the same pure parser helper, and detail API data can merge `product.name`, `product.price`, `product.saleStatus`, and `shop.name` into search results.
-- Joonggonara relevance filter:
-  - search URL generation is pinned to the Naver cafe article tab.
-  - result validation is host/path based with `urlsplit()`, not query-substring based, so shopping/smartstore/ad redirects are excluded before item creation.
-- Quality gate / fallback:
-  - scrape results with invalid-title ratios, platform/host mismatches, broken IDs, or too few valid titles are treated as malformed.
-  - malformed primary results record `parser_malformed`, can use the configured fallback scraper, and write `debug_output/` HTML/screenshot/summary artifacts when DOM candidates existed.
-- Metadata and operations:
-  - Danggeun location normalization trims trailing separators and time tokens such as `행당동·` or `서울 강남구 역삼동 · 끌올 1일 전`.
-  - conditional metadata enrichment is exposed in `settings.example.json`, `AppSettings`, normalization, and the settings dialog.
-  - per-cycle enrichment uses a TTL cache for repeated article IDs and platform backoff for 403/429/CAPTCHA-like responses.
-  - optional live checks live in `scripts/live_smoke.py`; they are intentionally separate from the default unit test suite.
-
-### Encoding Hygiene Gate
-
-- Track only UTF-8 text files for source/docs.
-- Validation target:
-  - strict UTF-8 decode failures: `0`
-  - `U+FFFD` replacement char occurrences: `0`
-  - C1 control chars (`0x80-0x9F`): `0`
-- Windows PowerShell에서 한글/이모지가 깨져 보이면 실행 전 `$env:PYTHONIOENCODING='utf-8'` 또는 `chcp 65001`을 적용하세요. 로그 파일은 UTF-8로 기록됩니다.
-
-### Quick Smoke Checklist
-
-1. Configure one keyword per platform.
-2. Run one monitoring cycle.
-3. Verify per-platform scrape log line includes:
-   - `primary_engine`, `primary_count`, `fallback_used`, `fallback_count`, `fallback_reason`, `elapsed_ms`
-4. Confirm new listings are persisted in DB.
-
-## 2026-06 Package Split + Audit Remediation Update
-
-- Compatibility facades are preserved for existing imports:
-  - `db.py` -> `storage.database.DatabaseManager`
-  - `monitor_engine.py` -> `engine.monitor.MonitorEngine`
-  - `settings_manager.py` -> `app_settings.manager.SettingsManager`
-  - `scrapers/marketplace_parsers.py` -> `scrapers.parsers`
-  - `gui/keyword_manager.py`, `gui/listings_widget.py`, `gui/stats_widget.py`, `gui/settings_dialog.py` -> split GUI packages.
-- New canonical implementation packages:
-  - `storage/` for schema, listings, statistics, favorites/notes, notification logs, seller filters, and maintenance.
-  - `engine/` for scraper lifecycle, metadata enrichment, notification policy/runtime, search flow, and start/stop lifecycle.
-  - `app_settings/` (+ `app_settings/mixins/`) for settings normalization, serialization, deserialization, recovery, and preset operations.
-  - `backup/` for `BackupManager` restore/manifest logic (`backup_manager.py` facade).
-  - `scrapers/parsers/` for HTML snapshots, normalization, URL validation, quality gates, and platform-specific parser helpers.
-  - `scrapers/playwright/` for Playwright lifecycle/navigation/search-runtime/debug/filter mixins (`playwright_base.py` facade).
-  - `gui/main/`, `gui/theme/`, `gui/components/` for main window threads, theme palettes, and reusable UI primitives.
-  - `gui/export/`, `gui/compare/`, `gui/widgets/favorites/` for export/compare/favorites mixin packages.
-  - `gui/settings_panels/` (+ mixins) and `gui/widgets/*` (+ listings/stats mixins) for dialog workers/editors and large widget internals.
-- Audit remediation status:
-  - notification worker cancellation is handled explicitly during shutdown.
-  - backup restore uses manifest/basename allowlists and path traversal checks instead of raw `extractall()`.
-  - startup system notifications obey `notifications_enabled` and active schedule.
-  - external link opening uses a shared `http`/`https` allowlist + optional confirmation helper.
-  - keyword editing rejects invalid price ranges where both bounds are positive and `min_price > max_price`.
-  - live smoke supports `--summary-file PATH`; the last verified run produced `.tmp/live_smoke_summary.json`.
-- Current verification baseline:
-  - `python -m unittest discover -s tests -q` -> `Ran 91 tests` / `OK`
-  - `pyright .` -> `0 errors, 0 warnings`
-  - `python scripts/live_smoke.py --keyword 아이폰 --platform all --no-artifacts --summary-file .tmp/live_smoke_summary.json` -> all platforms `ok: true`
-
-## 2026-03 Consistency Update (Data Integrity + Notification Reliability)
-
-This section is the current source of truth for the March 25, 2026 stabilization work.
-
-- Listing persistence:
-  - auto tags are stored in `listing_auto_tags`, not in `listing_notes.auto_tags`
-  - existing listings refresh non-empty `title`, `url`, `thumbnail`, `seller`, and `location`
-  - `keyword` remains the original representative keyword for the listing row
-  - `sale_status` is re-detected every cycle and state transitions are recorded in `sale_status_history`
-- Notification delivery:
-  - the first monitoring cycle skips both new-item notifications and price-change notifications
-  - retries happen per channel, not per whole notification job
-  - successful sends are recorded in `notification_log`
-  - channel success/failure/retry telemetry is recorded in `notification_delivery_log`
-  - the notification history UI now shows a 7-day channel health summary
-- Metadata enrichment:
-  - `metadata_enrichment_enabled` defaults to `false`
-  - `conditional_metadata_enrichment_enabled` defaults to `true`
-  - seller/location enrichment uses a two-phase budget: targeted prefilter enrichment for location/seller-block decisions, then postfilter enrichment for kept items still missing metadata
-  - enrichment is capped at `10` items per platform per keyword per cycle
-  - failures are warning-only and do not discard the base search result
-  - explicit scraper-provided `sale_status` values are persisted when available
-- Import/runtime safety:
-  - the package can be imported in Playwright-only environments even when `selenium` is not installed
-  - Selenium scraper classes are treated as optional runtime dependencies and are skipped with informative logs when unavailable
-- Cleanup / recovery semantics:
-  - `cleanup_exclude_noted` protects only rows that have real `listing_notes`
-  - auto tags alone do not protect a listing from cleanup
-  - cleanup explicitly removes linked rows from favorites, notes, auto tags, notification logs, delivery logs, price history, and sale-status history
-  - broken settings files are renamed to `settings.broken-YYYYMMDD_HHMMSS.json`
-  - startup recovery restores the newest valid `backup_*.zip` settings payload when available, otherwise defaults are used
-  - GUI startup shows a recovery notice when this path is taken
-- CLI / packaging:
-  - `python main.py --headless` is a session-only override and does not rewrite `settings.json`
-  - `used_market_notifier.spec` excludes `tests` and `legacy` from onefile builds
-  - `.gitignore` must ignore `settings.broken-*.json`, `*.pre_restore`, rotated logs like `notifier.log.1`, workspace-local temp directories such as `.tmp/`, `agent-tools/`, `mcps/`, and runtime backup archives `backup/backup_*.zip` (not the `backup/` Python package)
-
-### Verification Baseline
-
-- Regression tests:
-  - `python -m unittest discover -s tests -q`
-- Restricted/sandboxed shells:
-  - point `TEMP/TMP` to workspace-local `.tmp/` before running regression tests
-- Type checks:
-  - `pyright .`
-- Current expected baseline after this update:
-  - `Ran 91 tests`
-  - `OK`
+- **개인 이용 목적 한정**: 본 소프트웨어는 개인의 편의를 위한 모니터링 용도로 개발되었습니다.
+- **과도한 요청 금지**: 검색 주기를 너무 짧게(예: 30초 미만) 설정할 경우 마켓 플랫폼으로부터 일시적 또는 영구적인 **IP 차단**을 받을 수 있으므로 권장 검색 주기(300초 이상)를 준수하세요.
+- **서비스 약관 준수**: 각 중고거래 플랫폼의 서비스 이용약관 및 로봇 배제 표준(robots.txt)을 준수해야 합니다.
+- **라이선스**: 본 프로젝트는 [MIT License](LICENSE) 하에 자유롭게 수정 및 배포가 가능합니다.

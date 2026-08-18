@@ -1,0 +1,9 @@
+{
+  "ai": "grok",
+  "ai_skills": true,
+  "feature_numbering": "sequential",
+  "here": true,
+  "integration": "grok",
+  "script": "ps",
+  "speckit_version": "0.14.1"
+}

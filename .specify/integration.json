@@ -1,0 +1,30 @@
+{
+  "version": "0.14.1",
+  "integration_state_schema": 1,
+  "installed_integrations": [
+    "grok",
+    "claude",
+    "codex",
+    "agy"
+  ],
+  "integration_settings": {
+    "grok": {
+      "script": "ps",
+      "invoke_separator": "-"
+    },
+    "claude": {
+      "script": "ps",
+      "invoke_separator": "-"
+    },
+    "codex": {
+      "script": "ps",
+      "invoke_separator": "-"
+    },
+    "agy": {
+      "script": "ps",
+      "invoke_separator": "-"
+    }
+  },
+  "integration": "grok",
+  "default_integration": "grok"
+}
