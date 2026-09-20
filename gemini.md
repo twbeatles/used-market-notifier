@@ -41,26 +41,28 @@ used_market_notifier/
 ├── main.py                 # 애플리케이션 진입점 (GUI/CLI 모드)
 ├── monitor_engine.py       # 호환 facade -> engine.monitor.MonitorEngine
 ├── db.py                   # 호환 facade -> storage.database.DatabaseManager
-├── models.py               # 데이터 모델 (dataclass 기반)
+├── models/                 # 데이터 모델 패키지 (enums/item/search_keyword/favorites/notifications/tagging/app_settings)
 ├── settings_manager.py     # 호환 facade -> app_settings.manager.SettingsManager
 ├── constants.py            # 전역 상수 정의
-├── auto_tagger.py          # 자동 태깅 시스템
+├── auto_tagger/            # 자동 태깅 패키지 (tagger/analyzer/display/store 믹스인)
 ├── backup_manager.py       # 호환 facade -> backup.manager.BackupManager
-├── backup/                 # 백업/복원 구현 (런타임 ZIP: backup/backup_*.zip)
+├── backup/                 # 백업/복원 구현 (mixins/creator-restorer-registry + path_safety/size_format)
 ├── export_manager.py       # CSV/Excel 내보내기
-├── message_templates.py    # 판매자 메시지 템플릿
+├── message_templates/      # 메시지 템플릿 패키지 (template/defaults/manager/clipboard/context)
 ├── engine/                 # 모니터링 엔진 내부 구현
 │   ├── monitor.py
 │   ├── scrapers.py
 │   ├── search_flow.py
 │   ├── metadata.py
-│   ├── notification_runtime.py
+│   ├── notification_runtime.py  # 섹션 믹스인 조립
+│   ├── notification_sections/   # channels/policy/delivery/worker/system/queue
 │   └── runtime.py
 ├── storage/                # SQLite 저장소 내부 구현
 │   ├── database.py
 │   ├── schema.py
 │   ├── listings.py
-│   ├── stats.py
+│   ├── stats.py             # 섹션 믹스인 조립
+│   ├── stats_sections/      # record/queries/price/daily/dashboard
 │   ├── favorites.py
 │   ├── notifications.py
 │   ├── filters.py
@@ -76,8 +78,8 @@ used_market_notifier/
 │   ├── export_dialog.py    # 호환 facade -> gui.export
 │   ├── compare_dialog.py   # 호환 facade -> gui.compare
 │   ├── stats_widget.py     # 호환 facade -> gui.widgets.stats
-│   ├── main/               # MainWindow, MonitorThread
-│   ├── theme/              # Catppuccin/dark/light palette
+│   ├── main/               # MainWindow 조립 + threads + window_mixins 9종
+│   ├── theme/              # Catppuccin/dark/light palette (dark_sections 8분할)
 │   ├── components/         # GlassCard, StatCard, PlatformBadge, Toast 등
 │   ├── export/             # ExportDialog mixin 패키지
 │   ├── compare/            # CompareDialog mixin 패키지

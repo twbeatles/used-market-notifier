@@ -46,6 +46,11 @@ Notes:
   `scrapers/parsers/`, `scrapers/playwright/`, `gui/settings_panels/`,
   `gui/widgets/`, `gui/main/`, `gui/theme/`, `gui/components/`, `gui/export/`,
   `gui/compare/`, and `gui/widgets/favorites/`. The local packages are collected
+- Follow-up SOLID split keeps the same facade pattern for `models/`,
+  `message_templates/`, `auto_tagger/`, `backup/mixins/`,
+  `engine/notification_sections/`, `storage/stats_sections/`,
+  `gui/main/window_mixins/`, and `gui/theme/dark_sections/`
+  (behavior-preserving; collected below the same way).
   explicitly below so onefile builds do not depend on facade-only discovery.
 - Runtime backup ZIP archives still live under `backup/backup_*.zip` on disk, but
   that directory is also the Python package root for `BackupManager`; only ZIP
@@ -149,9 +154,15 @@ for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", 
 for package_name in (
     "app_settings",
     "app_settings.mixins",
+    "auto_tagger",
     "backup",
+    "backup.mixins",
     "engine",
+    "engine.notification_sections",
+    "message_templates",
+    "models",
     "storage",
+    "storage.stats_sections",
     "scrapers.parsers",
     "gui.settings_panels",
     "gui.settings_panels.mixins",
@@ -159,7 +170,9 @@ for package_name in (
     "gui.widgets.listings.mixins",
     "gui.widgets.stats.mixins",
     "gui.main",
+    "gui.main.window_mixins",
     "gui.theme",
+    "gui.theme.dark_sections",
     "gui.components",
     "gui.export",
     "gui.compare",

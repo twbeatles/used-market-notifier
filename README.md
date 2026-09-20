@@ -350,18 +350,22 @@ nohup python main.py --cli > /dev/null 2>&1 &
 ```
 used-market-notifier/
 ├── main.py                     # 애플리케이션 엔트리포인트 (CLI / GUI 디스패치)
-├── models.py                   # 핵심 데이터 모델 (Item, SearchKeyword, AppSettings 등)
+├── models/                     # 핵심 데이터 모델 패키지 (Item, SearchKeyword, AppSettings 등)
+├── message_templates/          # 판매자 메시지 템플릿 패키지 (값객체/기본값/매니저 분리)
+├── auto_tagger/                # 자동 태깅 패키지 (분석/표시/규칙저장소 믹스인)
 ├── constants.py                # 시스템 상수 및 플랫폼 식별자
 ├── monitor_engine.py           # 모니터링 오케스트레이션 엔진
 ├── settings_manager.py         # JSON 설정 입출력, 마이그레이션, 자동 복구 매니저
 ├── db.py                       # SQLite 기반 데이터베이스 관리자 (스레드 세이프)
+├── backup/                     # 백업/복원 패키지 (생성/복원/보존 믹스인 분리)
 │
 ├── engine/                     # 모니터링 코어 패키지
 │   ├── monitor.py              # 검색 사이클 및 스케줄러 관리
 │   ├── search_flow.py          # 수집 -> 필터링 -> 태깅 -> 저장 파이프라인
 │   ├── scrapers.py             # 스크래퍼 인스턴스 라이프사이클 및 Fallback 조정
 │   ├── metadata.py             # 판매자/위치 메타데이터 2단계 보강 수집
-│   └── notification_runtime.py # 비동기 알림 큐 & 채널별 재시도 워커
+│   ├── notification_runtime.py # 비동기 알림 큐 & 채널별 재시도 워커 (섹션 믹스인 조립)
+│   └── notification_sections/  # 채널설정/정책/전송/워커/시스템/큐 API 분리
 │
 ├── scrapers/                   # 플랫폼별 크롤러 패키지
 │   ├── base.py                 # 스크래퍼 추상 베이스 클래스
@@ -375,17 +379,18 @@ used-market-notifier/
 │   ├── database.py             # DatabaseManager 조립
 │   ├── schema.py               # 테이블 생성 및 스키마 버전 관리
 │   ├── listings.py             # 매물 등록, 중복 방지 (article_id / URL)
-│   ├── stats.py                # 통계 집계 쿼리 (TTL 캐싱 적용)
+│   ├── stats.py                # 통계 집계 쿼리 조립 (TTL 캐싱 적용)
+│   ├── stats_sections/         # 기록/조회/가격/일간/대시보드 쿼리 분리
 │   ├── favorites.py            # 즐겨찾기, 목표가 및 메모 관리
 │   └── maintenance.py          # 오래된 데이터 정리 및 백업 보조
 │
 ├── gui/                        # PyQt6 GUI 컴포넌트 패키지
-│   ├── main/                   # MainWindow, 백그라운드 모니터 스레드
+│   ├── main/                   # MainWindow 조립 + 스레드 + window_mixins (UI/트레이/단축키 등 9종)
 │   ├── settings_panels/        # 설정 다이얼로그 (일반/알림/스케줄/유지보수 등)
 │   ├── widgets/                # 키워드, 매물, 통계, 즐겨찾기, 로그 위젯
 │   ├── components/             # 커스텀 UI 카드, 뱃지, 토스트 알림
 │   ├── compare/                # 매물 다중 비교 다이얼로그
-│   └── theme/                  # 다크/라이트 테마 팔레트 (Catppuccin)
+│   └── theme/                  # 다크/라이트 테마 팔레트 (dark_sections 8분할 포함)
 │
 └── notifiers/                  # 알림 발송 패키지 (Telegram, Discord, Slack)
 ```
@@ -402,7 +407,7 @@ used-market-notifier/
 
 ### 1. 테스트 실행
 ```bash
-# 전체 단위/통합 회귀 테스트 실행 (91개 테스트 케이스)
+# 전체 단위/통합 회귀 테스트 실행 (104개 테스트 케이스)
 python -m unittest discover -s tests -q
 ```
 
