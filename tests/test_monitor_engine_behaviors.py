@@ -27,8 +27,9 @@ class _FakeScraper:
         self.enrich_callback = enrich_callback
 
     def safe_search(self, keyword: str, location: str | None = None):
-        _ = (keyword, location)
         self.calls += 1
+        self.last_keyword = keyword
+        self.last_location = location
         return list(self.items)
 
     def enrich_item(self, item: Item) -> Item:
@@ -318,6 +319,31 @@ class TestMonitorEngineBehaviors(unittest.IsolatedAsyncioTestCase):
 
         warning_count = statuses.count(MonitorEngine.DANGGEUN_LOCATION_WARNING)
         self.assertEqual(warning_count, 1)
+        self.assertEqual(scraper.last_location, "강남")
+
+        if engine._executor is not None:
+            engine._executor.shutdown(wait=True, cancel_futures=True)
+
+    async def test_danggeun_search_uses_settings_region_when_keyword_has_none(self):
+        engine = await self._make_engine(notifications_enabled=False, metadata_enrichment_enabled=False)
+        engine.settings.settings.danggeun_region = "역삼동"
+        engine._cycle_platform_raw_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        engine._cycle_platform_attempts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        engine._cycle_fallback_counts = {p: 0 for p in ("danggeun", "bunjang", "joonggonara")}
+        engine._cycle_danggeun_location_warning_keys = set()
+
+        danggeun = _FakeScraper(items=[])
+        bunjang = _FakeScraper(items=[])
+        engine.primary_scrapers["danggeun"] = danggeun
+        engine.primary_scrapers["bunjang"] = bunjang
+        engine.primary_scraper_kind["danggeun"] = "playwright"
+        engine.primary_scraper_kind["bunjang"] = "playwright"
+
+        kw = SearchKeyword(keyword="아이폰", platforms=["danggeun", "bunjang"])
+        await engine.search_keyword(kw, blocked_set=set())
+
+        self.assertEqual(danggeun.last_location, "역삼동")
+        self.assertIsNone(bunjang.last_location)
 
         if engine._executor is not None:
             engine._executor.shutdown(wait=True, cancel_futures=True)

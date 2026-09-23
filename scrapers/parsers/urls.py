@@ -1,6 +1,22 @@
 """Marketplace URL helpers."""
 
+from urllib.parse import quote
+
 from .common import *
+
+
+def build_danggeun_search_url(keyword: str, region_slug: str | None = None) -> str:
+    """당근 중고거래 검색 URL.
+
+    2026-09 기준 매물이 있는 경로는 `/kr/search/buy-sell/?q=` 이다.
+    `region_slug` 가 있으면 `in=역삼동-6035` 처럼 검색 중심 지역을 붙입니다.
+    """
+    encoded = quote(str(keyword or "").strip())
+    url = f"https://www.daangn.com/kr/search/buy-sell/?q={encoded}"
+    slug = str(region_slug or "").strip()
+    if slug:
+        url += f"&in={quote(slug)}"
+    return url
 
 def normalize_url_for_match(url: str) -> str:
     raw = str(url or "").strip()

@@ -4,7 +4,7 @@
 >
 > 참고: 현재 앱은 `scraper_mode` 기반 이중 엔진(Playwright/Selenium)을 사용합니다. 기본값은 `playwright_primary`이며 런타임 문제 시 Selenium으로 자동 강등됩니다.
 >
-> 참고: 당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리로 동작하며, 요청 지역 정확도를 보장하지 않습니다.
+> 참고: 당근 검색 지역은 설정 또는 키워드에 적은 동네를 지역 API로 확인한 뒤 검색에 적용합니다. 같은 지명은 서울 동을 우선하고, 키워드 지역은 매물 지역명 필터로도 사용됩니다.
 
 ---
 
@@ -494,8 +494,8 @@ This section is the source of truth for current behavior and supersedes older Se
 - Merged results are deduped by:
   - `(platform, article_id)` first
   - `url/link` second
-- Danggeun location filtering is strict for unknown locations when filter is set.
-- Danggeun runtime warns that region filtering is still best-effort because search-stage region binding is not guaranteed.
+- Danggeun location filtering is strict for unknown locations when a keyword location filter is set.
+- Danggeun search region comes from the keyword location or `danggeun_region`. It is resolved to a `동-id` slug and selected in the search UI. Duplicate names prefer a Seoul dong.
 - Joonggonara completion-title filtering uses substring rules.
 
 ## 2026-03 Consistency Update (Danggeun/Bunjang Parser)

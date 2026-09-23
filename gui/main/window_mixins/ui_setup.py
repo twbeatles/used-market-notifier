@@ -13,13 +13,14 @@ from gui.listings_widget import ListingsWidget
 from gui.log_widget import LogWidget
 from gui.notification_history import NotificationHistoryWidget
 from gui.stats_widget import StatsWidget
+from version import __version__
 
 
 class UiSetupMixin(QWidget):
     """Builds the main window layout and header (needs widget attributes)."""
 
     def setup_ui(self):
-        self.setWindowTitle("🥕 중고거래 알리미")
+        self.setWindowTitle(f"🥕 중고거래 알리미 v{__version__}")
         self.setMinimumSize(950, 700)
         self.resize(1050, 750)
 

@@ -94,6 +94,32 @@ class GeneralSettingsMixin:
 
         layout.addWidget(monitor_group)
 
+        region_group = QGroupBox("📍 당근 검색 지역")
+        region_layout = QVBoxLayout(region_group)
+        region_layout.setSpacing(8)
+        region_row = QHBoxLayout()
+        self.danggeun_region_edit = QLineEdit()
+        self.danggeun_region_edit.setPlaceholderText("예: 역삼동, 강남구, 서초4동")
+        self.danggeun_region_edit.setMinimumHeight(36)
+        self.danggeun_region_edit.setToolTip(
+            "비우면 당근이 정한 접속 지역으로 검색합니다. 키워드에 지역을 적으면 그 키워드는 그 지역을 우선합니다."
+        )
+        region_row.addWidget(self.danggeun_region_edit)
+        self.danggeun_region_check_btn = QPushButton("지역 확인")
+        self.danggeun_region_check_btn.setMinimumHeight(36)
+        self.danggeun_region_check_btn.clicked.connect(self._check_danggeun_region)
+        region_row.addWidget(self.danggeun_region_check_btn)
+        region_layout.addLayout(region_row)
+        region_note = QLabel(
+            "적은 동네를 중심으로 당근 검색을 시작합니다. 같은 이름이 여러 곳이면 서울 동을 고르며, "
+            "인천 논현동처럼 구분하려면 '인천광역시 남동구 논현동'처럼 전체를 적으세요. "
+            "키워드의 지역은 이 값을 덮어쓰고, 매물 지역명에 그 글자가 있는 것만 남깁니다."
+        )
+        region_note.setWordWrap(True)
+        region_note.setStyleSheet("color: #a6adc8; font-size: 9pt; background: transparent;")
+        region_layout.addWidget(region_note)
+        layout.addWidget(region_group)
+
         # Window settings
         window_group = QGroupBox("🖥️ 창 설정")
         window_layout = QVBoxLayout(window_group)
@@ -117,5 +143,41 @@ class GeneralSettingsMixin:
 
         layout.addWidget(window_group)
         layout.addStretch()
-
         return widget
+
+    def _check_danggeun_region(self) -> None:
+        query = self.danggeun_region_edit.text().strip()
+        if not query:
+            QMessageBox.information(self, "당근 검색 지역", "지역을 비우면 접속 위치로 검색합니다.")
+            return
+        self.danggeun_region_check_btn.setEnabled(False)
+
+        class RegionLookupThread(QThread):
+            done = pyqtSignal(str)
+
+            def __init__(self, text: str):
+                super().__init__()
+                self.text = text
+
+            def run(self) -> None:
+                from scrapers.marketplace_parsers import resolve_danggeun_region
+
+                try:
+                    region = resolve_danggeun_region(self.text)
+                except Exception as exc:
+                    self.done.emit(f"지역 확인에 실패했습니다.\n{exc}")
+                    return
+                if region is None:
+                    self.done.emit(f"'{self.text}'에 해당하는 당근 지역을 찾지 못했습니다.")
+                    return
+                label = region.label or region.name
+                self.done.emit(f"이 지역으로 검색합니다.\n{label}\n({region.slug})")
+
+        thread = RegionLookupThread(query)
+        thread.done.connect(self._on_danggeun_region_checked)
+        thread.finished.connect(lambda: self.danggeun_region_check_btn.setEnabled(True))
+        self._region_lookup_thread = thread
+        thread.start()
+
+    def _on_danggeun_region_checked(self, message: str) -> None:
+        QMessageBox.information(self, "당근 검색 지역", message)

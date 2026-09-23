@@ -97,14 +97,15 @@ class KeywordEditDialog(QDialog):
         location_group = QGroupBox("📍 지역 (당근)")
         location_layout = QVBoxLayout(location_group)
         self.location_edit = QLineEdit()
-        self.location_edit.setPlaceholderText("예: 강남구")
+        self.location_edit.setPlaceholderText("예: 역삼동 (비우면 설정의 당근 검색 지역)")
         self.location_edit.setMinimumHeight(40)
         self.location_edit.setToolTip(
-            "당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터로 동작합니다."
+            "이 키워드의 당근 검색 지역입니다. 매물 지역명에 같은 글자가 있는 것만 남깁니다."
         )
         location_layout.addWidget(self.location_edit)
         location_note = QLabel(
-            "현재 당근 지역 필터는 세션 지역 기준의 best-effort 검색 후 후처리로 적용됩니다."
+            "적으면 그 동네를 중심으로 검색하고, 매물 지역명에 그 글자가 포함된 것만 알립니다. "
+            "주변 동까지 보려면 여기는 비우고 설정의 당근 검색 지역만 지정하세요."
         )
         location_note.setWordWrap(True)
         location_note.setStyleSheet(

@@ -63,6 +63,10 @@ Notes:
   collection.
 - Static typing / encoding hygiene updates (2026-03) are source-level changes only
   and do not require PyInstaller hidden import adjustments.
+- The updater (Ed25519 manifest, staged exe replace, --smoke rollback) lives in
+  `updater/` and `version.py`. `cryptography` is collected explicitly. Chromium
+  binaries are still not bundled. `--smoke` and `--apply-update` must stay on
+  the frozen entry point so the helper process can verify and swap the exe.
 - Data-integrity features added in 2026-03 (metadata enrichment, delivery logs,
   sale-status history, settings recovery) are source/database changes only and
   do not require extra PyInstaller hidden imports.
@@ -127,6 +131,24 @@ hiddenimports = [
     "openpyxl.workbook",
     "openpyxl.worksheet",
 
+    # Signed auto-update
+    "cryptography",
+    "cryptography.hazmat.primitives.asymmetric.ed25519",
+    "cryptography.hazmat.primitives.serialization",
+    "version",
+    "updater",
+    "updater.constants",
+    "updater.manifest",
+    "updater.installer",
+    "updater.service",
+    "updater.apply",
+    "updater.smoke",
+    "updater.atomic_io",
+    "updater.process",
+    "gui.update_workers",
+    "gui.settings_panels.mixins.updater",
+    "gui.main.window_mixins.updater",
+
     # Utilities
     "difflib",
     "importlib",
@@ -143,7 +165,7 @@ except Exception:
     pass
 
 # aiohttp and its helper packages may resolve parts of the stack lazily.
-for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", "propcache"):
+for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", "propcache", "cryptography", "updater"):
     try:
         hiddenimports += collect_submodules(package_name)
     except Exception:

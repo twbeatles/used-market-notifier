@@ -39,9 +39,32 @@ class TestPlaywrightDanggeunParser(unittest.TestCase):
         self.assertEqual(price, "750,000원")
         self.assertEqual(location, "여의도동")
 
+    def test_parse_card_text_skips_buy_now_badge(self):
+        text = "\n".join(
+            [
+                "애플 아이폰 12 미니 128GB 그린",
+                "160,000원",
+                "목동동",
+                "·",
+                "16분 전",
+                "바로구매",
+            ]
+        )
+        title, price, location = PlaywrightDanggeunScraper._parse_card_text(text)
+        self.assertEqual(title, "애플 아이폰 12 미니 128GB 그린")
+        self.assertEqual(price, "160,000원")
+        self.assertEqual(location, "목동동")
+
+    def test_parse_card_text_trims_trailing_separator_on_location_line(self):
+        text = "\n".join(["아이폰6+ 판매합니다", "60,000원", "농소2동 ·"])
+        _title, _price, location = PlaywrightDanggeunScraper._parse_card_text(text)
+        self.assertEqual(location, "농소2동")
+
     def test_location_normalization_trims_separator_and_time(self):
         self.assertEqual(normalize_location_value("행당동·"), "행당동")
         self.assertEqual(normalize_location_value("서울 강남구 역삼동 · 끌올 1일 전"), "서울 강남구 역삼동")
+        self.assertEqual(normalize_location_value("잠원동 · 7분 전"), "잠원동")
+        self.assertEqual(normalize_location_value("만수3동 · 끌올 41분 전"), "만수3동")
 
     def test_pick_seller_candidate_uses_danggeun_profile_aria_fallback(self):
         value = pick_seller_candidate(

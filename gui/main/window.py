@@ -28,6 +28,7 @@ from gui.main.window_mixins import (
     ThemeMixin,
     TrayMixin,
     UiSetupMixin,
+    UpdaterMixin,
 )
 
 
@@ -42,6 +43,7 @@ class MainWindow(  # pyright: ignore[reportIncompatibleMethodOverride]
     LiveRefreshMixin,
     MonitoringMixin,
     ThemeMixin,
+    UpdaterMixin,
     LifecycleMixin,
     QMainWindow,
 ):
@@ -78,3 +80,5 @@ class MainWindow(  # pyright: ignore[reportIncompatibleMethodOverride]
         QTimer.singleShot(0, self._show_settings_recovery_notice)
         # Run startup maintenance (cleanup) once after UI is shown.
         QTimer.singleShot(0, self._run_startup_maintenance)
+        QTimer.singleShot(800, self._show_last_update_result)
+        QTimer.singleShot(1500, self._start_auto_update_check_if_enabled)

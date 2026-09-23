@@ -35,7 +35,13 @@ class SettingsPersistenceMixin:
         self.minimize_tray_check.setChecked(s.minimize_to_tray)
         self.start_minimized_check.setChecked(s.start_minimized)
         self.auto_start_check.setChecked(s.auto_start_monitoring)
+        if hasattr(self, "auto_check_update_check"):
+            self.auto_check_update_check.blockSignals(True)
+            self.auto_check_update_check.setChecked(getattr(s, "auto_check_update", True))
+            self.auto_check_update_check.blockSignals(False)
         self.confirm_link_check.setChecked(s.confirm_link_open)
+        if hasattr(self, "danggeun_region_edit"):
+            self.danggeun_region_edit.setText(str(getattr(s, "danggeun_region", "") or ""))
         self.notifications_enabled_check.setChecked(getattr(s, 'notifications_enabled', False))
 
         # Maintenance (backup/cleanup)
@@ -144,7 +150,11 @@ class SettingsPersistenceMixin:
         s.minimize_to_tray = self.minimize_tray_check.isChecked()
         s.start_minimized = self.start_minimized_check.isChecked()
         s.auto_start_monitoring = self.auto_start_check.isChecked()
+        if hasattr(self, "auto_check_update_check"):
+            s.auto_check_update = self.auto_check_update_check.isChecked()
         s.confirm_link_open = self.confirm_link_check.isChecked()
+        if hasattr(self, "danggeun_region_edit"):
+            s.danggeun_region = self.danggeun_region_edit.text().strip()
         s.notifications_enabled = self.notifications_enabled_check.isChecked()
         s.theme_mode = self.theme_combo.currentData()
 

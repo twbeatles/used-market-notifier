@@ -29,6 +29,10 @@ class MaintenanceSettingsMixin:
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
 
+        add_update_group = getattr(self, "_add_update_group", None)
+        if callable(add_update_group):
+            add_update_group(layout)
+
         # Backup group
         backup_group = QGroupBox("💾 백업 / 복원")
         backup_layout = QVBoxLayout(backup_group)

@@ -5,18 +5,33 @@ import hashlib
 import json
 import re
 import time
-from urllib.parse import quote
 
 from .base import Item
-from .marketplace_parsers import extract_location_from_text, pick_seller_candidate
+from .marketplace_parsers import (
+    build_danggeun_search_url,
+    extract_location_from_text,
+    normalize_location_value,
+    pick_seller_candidate,
+    resolve_danggeun_region,
+)
 from .selenium_base import By, EC, SeleniumScraper, WebDriverWait
+
+
+def _xpath_literal(value: str) -> str:
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    parts = value.split("'")
+    return "concat(" + ", \"'\", ".join(f"'{part}'" for part in parts) + ")"
 
 
 class DanggeunScraper(SeleniumScraper):
     """Danggeun Market (당근마켓) scraper with location filter support"""
 
     MAX_RESULTS = 120
-    CARD_SELECTOR = "a[data-gtm='search_article'][href^='/kr/buy-sell/']"
+    CARD_SELECTOR = "a[href^='/kr/buy-sell/']"
+    CARD_BADGE_LINES = {"바로구매", "광고"}
     TIME_MARKERS = ("방금", "초 전", "분 전", "시간 전", "일 전", "주 전", "달 전", "끌올")
 
     DETAIL_SELLER_SELECTORS = (
@@ -94,7 +109,7 @@ class DanggeunScraper(SeleniumScraper):
 
         for line in lines[1:]:
             compact = line.replace(" ", "")
-            if compact == "·":
+            if compact == "·" or compact in cls.CARD_BADGE_LINES:
                 continue
 
             if price == "가격문의":
@@ -111,7 +126,9 @@ class DanggeunScraper(SeleniumScraper):
                 continue
 
             if location is None and len(line) >= 2:
-                location = line
+                normalized = normalize_location_value(line)
+                if normalized:
+                    location = normalized
 
         return title, price, location
 
@@ -227,6 +244,40 @@ class DanggeunScraper(SeleniumScraper):
             price_numeric=item.price_numeric,
         )
 
+    def _apply_search_region(self, location: str | None) -> None:
+        """지역 선택 창에서 동네를 고릅니다."""
+        text = str(location or "").strip()
+        if not text:
+            return
+        try:
+            region = resolve_danggeun_region(text)
+        except Exception as exc:
+            self.logger.warning("당근 지역 확인 실패: %s", exc)
+            return
+        if region is None:
+            self.logger.warning("당근 지역을 확인하지 못해 접속 지역으로 검색합니다: %s", text)
+            return
+        try:
+            button = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(., '지역 선택')]"))
+            )
+            button.click()
+            field = WebDriverWait(self.driver, 5).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "input[aria-label='지역 검색']"))
+            )
+            field.clear()
+            field.send_keys(region.name3 or region.name)
+            time.sleep(0.8)
+            label = region.label if region.name1 else (region.name3 or region.name)
+            option = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, f"//*[normalize-space()={_xpath_literal(label)}]"))
+            )
+            option.click()
+            time.sleep(0.8)
+            self.logger.info("당근 검색 지역 적용: %s (%s)", region.label or region.name, region.slug)
+        except Exception as exc:
+            self.logger.warning("당근 지역 선택에 실패해 접속 지역으로 검색합니다: %s", exc)
+
     def search(self, keyword: str, location: str | None = None) -> list[Item]:
         """
         Search Danggeun Market for keyword.
@@ -235,17 +286,16 @@ class DanggeunScraper(SeleniumScraper):
             keyword: Search term
             location: Optional location filter (e.g., "강남구", "서초동")
         """
-        encoded_keyword = quote(keyword)
-        # URL with recency sort for latest listings
-        url = f"https://www.daangn.com/kr/buy-sell/?search={encoded_keyword}&sort=recent"
-        
+        url = build_danggeun_search_url(keyword)
+
         self.logger.info(f"Visiting {url}")
         self.driver.get(url)
+        self._apply_search_region(location)
         
         # Wait for content or JSON-LD
         try:
             WebDriverWait(self.driver, self.wait_time).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "script[type='application/ld+json']"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, self.CARD_SELECTOR))
             )
         except Exception:
             time.sleep(3)

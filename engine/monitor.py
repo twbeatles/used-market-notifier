@@ -23,7 +23,9 @@ class MonitorEngine(
     NOTIFICATION_DRAIN_TIMEOUT = 20.0
     METADATA_ENRICHMENT_LIMIT = 10
     DANGGEUN_LOCATION_WARNING = (
-        "당근 지역 필터는 현재 best-effort 검색 후 후처리로 동작하며, 요청 지역 정확도는 보장되지 않습니다"
+        "당근 검색 지역을 적용합니다. 같은 지명은 서울 동을 우선하고, "
+        "지역 확인에 실패하면 접속 지역으로 검색합니다. "
+        "키워드에 적은 지역은 매물 지역명 필터로도 사용됩니다"
     )
 
     def __init__(self, settings_manager: SettingsProvider, db: Optional[DatabaseManager] = None):

@@ -7,11 +7,16 @@ from collections import Counter
 import hashlib
 import json
 import re
-from urllib.parse import quote
-
 from models import Item
 
-from .marketplace_parsers import extract_location_from_text, parse_html_snapshot, pick_seller_candidate
+from .marketplace_parsers import (
+    build_danggeun_search_url,
+    extract_location_from_text,
+    normalize_location_value,
+    parse_html_snapshot,
+    pick_seller_candidate,
+    resolve_danggeun_region,
+)
 from .playwright_base import PlaywrightScraper
 
 
@@ -19,7 +24,8 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
     """Danggeun scraper with JSON-LD first parsing, HTML snapshot fallback, and anomaly diagnostics."""
 
     MAX_RESULTS = 120
-    CARD_SELECTOR = "a[data-gtm='search_article'][href^='/kr/buy-sell/']"
+    CARD_SELECTOR = "a[href^='/kr/buy-sell/']"
+    CARD_BADGE_LINES = {"바로구매", "광고"}
     DETAIL_SELLER_SELECTORS = (
         "a[href*='/users/']",
         "[data-gtm='seller_profile']",
@@ -106,7 +112,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
 
         for line in lines[1:]:
             compact = line.replace(" ", "")
-            if compact == "·":
+            if compact == "·" or compact in cls.CARD_BADGE_LINES:
                 continue
 
             if price == "가격문의":
@@ -123,7 +129,9 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
                 continue
 
             if location is None and len(line) >= 2:
-                location = line
+                normalized = normalize_location_value(line)
+                if normalized:
+                    location = normalized
 
         return title, price, location
 
@@ -206,7 +214,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
         for anchor in snapshot.anchors:
             attrs = anchor.attrs
             href = str(attrs.get("href") or "")
-            if attrs.get("data-gtm") != "search_article" or not href.startswith("/kr/buy-sell/"):
+            if not href.startswith("/kr/buy-sell/"):
                 continue
             link = cls._to_absolute_link(href)
             article_id = cls._extract_article_id(link)
@@ -278,7 +286,7 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
 
                     location_text = self._extract_location(str(product.get("description", "")))
                     if not location_text:
-                        location_text = str(card_data.get("location") or "") or None
+                        location_text = normalize_location_value(card_data.get("location"))
 
                     thumbnail = product.get("image") or card_data.get("thumbnail")
                     seen_ids.add(article_id)
@@ -371,23 +379,67 @@ class PlaywrightDanggeunScraper(PlaywrightScraper):
         self._last_failure_kind = "parser_zero"
         await self.dump_debug_artifacts(keyword, metrics, prefix="zero_results")
 
+    async def _apply_search_region(self, page, location: str | None) -> None:
+        """지역 선택 창에서 동네를 고릅니다. 주소의 in= 만으로는 목록이 비는 경우가 있습니다."""
+        text = str(location or "").strip()
+        if not text:
+            return
+        try:
+            region = resolve_danggeun_region(text)
+        except Exception as exc:
+            self.logger.warning("당근 지역 확인 실패: %s", exc)
+            return
+        if region is None:
+            self.logger.warning("당근 지역을 확인하지 못해 접속 지역으로 검색합니다: %s", text)
+            return
+        try:
+            await page.wait_for_timeout(1000)
+            button = page.get_by_role("button", name="지역 선택")
+            await button.wait_for(state="visible", timeout=8000)
+            await button.click()
+            await page.wait_for_timeout(800)
+            field = page.locator("input[aria-label='지역 검색']")
+            await field.wait_for(state="visible", timeout=5000)
+            await field.fill(region.name3 or region.name)
+            await page.wait_for_timeout(700)
+            label = region.label if region.name1 else (region.name3 or region.name)
+            option = page.get_by_text(label, exact=True)
+            if await option.count() == 0:
+                option = page.locator(f"a[href*='-{int(region.region_id)}']")
+            await option.first.click(timeout=5000)
+            await page.wait_for_timeout(800)
+            self.logger.info(
+                "당근 검색 지역 적용: %s (%s)",
+                region.label or region.name,
+                region.slug,
+            )
+        except Exception as exc:
+            self.logger.warning("당근 지역 선택에 실패해 접속 지역으로 검색합니다: %s", exc)
+
     async def search(self, keyword: str, location: str | None = None) -> list[Item]:
         page = await self.get_page()
-        encoded_keyword = quote(keyword)
-        url = f"https://www.daangn.com/kr/buy-sell/?search={encoded_keyword}&sort=recent"
+        url = build_danggeun_search_url(keyword)
 
         ok = await self.navigate_with_retry(url, wait_until="domcontentloaded", max_retries=2)
         if not ok:
             return []
+        await self._apply_search_region(page, location)
 
         try:
-            await page.wait_for_selector("script[type='application/ld+json']", timeout=5000)
+            # 목록 카드는 첫 HTML 이후 붙는다. ld+json만 기다리면 빈 셸에서 끝난다.
+            await page.wait_for_selector(self.CARD_SELECTOR, timeout=12000)
         except Exception:
             pass
-        await page.wait_for_timeout(1200)
+        await page.wait_for_timeout(800)
 
-        snapshot = parse_html_snapshot(await page.content())
+        html = await page.content()
+        snapshot = parse_html_snapshot(html)
         items, metrics = self._parse_snapshot_items(snapshot, keyword)
+        if not items and "검색 결과가 없어요" in html:
+            self.logger.info(
+                "당근이 현재 접속 지역 기준으로 빈 결과를 반환했습니다. keyword='%s'",
+                keyword,
+            )
         self._log_search_metrics(keyword, metrics)
         await self._dump_anomaly_if_needed(page, keyword, metrics, items)
         return items

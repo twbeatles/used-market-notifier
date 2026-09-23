@@ -30,6 +30,7 @@ class AppSettings:
     minimize_to_tray: bool = True
     start_minimized: bool = False
     auto_start_monitoring: bool = False
+    auto_check_update: bool = True
     theme_mode: ThemeMode = ThemeMode.DARK
     confirm_link_open: bool = True
     notifications_enabled: bool = False  # Notifications OFF by default
@@ -60,6 +61,8 @@ class AppSettings:
     # - playwright_primary: Playwright first, Selenium fallback
     # - selenium_primary: Selenium first, Playwright fallback
     # - selenium_only: Selenium only (no fallback)
+    # Danggeun search center. Empty keeps the site's detected neighborhood.
+    danggeun_region: str = ""
     scraper_mode: str = "playwright_primary"
     fallback_on_empty_results: bool = True
     max_fallback_per_cycle: int = 3

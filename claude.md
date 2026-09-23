@@ -11,7 +11,7 @@
 ### 핵심 기능 요약
 | 카테고리 | 기능 |
 |----------|------|
-| 🔍 **검색** | 다중 플랫폼 키워드 검색, 가격/지역/제외 키워드 필터, 당근 지역 정확도 경고 |
+| 🔍 **검색** | 다중 플랫폼 키워드 검색, 가격/지역/제외 키워드 필터, 당근 검색 지역 지정 |
 | 📢 **알림** | Telegram, Discord, Slack 웹훅, 스케줄 설정 |
 | 📊 **데이터** | 즐겨찾기, 가격 추적, 통계, CSV/Excel 내보내기 |
 | 🏷️ **자동화** | 자동 태깅, 자동 백업, 데이터 정리 |
@@ -160,7 +160,7 @@ class MessageTemplateManager:
 
 > 참고: 현재 앱은 `scraper_mode` 설정에 따라 Playwright/Selenium 이중 엔진을 사용합니다.
 > 기본값은 `playwright_primary`이며, Playwright 런타임이 없으면 Selenium으로 자동 강등됩니다.
-> 당근 지역 필터는 현재 세션 지역 기준의 best-effort 검색 후 후처리 필터이며, 요청 지역 정확도를 보장하지 않습니다.
+> 당근 검색 지역은 설정 또는 키워드에 적은 동네를 지역 API로 확인한 뒤 검색 화면에서 선택합니다. 같은 지명은 서울 동을 우선합니다. 키워드 지역은 매물 지역명 필터로도 쓰이며, 지역 확인에 실패하면 접속 지역으로 검색합니다.
 > 가격문의, N/A 등 가격 미상 매물은 누락 방지를 위해 가격 필터를 통과합니다.
 
 ## 📁 디렉토리별 상세 역할
@@ -705,8 +705,8 @@ This section is the latest baseline and overrides older text in this document if
   - per-platform fallback budget `< max_fallback_per_cycle`.
 - Merge/dedupe policy is fixed:
   - key1 `(platform, article_id)`, key2 `url/link`.
-- Danggeun location filtering is strict when a location filter is set.
-- Danggeun runtime warns that region filtering is still best-effort because search-stage region binding is not guaranteed.
+- Danggeun location filtering is strict when a keyword location filter is set.
+- Danggeun search uses the keyword location, or `AppSettings.danggeun_region` when the keyword location is empty. The name is resolved through the public region API and applied in the search region picker. Duplicate names prefer a Seoul dong. A full `시 구 동` string selects that exact region.
 - Joonggonara completion-title filtering uses substring matching.
 
 ## 2026-03 Consistency Update (Danggeun/Bunjang Parser)

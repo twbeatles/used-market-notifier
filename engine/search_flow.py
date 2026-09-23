@@ -49,9 +49,20 @@ class SearchFlowMixin:
             return
         self._cycle_fallback_counts[platform] = self._cycle_fallback_counts.get(platform, 0) + 1
 
+    def _danggeun_search_location(self, keyword_config: SearchKeyword) -> str | None:
+        """키워드 지역이 있으면 그걸, 없으면 설정의 당근 검색 지역을 씁니다."""
+        specific = str(getattr(keyword_config, "location", "") or "").strip()
+        if specific:
+            return specific
+        settings = getattr(getattr(self, "settings", None), "settings", None)
+        default_region = str(getattr(settings, "danggeun_region", "") or "").strip()
+        return default_region or None
+
     def _warn_danggeun_location_best_effort(self, keyword_config: SearchKeyword) -> None:
-        location = str(getattr(keyword_config, "location", "") or "").strip()
-        if not location or "danggeun" not in (keyword_config.platforms or []):
+        if "danggeun" not in (keyword_config.platforms or []):
+            return
+        location = self._danggeun_search_location(keyword_config)
+        if not location:
             return
 
         warning_key = (str(keyword_config.keyword or "").strip(), location)
@@ -101,15 +112,18 @@ class SearchFlowMixin:
                 try:
                     async with semaphore:
                         search_fn = getattr(scraper, "search", None)
+                        search_location = keyword_config.location
+                        if platform == "danggeun":
+                            search_location = self._danggeun_search_location(keyword_config)
                         if callable(search_fn) and inspect.iscoroutinefunction(search_fn):
-                            items_raw = await search_fn(keyword_config.keyword, keyword_config.location)
+                            items_raw = await search_fn(keyword_config.keyword, search_location)
                         else:
                             loop = asyncio.get_running_loop()
                             items_raw = await loop.run_in_executor(
                                 self._executor,
                                 scraper.safe_search,
                                 keyword_config.keyword,
-                                keyword_config.location,
+                                search_location,
                             )
                     error = None
                 except Exception as e:

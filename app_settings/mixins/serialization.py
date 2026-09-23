@@ -18,6 +18,7 @@ class SettingsSerializationMixin:
             'minimize_to_tray': settings.minimize_to_tray,
             'start_minimized': settings.start_minimized,
             'auto_start_monitoring': settings.auto_start_monitoring,
+            'auto_check_update': settings.auto_check_update,
             'theme_mode': settings.theme_mode.value,
             'confirm_link_open': settings.confirm_link_open,
             'notifications_enabled': settings.notifications_enabled,
@@ -86,6 +87,7 @@ class SettingsSerializationMixin:
             'conditional_metadata_enrichment_enabled': getattr(
                 settings, 'conditional_metadata_enrichment_enabled', True
             ),
+            'danggeun_region': str(getattr(settings, 'danggeun_region', '') or ''),
             'scraper_mode': getattr(settings, 'scraper_mode', 'playwright_primary'),
             'fallback_on_empty_results': getattr(settings, 'fallback_on_empty_results', True),
             'max_fallback_per_cycle': getattr(settings, 'max_fallback_per_cycle', 3),

@@ -17,6 +17,8 @@ class TestSettingsRoundtrip(unittest.TestCase):
                 MessageTemplate(name="당근전용", content="이웃입니다. {location}에서 직거래 가능할까요?", platform="danggeun"),
             ]
             sm.settings.conditional_metadata_enrichment_enabled = False
+            sm.settings.auto_check_update = False
+            sm.settings.danggeun_region = "서초4동"
 
             self.assertTrue(sm.save())
 
@@ -24,6 +26,8 @@ class TestSettingsRoundtrip(unittest.TestCase):
             self.assertEqual(len(sm2.settings.message_templates), 2)
             self.assertEqual(sm2.settings.message_templates[1].platform, "danggeun")
             self.assertFalse(sm2.settings.conditional_metadata_enrichment_enabled)
+            self.assertFalse(sm2.settings.auto_check_update)
+            self.assertEqual(sm2.settings.danggeun_region, "서초4동")
 
 
 if __name__ == "__main__":

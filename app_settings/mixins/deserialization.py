@@ -134,6 +134,7 @@ class SettingsDeserializationMixin:
             ))
 
         scraper_mode = self._as_scraper_mode(data.get('scraper_mode', 'playwright_primary'))
+        danggeun_region = str(data.get('danggeun_region', '') or '').strip()
 
         return AppSettings(
             check_interval_seconds=self._as_int(data, 'check_interval_seconds', 300, min_value=30, max_value=86400),
@@ -142,6 +143,7 @@ class SettingsDeserializationMixin:
             minimize_to_tray=self._as_bool(data, 'minimize_to_tray', True),
             start_minimized=self._as_bool(data, 'start_minimized', False),
             auto_start_monitoring=self._as_bool(data, 'auto_start_monitoring', False),
+            auto_check_update=self._as_bool(data, 'auto_check_update', True),
             theme_mode=self._as_theme(data.get('theme_mode', 'dark')),
             confirm_link_open=self._as_bool(data, 'confirm_link_open', True),
             notifications_enabled=self._as_bool(data, 'notifications_enabled', False),
@@ -163,6 +165,7 @@ class SettingsDeserializationMixin:
             conditional_metadata_enrichment_enabled=self._as_bool(
                 data, 'conditional_metadata_enrichment_enabled', True
             ),
+            danggeun_region=danggeun_region,
             scraper_mode=scraper_mode,
             fallback_on_empty_results=self._as_bool(data, 'fallback_on_empty_results', True),
             max_fallback_per_cycle=self._as_int(data, 'max_fallback_per_cycle', 3, min_value=0, max_value=50),

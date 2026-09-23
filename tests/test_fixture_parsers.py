@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping, cast
 
 from scrapers.marketplace_parsers import (
+    build_danggeun_search_url,
     classify_joonggonara_candidate,
     merge_item_metadata,
     parse_bunjang_detail_payload,
@@ -47,6 +48,35 @@ class TestDanggeunFixtureParser(unittest.TestCase):
         self.assertEqual(items[0].price, "750,000원")
         self.assertEqual(items[0].location, "서울 강남구 역삼동")
 
+    def test_current_search_snapshot_reads_slug_json_ld_and_ignores_ads(self):
+        scraper = object.__new__(PlaywrightDanggeunScraper)
+        snapshot = parse_html_snapshot(_read_fixture("danggeun_search_snapshot_current.html"))
+
+        items, metrics = scraper._parse_snapshot_items(snapshot, "아이폰")
+
+        self.assertEqual(build_danggeun_search_url("아이폰 15"), "https://www.daangn.com/kr/search/buy-sell/?q=%EC%95%84%EC%9D%B4%ED%8F%B0%2015")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].article_id, "heatdwx3zwuy")
+        self.assertEqual(items[0].title, "아이폰 12 미니 128GB 화이트")
+        self.assertEqual(items[0].price, "150,000원")
+        self.assertEqual(items[0].location, "만수3동")
+        self.assertTrue(items[0].link.startswith("https://www.daangn.com/kr/buy-sell/"))
+        self.assertGreaterEqual(metrics["dom_card_count"], 2)
+
+    def test_cards_without_data_gtm_fall_back_when_json_ld_is_absent(self):
+        scraper = object.__new__(PlaywrightDanggeunScraper)
+        snapshot = parse_html_snapshot(_read_fixture("danggeun_search_cards_only.html"))
+
+        items, metrics = scraper._parse_snapshot_items(snapshot, "아이폰")
+        by_id = {item.article_id: item for item in items}
+
+        self.assertEqual(metrics["json_ld_item_count"], 0)
+        self.assertEqual(metrics["items_after_dom_fallback"], 2)
+        self.assertEqual(set(by_id), {"heatdwx3zwuy", "v8k3tpo7o6v6"})
+        self.assertEqual(by_id["v8k3tpo7o6v6"].location, "목동동")
+        self.assertEqual(by_id["v8k3tpo7o6v6"].price, "160,000원")
+        self.assertNotIn("ader.naver.com", " ".join(item.link for item in items))
+
 
 class TestBunjangFixtureParser(unittest.TestCase):
     def test_snapshot_parser_reads_data_pid_cards_and_drop_reasons(self):
@@ -64,6 +94,21 @@ class TestBunjangFixtureParser(unittest.TestCase):
         self.assertEqual(items[0].article_id, "738030")
         self.assertEqual(items[0].price, "160,000원")
         self.assertEqual(items[0].location, "서울특별시 서초구 반포3동")
+
+    def test_tracked_absolute_product_urls_keep_price_first_cards(self):
+        scraper = object.__new__(PlaywrightBunjangScraper)
+        snapshot = parse_html_snapshot(_read_fixture("bunjang_search_snapshot_tracked.html"))
+
+        items, metrics = scraper._parse_snapshot_items(snapshot, "아이폰")
+        by_id = {item.article_id: item for item in items}
+
+        self.assertEqual(set(by_id), {"433667944", "433826511"})
+        self.assertEqual(by_id["433667944"].title, "배터리100 아이폰13미니 128기가 판매해요")
+        self.assertEqual(by_id["433667944"].price, "345,000원")
+        self.assertEqual(by_id["433826511"].title, "아이폰 13 프로맥스 128기가")
+        self.assertEqual(by_id["433826511"].price, "455,000원")
+        self.assertIn("imp_id=track", by_id["433667944"].link)
+        self.assertGreaterEqual(metrics["dom_product_link_count"], 3)
 
     def test_detail_api_payload_maps_status_and_metadata(self):
         payload = json.loads(_read_fixture("bunjang_detail_api.json"))
@@ -122,6 +167,18 @@ class TestJoonggonaraFixtureParser(unittest.TestCase):
         self.assertIsNotNone(candidate)
         assert candidate is not None
         self.assertEqual(candidate["article_id"], "1129393870")
+
+    def test_search_parser_keeps_cafe_articles_with_tracking_query(self):
+        items = parse_joonggonara_search_items(
+            _read_fixture("joonggonara_search_results_query.html"),
+            "아이폰",
+        )
+        by_id = {item.article_id: item for item in items}
+
+        self.assertEqual(set(by_id), {"1132321933", "1135514176"})
+        self.assertEqual(by_id["1132321933"].title, "아이폰5 A1429 32G 공기계 iphone")
+        self.assertIn("art=sample-token", by_id["1132321933"].link)
+        self.assertTrue(by_id["1135514176"].link.startswith("https://m.cafe.naver.com/joonggonara/1135514176"))
 
     def test_detail_parser_extracts_iframe_body_fields(self):
         parsed = parse_joonggonara_detail_text(_html_to_text(_read_fixture("joonggonara_article_iframe.html")))

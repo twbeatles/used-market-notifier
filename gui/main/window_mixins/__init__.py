@@ -9,6 +9,7 @@ from .shortcuts import ShortcutsMixin
 from .theme import ThemeMixin
 from .tray import TrayMixin
 from .ui_setup import UiSetupMixin
+from .updater import UpdaterMixin
 
 __all__ = [
     "LifecycleMixin",
@@ -20,4 +21,5 @@ __all__ = [
     "ThemeMixin",
     "TrayMixin",
     "UiSetupMixin",
+    "UpdaterMixin",
 ]

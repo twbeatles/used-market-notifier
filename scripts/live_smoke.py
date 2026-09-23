@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 from playwright.async_api import async_playwright
 
 from scrapers.marketplace_parsers import (
+    build_danggeun_search_url,
     evaluate_scrape_quality,
     parse_bunjang_search_items,
     parse_html_snapshot,
@@ -32,7 +33,7 @@ from scrapers.playwright_danggeun import PlaywrightDanggeunScraper
 def _urls(keyword: str) -> dict[str, str]:
     encoded = quote(keyword)
     return {
-        "danggeun": f"https://www.daangn.com/kr/buy-sell/?search={encoded}&sort=recent",
+        "danggeun": build_danggeun_search_url(keyword),
         "bunjang": f"https://m.bunjang.co.kr/search/products?q={encoded}&order=date",
         "joonggonara": (
             "https://search.naver.com/search.naver"
@@ -47,9 +48,20 @@ def write_summary_file(results: list[dict[str, object]], summary_file: str | Pat
     path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+_RESULT_SELECTORS = {
+    "danggeun": "a[href^='/kr/buy-sell/']",
+    "bunjang": "a[href*='/products/'], a[data-pid]",
+    "joonggonara": "a[href*='cafe.naver.com/joonggonara/']",
+}
+
+
 async def _inspect_platform(page, platform: str, url: str, keyword: str, save_artifacts: bool) -> dict[str, object]:
     response = await page.goto(url, wait_until="domcontentloaded", timeout=25_000)
-    await page.wait_for_timeout(2500)
+    try:
+        await page.wait_for_selector(_RESULT_SELECTORS[platform], timeout=12_000)
+    except Exception:
+        pass
+    await page.wait_for_timeout(800)
     html = await page.content()
     snapshot = parse_html_snapshot(html)
 

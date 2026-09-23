@@ -106,12 +106,69 @@ def run_gui(settings_manager=None):
         sys.exit(1)
 
 
+def _console_print(message: str) -> None:
+    stream = sys.stdout
+    if stream is None:
+        return
+    print(message, file=stream)
+
+
+def run_check_update() -> int:
+    """Print whether a signed newer release exists. Network failures exit 1."""
+    from updater import UpdateService
+    from version import __version__
+
+    service = UpdateService()
+    try:
+        manifest = service.check_for_update()
+    except Exception as exc:
+        _console_print(f"업데이트 확인 실패: {exc}")
+        return 1
+    if manifest is None:
+        _console_print(f"이미 최신 버전입니다: v{__version__}")
+        return 0
+    _console_print(f"새 버전 v{manifest.version} (현재 v{__version__})")
+    _console_print(manifest.artifact_url)
+    return 0
+
+
 def main():
     """Main entry point."""
+    from version import __version__
+
     parser = argparse.ArgumentParser(description="Used Market Notifier")
     parser.add_argument("--cli", action="store_true", help="Run without the GUI")
     parser.add_argument("--headless", action="store_true", help="Use hidden browser mode for this session only")
+    parser.add_argument("--smoke", action="store_true", help="Import core modules and exit")
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"Used Market Notifier v{__version__}",
+    )
+    parser.add_argument("--check-update", action="store_true", help="Check the signed release manifest and exit")
+    parser.add_argument("--apply-update", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--update-target", help=argparse.SUPPRESS)
+    parser.add_argument("--update-staged", help=argparse.SUPPRESS)
+    parser.add_argument("--update-backup", help=argparse.SUPPRESS)
+    parser.add_argument("--update-parent-pid", type=int, default=0, help=argparse.SUPPRESS)
+    parser.add_argument("--update-expected-sha256", help=argparse.SUPPRESS)
+    parser.add_argument("--update-expected-size", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--update-result-file", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.smoke:
+        from updater.smoke import run_smoke_check
+
+        sys.exit(run_smoke_check())
+
+    if args.apply_update:
+        from updater.apply import handle_apply_update
+
+        sys.exit(handle_apply_update(args))
+
+    if args.check_update:
+        sys.exit(run_check_update())
 
     setup_logging()
 

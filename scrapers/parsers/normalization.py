@@ -61,8 +61,10 @@ def normalize_location_value(value: Any) -> str | None:
     text = normalize_whitespace(str(value or ""))
     if not text:
         return None
-    text = re.split(r"\s*[·|]\s*(?:방금|초 전|분 전|시간 전|일 전|주 전|달 전|끌올)", text, maxsplit=1)[0]
-    text = re.sub(r"\s*(?:방금|초 전|분 전|시간 전|일 전|주 전|달 전|끌올).*$", "", text).strip()
+    # 카드 문구는 "잠원동 · 7분 전"처럼 숫자와 단위가 붙어 있다.
+    relative_time = r"(?:방금|끌올|\d+\s*(?:초|분|시간|일|주|달)\s*전)"
+    text = re.split(rf"\s*[·|]\s*{relative_time}", text, maxsplit=1)[0]
+    text = re.sub(rf"\s*{relative_time}.*$", "", text).strip()
     text = text.strip(" \t\r\n·,/|")
     if not text:
         return None
