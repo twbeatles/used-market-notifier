@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """Title analysis: match tag rules against listing titles."""
 
 from .tag_result import TagResult
 
 
-class AnalyzerMixin:
+if TYPE_CHECKING:
+    from auto_tagger.tagger import AutoTagger
+    _HostBase_AnalyzerMixin = AutoTagger
+else:
+    _HostBase_AnalyzerMixin = object
+
+class AnalyzerMixin(_HostBase_AnalyzerMixin):  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     """Title-matching behavior for AutoTagger (needs ``self.rules``)."""
 
     def analyze(self, title: str) -> list[str]:

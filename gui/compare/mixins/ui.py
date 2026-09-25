@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Mixin module: ui."""
 
 """Enhanced dialog for comparing multiple listings side by side."""
@@ -12,7 +13,14 @@ from PyQt6.QtGui import QColor
 
 from gui.link_utils import open_external_url
 
-class CompareUiMixin:
+
+if TYPE_CHECKING:
+    from gui.compare.dialog import CompareDialog
+    _HostBase_CompareUiMixin = CompareDialog
+else:
+    _HostBase_CompareUiMixin = object
+
+class CompareUiMixin(_HostBase_CompareUiMixin):
     """Ui behavior."""
 
     def setup_ui(self):

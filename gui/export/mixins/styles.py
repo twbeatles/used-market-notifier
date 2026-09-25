@@ -9,9 +9,16 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QDate
 from datetime import datetime
-from typing import Mapping
+from typing import Mapping, TYPE_CHECKING
 
-class ExportStylesMixin:
+
+if TYPE_CHECKING:
+    from gui.export.dialog import ExportDialog
+    _HostBase_ExportStylesMixin = ExportDialog
+else:
+    _HostBase_ExportStylesMixin = object
+
+class ExportStylesMixin(_HostBase_ExportStylesMixin):
     """Styles behavior."""
 
     def _group_style(self):

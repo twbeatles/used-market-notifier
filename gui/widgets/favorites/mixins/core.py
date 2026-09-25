@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Mixin module: core."""
 
 # gui/favorites_widget.py
@@ -13,7 +14,14 @@ from PyQt6.QtGui import QAction, QColor, QFont
 from db import DatabaseManager
 from ....link_utils import open_external_url
 
-class FavoritesCoreMixin:
+
+if TYPE_CHECKING:
+    from gui.widgets.favorites.widget import FavoritesWidget
+    _HostBase_FavoritesCoreMixin = FavoritesWidget
+else:
+    _HostBase_FavoritesCoreMixin = object
+
+class FavoritesCoreMixin(_HostBase_FavoritesCoreMixin):
     """Core behavior."""
 
     def __init__(self, engine, parent=None):

@@ -8,7 +8,7 @@ from .display import DisplayMixin
 from .store import StoreMixin
 
 
-class AutoTagger(AnalyzerMixin, DisplayMixin, StoreMixin):
+class AutoTagger(AnalyzerMixin, DisplayMixin, StoreMixin):  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     """Analyzes listing titles and generates automatic tags"""
 
     DEFAULT_RULES: list[dict[str, Any]] = DEFAULT_RULES

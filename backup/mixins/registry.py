@@ -3,10 +3,16 @@
 
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 
-class RegistryMixin:
+if TYPE_CHECKING:
+    from backup.manager import BackupManager
+    _HostBase_RegistryMixin = BackupManager
+else:
+    _HostBase_RegistryMixin = object
+
+class RegistryMixin(_HostBase_RegistryMixin):
     """Backup inventory/retention behavior (needs ``backup_dir``/``logger``)."""
 
     def list_backups(self) -> list:

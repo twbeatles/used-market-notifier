@@ -10,12 +10,18 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QShortcut, QKeySequence
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ....link_utils import open_external_url
 
 
-class ListingsActionsMixin:
+if TYPE_CHECKING:
+    from gui.widgets.listings.browser import ListingsWidget
+    _HostBase_ListingsActionsMixin = ListingsWidget
+else:
+    _HostBase_ListingsActionsMixin = object
+
+class ListingsActionsMixin(_HostBase_ListingsActionsMixin):
     """Actions behavior."""
 
     def on_row_double_click(self, row, col):

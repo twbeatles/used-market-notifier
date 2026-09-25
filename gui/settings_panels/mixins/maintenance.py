@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: maintenance."""
 
 from PyQt6.QtWidgets import (
@@ -12,7 +13,14 @@ import os
 from db import DatabaseManager
 from ..workers import CleanupWorker
 
-class MaintenanceSettingsMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_MaintenanceSettingsMixin = SettingsDialog
+else:
+    _HostBase_MaintenanceSettingsMixin = object
+
+class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
     """Maintenance settings panel behavior."""
 
     def create_maintenance_tab(self) -> QWidget:

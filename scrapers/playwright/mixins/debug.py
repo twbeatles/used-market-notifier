@@ -8,7 +8,7 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Literal, Optional, TypeVar
+from typing import Awaitable, Callable, Literal, Optional, TypeVar, TYPE_CHECKING
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
 
@@ -28,7 +28,14 @@ from ..retry import async_retry
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
 T = TypeVar("T")
 
-class PlaywrightDebugMixin:
+
+if TYPE_CHECKING:
+    from scrapers.playwright.base import PlaywrightScraper
+    _HostBase_PlaywrightDebugMixin = PlaywrightScraper
+else:
+    _HostBase_PlaywrightDebugMixin = object
+
+class PlaywrightDebugMixin(_HostBase_PlaywrightDebugMixin):
     """Debug behavior."""
 
     def _create_debugger(self, keyword: str) -> ScraperDebugger:

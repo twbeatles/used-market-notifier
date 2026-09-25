@@ -10,12 +10,18 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QShortcut, QKeySequence
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ....link_utils import open_external_url
 
 
-class ListingsCoreMixin:
+if TYPE_CHECKING:
+    from gui.widgets.listings.browser import ListingsWidget
+    _HostBase_ListingsCoreMixin = ListingsWidget
+else:
+    _HostBase_ListingsCoreMixin = object
+
+class ListingsCoreMixin(_HostBase_ListingsCoreMixin):
     """Core behavior."""
 
     def __init__(self, engine=None, parent=None):

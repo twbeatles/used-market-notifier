@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: seller."""
 
 from PyQt6.QtWidgets import (
@@ -9,7 +10,14 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
-class SellerSettingsMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_SellerSettingsMixin = SettingsDialog
+else:
+    _HostBase_SellerSettingsMixin = object
+
+class SellerSettingsMixin(_HostBase_SellerSettingsMixin):
     """Seller settings panel behavior."""
 
     def create_seller_tab(self) -> QWidget:

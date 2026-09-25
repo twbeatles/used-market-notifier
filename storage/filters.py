@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """SellerFilterMixin for DatabaseManager."""
 
 from .common import *
 
 
-class SellerFilterMixin:
+if TYPE_CHECKING:
+    from storage.database import DatabaseManager
+    _HostBase_SellerFilterMixin = DatabaseManager
+else:
+    _HostBase_SellerFilterMixin = object
+
+class SellerFilterMixin(_HostBase_SellerFilterMixin):
     def add_seller_filter(self, seller_name: str, platform: str, is_blocked: bool = True, notes: str = ""):
         """Add or update a seller filter"""
         with self.lock:

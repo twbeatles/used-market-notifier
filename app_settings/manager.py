@@ -19,13 +19,13 @@ from .mixins import (
 )
 
 class SettingsManager(
-    SettingsNormalizationMixin,
-    SettingsSerializationMixin,
-    SettingsDeserializationMixin,
-    SettingsRecoveryMixin,
-    KeywordSettingsMixin,
-    NotifierSettingsMixin,
-    PresetSettingsMixin,
+    SettingsNormalizationMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    SettingsSerializationMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    SettingsDeserializationMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    SettingsRecoveryMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    KeywordSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    NotifierSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    PresetSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
 ):
     """Manages application settings with JSON persistence."""
 

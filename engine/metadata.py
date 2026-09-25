@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """MetadataEnrichmentMixin for MonitorEngine."""
 
 from .common import *
 
 
-class MetadataEnrichmentMixin:
+if TYPE_CHECKING:
+    from engine.monitor import MonitorEngine
+    _HostBase_MetadataEnrichmentMixin = MonitorEngine
+else:
+    _HostBase_MetadataEnrichmentMixin = object
+
+class MetadataEnrichmentMixin(_HostBase_MetadataEnrichmentMixin):
     def _create_auto_tagger_from_settings(self) -> AutoTagger:
         """
         Build AutoTagger rules from settings.tag_rules if present.

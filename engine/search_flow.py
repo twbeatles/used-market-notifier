@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """SearchFlowMixin for MonitorEngine."""
 
 from .common import *
 
 
-class SearchFlowMixin:
+if TYPE_CHECKING:
+    from engine.monitor import MonitorEngine
+    _HostBase_SearchFlowMixin = MonitorEngine
+else:
+    _HostBase_SearchFlowMixin = object
+
+class SearchFlowMixin(_HostBase_SearchFlowMixin):
     @staticmethod
     def _dedupe_items(items: list[Item]) -> list[Item]:
         """

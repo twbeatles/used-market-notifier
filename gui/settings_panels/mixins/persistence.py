@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: persistence."""
 
 from PyQt6.QtWidgets import (
@@ -12,7 +13,14 @@ from models import NotificationType, NotificationSchedule, TagRule, MessageTempl
 from auto_tagger import AutoTagger
 from message_templates import MessageTemplateManager
 
-class SettingsPersistenceMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_SettingsPersistenceMixin = SettingsDialog
+else:
+    _HostBase_SettingsPersistenceMixin = object
+
+class SettingsPersistenceMixin(_HostBase_SettingsPersistenceMixin):
     """Persistence settings panel behavior."""
 
     def load_settings(self):

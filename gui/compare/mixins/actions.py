@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Mixin module: actions."""
 
 """Enhanced dialog for comparing multiple listings side by side."""
@@ -12,7 +13,14 @@ from PyQt6.QtGui import QColor
 
 from gui.link_utils import open_external_url
 
-class CompareActionsMixin:
+
+if TYPE_CHECKING:
+    from gui.compare.dialog import CompareDialog
+    _HostBase_CompareActionsMixin = CompareDialog
+else:
+    _HostBase_CompareActionsMixin = object
+
+class CompareActionsMixin(_HostBase_CompareActionsMixin):
     """Actions behavior."""
 
     def _on_cell_clicked(self, row, col):

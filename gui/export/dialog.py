@@ -17,9 +17,9 @@ from .mixins import (
 )
 
 class ExportDialog(
-    ExportUiMixin,
-    ExportActionsMixin,
-    ExportStylesMixin,
+    ExportUiMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ExportActionsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ExportStylesMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     QDialog,
 ):
     """ExportDialog dialog."""

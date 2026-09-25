@@ -22,15 +22,15 @@ from .mixins import (
 )
 
 class SettingsDialog(
-    GeneralSettingsMixin,
-    NotificationSettingsMixin,
-    ScheduleSettingsMixin,
-    SellerSettingsMixin,
-    MaintenanceSettingsMixin,
-    UpdateSettingsMixin,
-    AutoTaggingSettingsMixin,
-    MessageTemplatesSettingsMixin,
-    SettingsPersistenceMixin,
+    GeneralSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    NotificationSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ScheduleSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    SellerSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    MaintenanceSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    UpdateSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    AutoTaggingSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    MessageTemplatesSettingsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    SettingsPersistenceMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     QDialog,
 ):
     """Modern settings dialog with tab navigation."""

@@ -1,8 +1,15 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """Tag display helpers: icon/color lookup and HTML badge rendering."""
 
 
-class DisplayMixin:
+if TYPE_CHECKING:
+    from auto_tagger.tagger import AutoTagger
+    _HostBase_DisplayMixin = AutoTagger
+else:
+    _HostBase_DisplayMixin = object
+
+class DisplayMixin(_HostBase_DisplayMixin):
     """Display behavior for AutoTagger (needs ``self.rules``)."""
 
     def get_tag_display(self, tag_name: str) -> tuple:

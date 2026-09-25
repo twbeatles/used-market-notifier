@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """ScraperLifecycleMixin for MonitorEngine."""
 
 from .common import *
 
 
-class ScraperLifecycleMixin:
+if TYPE_CHECKING:
+    from engine.monitor import MonitorEngine
+    _HostBase_ScraperLifecycleMixin = MonitorEngine
+else:
+    _HostBase_ScraperLifecycleMixin = object
+
+class ScraperLifecycleMixin(_HostBase_ScraperLifecycleMixin):
     def _get_scraper_mode(self) -> str:
         mode = str(getattr(self.settings.settings, "scraper_mode", "playwright_primary") or "").strip().lower()
         if mode not in ("playwright_primary", "selenium_primary", "selenium_only"):

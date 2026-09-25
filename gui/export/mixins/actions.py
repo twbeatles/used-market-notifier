@@ -9,10 +9,17 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QDate
 from datetime import datetime
-from typing import Mapping
+from typing import Mapping, TYPE_CHECKING
 from export_manager import ExportManager
 
-class ExportActionsMixin:
+
+if TYPE_CHECKING:
+    from gui.export.dialog import ExportDialog
+    _HostBase_ExportActionsMixin = ExportDialog
+else:
+    _HostBase_ExportActionsMixin = object
+
+class ExportActionsMixin(_HostBase_ExportActionsMixin):
     """Actions behavior."""
 
     def _toggle_filters(self, state):

@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """ListingPersistenceMixin for DatabaseManager."""
 
 from .common import *
 
 
-class ListingPersistenceMixin:
+if TYPE_CHECKING:
+    from storage.database import DatabaseManager
+    _HostBase_ListingPersistenceMixin = DatabaseManager
+else:
+    _HostBase_ListingPersistenceMixin = object
+
+class ListingPersistenceMixin(_HostBase_ListingPersistenceMixin):
     @staticmethod
     def normalize_url(url: str | None) -> str:
         raw = str(url or "").strip()

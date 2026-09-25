@@ -8,10 +8,16 @@ import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 
-class CreatorMixin:
+if TYPE_CHECKING:
+    from backup.manager import BackupManager
+    _HostBase_CreatorMixin = BackupManager
+else:
+    _HostBase_CreatorMixin = object
+
+class CreatorMixin(_HostBase_CreatorMixin):
     """Backup-archive creation behavior (needs ``backup_dir``/``logger``)."""
 
     def create_backup(self, db_path: str = "listings.db",

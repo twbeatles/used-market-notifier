@@ -61,7 +61,7 @@ class TestDanggeunFixtureParser(unittest.TestCase):
         self.assertEqual(items[0].price, "150,000원")
         self.assertEqual(items[0].location, "만수3동")
         self.assertTrue(items[0].link.startswith("https://www.daangn.com/kr/buy-sell/"))
-        self.assertGreaterEqual(metrics["dom_card_count"], 2)
+        self.assertGreaterEqual(cast(int, metrics["dom_card_count"]), 2)
 
     def test_cards_without_data_gtm_fall_back_when_json_ld_is_absent(self):
         scraper = object.__new__(PlaywrightDanggeunScraper)
@@ -108,7 +108,7 @@ class TestBunjangFixtureParser(unittest.TestCase):
         self.assertEqual(by_id["433826511"].title, "아이폰 13 프로맥스 128기가")
         self.assertEqual(by_id["433826511"].price, "455,000원")
         self.assertIn("imp_id=track", by_id["433667944"].link)
-        self.assertGreaterEqual(metrics["dom_product_link_count"], 3)
+        self.assertGreaterEqual(cast(int, metrics["dom_product_link_count"]), 3)
 
     def test_detail_api_payload_maps_status_and_metadata(self):
         payload = json.loads(_read_fixture("bunjang_detail_api.json"))

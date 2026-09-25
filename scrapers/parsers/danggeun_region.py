@@ -63,8 +63,11 @@ def parse_region_locations(payload: Mapping[str, Any] | None) -> list[DanggeunRe
     for raw in raw_locations:
         if not isinstance(raw, dict):
             continue
+        raw_id = raw.get("id")
+        if raw_id is None:
+            continue
         try:
-            region_id = int(raw.get("id"))
+            region_id = int(raw_id)
         except (TypeError, ValueError):
             continue
         name = normalize_whitespace(raw.get("name"))

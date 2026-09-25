@@ -1,6 +1,7 @@
 """Mixin module: core."""
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
@@ -28,7 +29,13 @@ from ....components import StatCard
 from ....link_utils import open_external_url
 
 
-class StatsCoreMixin:
+if TYPE_CHECKING:
+    from gui.widgets.stats.dashboard import StatsWidget
+    _HostBase_StatsCoreMixin = StatsWidget
+else:
+    _HostBase_StatsCoreMixin = object
+
+class StatsCoreMixin(_HostBase_StatsCoreMixin):
     """Core behavior."""
 
     def __init__(self, engine=None, parent=None):

@@ -1,9 +1,16 @@
+from typing import TYPE_CHECKING
 """Mixin module: keywords."""
 
 from models import SearchKeyword
 
 
-class KeywordSettingsMixin:
+if TYPE_CHECKING:
+    from app_settings.manager import SettingsManager
+    _HostBase_KeywordSettingsMixin = SettingsManager
+else:
+    _HostBase_KeywordSettingsMixin = object
+
+class KeywordSettingsMixin(_HostBase_KeywordSettingsMixin):
     """Keywords behavior."""
 
     def add_keyword(self, keyword: SearchKeyword) -> None:

@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: schedule."""
 
 from PyQt6.QtWidgets import (
@@ -10,7 +11,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from models import NotificationSchedule
 
-class ScheduleSettingsMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_ScheduleSettingsMixin = SettingsDialog
+else:
+    _HostBase_ScheduleSettingsMixin = object
+
+class ScheduleSettingsMixin(_HostBase_ScheduleSettingsMixin):
     """Schedule settings panel behavior."""
 
     def create_schedule_tab(self) -> QWidget:

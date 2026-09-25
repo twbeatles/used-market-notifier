@@ -35,11 +35,11 @@ from .mixins import (
 )
 
 class PlaywrightScraper(
-    PlaywrightLifecycleMixin,
-    PlaywrightNavigationMixin,
-    PlaywrightSearchRuntimeMixin,
-    PlaywrightDebugMixin,
-    PlaywrightFiltersMixin,
+    PlaywrightLifecycleMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    PlaywrightNavigationMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    PlaywrightSearchRuntimeMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    PlaywrightDebugMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    PlaywrightFiltersMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     ABC,
 ):
     """Playwright scraper base class."""

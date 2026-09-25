@@ -12,12 +12,12 @@ from .stats import StatisticsMixin
 
 
 class DatabaseManager(
-    SchemaMixin,
-    ListingPersistenceMixin,
+    SchemaMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ListingPersistenceMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     StatisticsMixin,
-    FavoritesNotesMixin,
-    NotificationLogMixin,
-    SellerFilterMixin,
+    FavoritesNotesMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    NotificationLogMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    SellerFilterMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     MaintenanceMixin,
 ):
     """SQLite database manager with price history tracking - Thread Safe."""

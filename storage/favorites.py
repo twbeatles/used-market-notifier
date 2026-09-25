@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """FavoritesNotesMixin for DatabaseManager."""
 
 from .common import *
 
 
-class FavoritesNotesMixin:
+if TYPE_CHECKING:
+    from storage.database import DatabaseManager
+    _HostBase_FavoritesNotesMixin = DatabaseManager
+else:
+    _HostBase_FavoritesNotesMixin = object
+
+class FavoritesNotesMixin(_HostBase_FavoritesNotesMixin):
     def add_favorite(self, listing_id: int, notes: str = "", target_price: int | None = None) -> bool:
         """Add a listing to favorites"""
         with self.lock:

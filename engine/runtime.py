@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """RuntimeMixin for MonitorEngine."""
 
 from .common import *
 
 
-class RuntimeMixin:
+if TYPE_CHECKING:
+    from engine.monitor import MonitorEngine
+    _HostBase_RuntimeMixin = MonitorEngine
+else:
+    _HostBase_RuntimeMixin = object
+
+class RuntimeMixin(_HostBase_RuntimeMixin):
     async def _sleep_or_stop(self, seconds: float) -> None:
         """Sleep unless a stop has been requested (improves responsiveness on stop/close)."""
         if seconds <= 0:

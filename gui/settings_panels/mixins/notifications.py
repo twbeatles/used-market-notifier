@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: notifications."""
 
 from PyQt6.QtWidgets import (
@@ -11,7 +12,14 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from models import NotificationType
 from ..workers import NotificationTestThread
 
-class NotificationSettingsMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_NotificationSettingsMixin = SettingsDialog
+else:
+    _HostBase_NotificationSettingsMixin = object
+
+class NotificationSettingsMixin(_HostBase_NotificationSettingsMixin):
     """Notifications settings panel behavior."""
 
     def create_notification_tab(self, title: str, icon: str,

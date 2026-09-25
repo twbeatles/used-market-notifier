@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """Backup restore with manifest/basename allowlist validation."""
 
@@ -6,7 +7,13 @@ import shutil
 import zipfile
 
 
-class RestorerMixin:
+if TYPE_CHECKING:
+    from backup.manager import BackupManager
+    _HostBase_RestorerMixin = BackupManager
+else:
+    _HostBase_RestorerMixin = object
+
+class RestorerMixin(_HostBase_RestorerMixin):
     """Backup-restore behavior (needs ``backup_dir``/``logger``)."""
 
     def restore_backup(self, backup_file: str,

@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: message_templates."""
 
 from PyQt6.QtWidgets import (
@@ -12,7 +13,14 @@ from models import MessageTemplate
 from message_templates import MessageTemplateManager
 from ..editors import MessageTemplateEditDialog
 
-class MessageTemplatesSettingsMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_MessageTemplatesSettingsMixin = SettingsDialog
+else:
+    _HostBase_MessageTemplatesSettingsMixin = object
+
+class MessageTemplatesSettingsMixin(_HostBase_MessageTemplatesSettingsMixin):
     """Message Templates settings panel behavior."""
 
     def create_message_templates_tab(self) -> QWidget:

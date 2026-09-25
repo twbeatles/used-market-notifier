@@ -1,6 +1,7 @@
 """Mixin module: refresh."""
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
@@ -28,7 +29,13 @@ from ....components import StatCard
 from ....link_utils import open_external_url
 
 
-class StatsRefreshMixin:
+if TYPE_CHECKING:
+    from gui.widgets.stats.dashboard import StatsWidget
+    _HostBase_StatsRefreshMixin = StatsWidget
+else:
+    _HostBase_StatsRefreshMixin = object
+
+class StatsRefreshMixin(_HostBase_StatsRefreshMixin):
     """Refresh behavior."""
 
     def _signature_recent(self, recent: list[dict]):

@@ -10,12 +10,18 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QShortcut, QKeySequence
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ....link_utils import open_external_url
 
 
-class ListingsUiMixin:
+if TYPE_CHECKING:
+    from gui.widgets.listings.browser import ListingsWidget
+    _HostBase_ListingsUiMixin = ListingsWidget
+else:
+    _HostBase_ListingsUiMixin = object
+
+class ListingsUiMixin(_HostBase_ListingsUiMixin):
     """Ui behavior."""
 
     def setup_ui(self):

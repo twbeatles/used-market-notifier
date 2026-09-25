@@ -10,12 +10,18 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QShortcut, QKeySequence
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ....link_utils import open_external_url
 
 
-class ListingsTableMixin:
+if TYPE_CHECKING:
+    from gui.widgets.listings.browser import ListingsWidget
+    _HostBase_ListingsTableMixin = ListingsWidget
+else:
+    _HostBase_ListingsTableMixin = object
+
+class ListingsTableMixin(_HostBase_ListingsTableMixin):
     """Table behavior."""
 
     def _make_table_signature(self, listings: list[dict], platform: Optional[str], status: Optional[str], offset: int):

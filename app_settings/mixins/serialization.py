@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Mixin module: serialization."""
 
 from models import (
@@ -6,7 +7,14 @@ from models import (
     KeywordPreset, TagRule, MessageTemplate
 )
 
-class SettingsSerializationMixin:
+
+if TYPE_CHECKING:
+    from app_settings.manager import SettingsManager
+    _HostBase_SettingsSerializationMixin = SettingsManager
+else:
+    _HostBase_SettingsSerializationMixin = object
+
+class SettingsSerializationMixin(_HostBase_SettingsSerializationMixin):
     """Settings serialization behavior."""
 
     def _to_dict(self, settings: AppSettings) -> dict:

@@ -22,12 +22,15 @@ from .mixins import (
 )
 
 class ListingsWidget(
-    ListingsCoreMixin,
-    ListingsShortcutsMixin,
-    ListingsUiMixin,
-    ListingsFiltersMixin,
-    ListingsTableMixin,
-    ListingsActionsMixin,
+    ListingsCoreMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ListingsShortcutsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ListingsUiMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ListingsFiltersMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ListingsTableMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ListingsActionsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     QWidget,
 ):
     """Widget to browse all scraped listings."""
+
+    def __init__(self, engine=None, parent=None):
+        super().__init__(engine, parent)

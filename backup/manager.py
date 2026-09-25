@@ -14,7 +14,7 @@ from .path_safety import is_relative_to, safe_member_basename
 from .size_format import format_size
 
 
-class BackupManager(CreatorMixin, RestorerMixin, RegistryMixin):
+class BackupManager(CreatorMixin, RestorerMixin, RegistryMixin):  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     """Manages backup and restore of database and settings"""
 
     MANIFEST_NAME = "backup_manifest.json"

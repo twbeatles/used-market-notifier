@@ -1,10 +1,16 @@
 # pyright: reportAttributeAccessIssue=false
 """Rule-store management: replace, add, and remove tag rules."""
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 
-class StoreMixin:
+if TYPE_CHECKING:
+    from auto_tagger.tagger import AutoTagger
+    _HostBase_StoreMixin = AutoTagger
+else:
+    _HostBase_StoreMixin = object
+
+class StoreMixin(_HostBase_StoreMixin):
     """Rule-store behavior for AutoTagger (needs ``self.rules``)."""
 
     def update_rules(self, new_rules: list[dict[str, Any]]) -> None:

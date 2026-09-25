@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """NotificationLogMixin for DatabaseManager."""
 
 from .common import *
 
 
-class NotificationLogMixin:
+if TYPE_CHECKING:
+    from storage.database import DatabaseManager
+    _HostBase_NotificationLogMixin = DatabaseManager
+else:
+    _HostBase_NotificationLogMixin = object
+
+class NotificationLogMixin(_HostBase_NotificationLogMixin):
     def log_notification(self, listing_id: int, notification_type: str, message: str):
         """Log a sent notification"""
         with self.lock:

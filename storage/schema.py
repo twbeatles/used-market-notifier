@@ -1,10 +1,17 @@
+from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """SchemaMixin for DatabaseManager."""
 
 from .common import *
 
 
-class SchemaMixin:
+if TYPE_CHECKING:
+    from storage.database import DatabaseManager
+    _HostBase_SchemaMixin = DatabaseManager
+else:
+    _HostBase_SchemaMixin = object
+
+class SchemaMixin(_HostBase_SchemaMixin):
     def create_tables(self):
         """Create all required tables"""
         with self.lock:

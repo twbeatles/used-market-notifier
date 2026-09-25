@@ -35,10 +35,10 @@ from .mixins import (
 )
 
 class StatsWidget(
-    StatsCoreMixin,
-    StatsUiMixin,
-    StatsRefreshMixin,
-    StatsActionsMixin,
+    StatsCoreMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    StatsUiMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    StatsRefreshMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    StatsActionsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     QWidget,
 ):
     """Statistics dashboard with recent listings, price changes, and status history."""

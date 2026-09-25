@@ -1,9 +1,16 @@
+from typing import TYPE_CHECKING
 """Mixin module: presets."""
 
 from models import KeywordPreset, SearchKeyword
 
 
-class PresetSettingsMixin:
+if TYPE_CHECKING:
+    from app_settings.manager import SettingsManager
+    _HostBase_PresetSettingsMixin = SettingsManager
+else:
+    _HostBase_PresetSettingsMixin = object
+
+class PresetSettingsMixin(_HostBase_PresetSettingsMixin):
     """Presets behavior."""
 
     def add_preset(self, preset: KeywordPreset) -> None:

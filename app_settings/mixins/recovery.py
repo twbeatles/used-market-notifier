@@ -5,7 +5,7 @@ import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from models import (
     AppSettings, SearchKeyword, NotifierConfig,
@@ -15,7 +15,13 @@ from models import (
 from ..constants import SETTINGS_FILE
 
 
-class SettingsRecoveryMixin:
+if TYPE_CHECKING:
+    from app_settings.manager import SettingsManager
+    _HostBase_SettingsRecoveryMixin = SettingsManager
+else:
+    _HostBase_SettingsRecoveryMixin = object
+
+class SettingsRecoveryMixin(_HostBase_SettingsRecoveryMixin):
     """Recovery behavior."""
 
     def _reset_load_recovery_state(self) -> None:

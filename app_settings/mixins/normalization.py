@@ -1,6 +1,6 @@
 """Mixin module: normalization."""
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from models import (
     AppSettings, SearchKeyword, NotifierConfig,
     NotificationSchedule, NotificationType, ThemeMode, SellerFilter,
@@ -8,7 +8,13 @@ from models import (
 )
 
 
-class SettingsNormalizationMixin:
+if TYPE_CHECKING:
+    from app_settings.manager import SettingsManager
+    _HostBase_SettingsNormalizationMixin = SettingsManager
+else:
+    _HostBase_SettingsNormalizationMixin = object
+
+class SettingsNormalizationMixin(_HostBase_SettingsNormalizationMixin):
     """Normalization behavior."""
 
     def _mark_normalized(self, field: str, raw_value: Any, default_value: Any) -> None:

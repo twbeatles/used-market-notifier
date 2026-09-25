@@ -10,11 +10,11 @@ from .search_flow import SearchFlowMixin
 
 
 class MonitorEngine(
-    MetadataEnrichmentMixin,
-    ScraperLifecycleMixin,
+    MetadataEnrichmentMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ScraperLifecycleMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     NotificationRuntimeMixin,
-    SearchFlowMixin,
-    RuntimeMixin,
+    SearchFlowMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    RuntimeMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
 ):
     """Core engine for monitoring used marketplaces."""
 

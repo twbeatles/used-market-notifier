@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: general."""
 
 from PyQt6.QtWidgets import (
@@ -10,7 +11,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from models import ThemeMode
 
-class GeneralSettingsMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_GeneralSettingsMixin = SettingsDialog
+else:
+    _HostBase_GeneralSettingsMixin = object
+
+class GeneralSettingsMixin(_HostBase_GeneralSettingsMixin):
     """General settings panel behavior."""
 
     def create_general_tab(self) -> QWidget:

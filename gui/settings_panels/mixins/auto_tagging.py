@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Settings dialog mixin: auto_tagging."""
 
 from PyQt6.QtWidgets import (
@@ -12,7 +13,14 @@ from models import TagRule
 from auto_tagger import AutoTagger
 from ..editors import TagRuleEditDialog
 
-class AutoTaggingSettingsMixin:
+
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_AutoTaggingSettingsMixin = SettingsDialog
+else:
+    _HostBase_AutoTaggingSettingsMixin = object
+
+class AutoTaggingSettingsMixin(_HostBase_AutoTaggingSettingsMixin):
     """Auto Tagging settings panel behavior."""
 
     def create_auto_tagging_tab(self) -> QWidget:

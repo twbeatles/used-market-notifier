@@ -2,6 +2,7 @@
 """설정 창의 소프트웨어 업데이트 카드."""
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -26,7 +27,13 @@ _UPDATE_COLORS = {
 }
 
 
-class UpdateSettingsMixin:
+if TYPE_CHECKING:
+    from gui.settings_panels.dialog import SettingsDialog
+    _HostBase_UpdateSettingsMixin = SettingsDialog
+else:
+    _HostBase_UpdateSettingsMixin = object
+
+class UpdateSettingsMixin(_HostBase_UpdateSettingsMixin):
     """유지보수 탭에 업데이트 확인 UI를 붙입니다."""
 
     def _add_update_group(self, layout: QVBoxLayout) -> None:

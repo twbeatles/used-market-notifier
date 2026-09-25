@@ -17,8 +17,8 @@ from .mixins import (
 )
 
 class CompareDialog(
-    CompareUiMixin,
-    CompareActionsMixin,
+    CompareUiMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    CompareActionsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     QDialog,
 ):
     """CompareDialog dialog."""

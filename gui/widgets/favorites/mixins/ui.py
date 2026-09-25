@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Mixin module: ui."""
 
 # gui/favorites_widget.py
@@ -13,7 +14,14 @@ from PyQt6.QtGui import QAction, QColor, QFont
 from db import DatabaseManager
 from ....link_utils import open_external_url
 
-class FavoritesUiMixin:
+
+if TYPE_CHECKING:
+    from gui.widgets.favorites.widget import FavoritesWidget
+    _HostBase_FavoritesUiMixin = FavoritesWidget
+else:
+    _HostBase_FavoritesUiMixin = object
+
+class FavoritesUiMixin(_HostBase_FavoritesUiMixin):
     """Ui behavior."""
 
     def setup_ui(self):

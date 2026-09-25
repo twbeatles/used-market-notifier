@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 """Mixin module: actions."""
 
 # gui/favorites_widget.py
@@ -12,8 +13,16 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont
 from db import DatabaseManager
 from ....link_utils import open_external_url
+from ..edit_dialog import FavoritesEditDialog
 
-class FavoritesActionsMixin:
+
+if TYPE_CHECKING:
+    from gui.widgets.favorites.widget import FavoritesWidget
+    _HostBase_FavoritesActionsMixin = FavoritesWidget
+else:
+    _HostBase_FavoritesActionsMixin = object
+
+class FavoritesActionsMixin(_HostBase_FavoritesActionsMixin):
     """Actions behavior."""
 
     def open_link(self, row):

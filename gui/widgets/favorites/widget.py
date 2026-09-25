@@ -18,9 +18,9 @@ from .mixins import (
 )
 
 class FavoritesWidget(
-    FavoritesCoreMixin,
-    FavoritesUiMixin,
-    FavoritesActionsMixin,
+    FavoritesCoreMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    FavoritesUiMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    FavoritesActionsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     QWidget,
 ):
     """Favorites management widget."""
