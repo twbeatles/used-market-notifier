@@ -27,6 +27,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate release tag (fail fast before build)
+        shell: pwsh
+        run: |
+          git fetch origin main
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          if ($version -notmatch '^\d+(\.\d+)*$') { throw "Tag must use vX.Y.Z: $env:GITHUB_REF_NAME" }
+          $configuredVersion = (python -c "import version; print(version.__version__)").Trim()
+          if ($configuredVersion -ne $version) { throw "Tag $version does not match version.__version__ $configuredVersion" }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Release tag commit $env:GITHUB_SHA is not contained in origin/main. Tag the updated main tip instead: git checkout main; git pull; git tag v$version; git push origin v$version. Do not move an already-pushed tag; delete the remote release/tag first if a bad tag was pushed." }
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -73,7 +84,7 @@ jobs:
         run: |
           git fetch origin main
           git merge-base --is-ancestor $env:GITHUB_SHA origin/main
-          if ($LASTEXITCODE -ne 0) { throw "Release tag commit must be contained in main before publishing latest manifest" }
+          if ($LASTEXITCODE -ne 0) { throw "Release tag commit $env:GITHUB_SHA is not contained in origin/main (main advanced after the tag was pushed, or the tag was moved). Repoint main or the tag so the tag commit is an ancestor of main, then rerun." }
           git checkout -B main origin/main
           Copy-Item -LiteralPath "$env:RUNNER_TEMP/latest.json" -Destination updates/latest.json -Force
           git config user.name "github-actions[bot]"

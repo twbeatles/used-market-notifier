@@ -909,9 +909,12 @@ Use this section as the latest implementation baseline for March 25, 2026.
   env is the project `.venv`; a system interpreter with both Fluent
   distributions installed is a documented conflict state (resolved 2026-09:
   system interpreter cleaned to PySide6-only, suite passes on both).
-- Release flow: bump `version.py`, commit to `main`, tag `vX.Y.Z` (must match),
-  push tag → `.github/workflows/release.yml` builds/signs/publishes the exe
-  and `updates/latest.json`.
+- Release flow: bump `version.py`, commit to `main`, push `main` first,
+  then tag the updated `main` tip with `vX.Y.Z` (must match `version.py`)
+  and push the tag → `.github/workflows/release.yml` validates the tag
+  (fail-fast before build), then builds/signs/publishes the exe
+  and `updates/latest.json`. Never tag a non-`main` commit; if a bad tag
+  was pushed, delete the remote release/tag instead of moving the tag.
 - Verification: `python -m unittest discover -s tests -q` (151 tests, OK),
   `tests/test_fluent_foundation.py`, offscreen GUI smoke via
   `USED_NOTIFIER_GUI_SMOKE=1 python -m gui.app`.
