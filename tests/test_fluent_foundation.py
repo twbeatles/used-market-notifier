@@ -101,7 +101,7 @@ class FluentWindowTest(unittest.TestCase):
 class PyprojectGuiExtraTest(unittest.TestCase):
     def test_gui_extra_declares_fluent_dependency(self):
         try:
-            import tomllib
+            import tomllib  # pyright: ignore[reportMissingImports]
         except ImportError:
             self.skipTest("tomllib requires Python 3.11+")
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"

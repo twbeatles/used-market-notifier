@@ -9,7 +9,7 @@ def copy_text_to_clipboard(text: str) -> bool:
         True if successful, False otherwise
     """
     try:
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
 
         clipboard = QApplication.clipboard()
         if clipboard is None:
@@ -17,7 +17,7 @@ def copy_text_to_clipboard(text: str) -> bool:
         clipboard.setText(text)
         return True
     except Exception:
-        # Fallback for non-PyQt environments
+        # Fallback for non-Qt environments
         try:
             import importlib
 
