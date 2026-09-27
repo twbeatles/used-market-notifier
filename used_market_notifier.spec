@@ -172,9 +172,19 @@ except Exception:
     pass
 
 # aiohttp and its helper packages may resolve parts of the stack lazily.
+# Fluent webengine/multimedia subpackages are excluded: nothing imports them
+# and they drag QtWebEngine/QtMultimedia (~100MB+) into the bundle.
+_SKIP_COLLECT_PREFIXES = (
+    "qfluentwidgets.multimedia",
+    "qframelesswindow.webengine",
+)
 for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", "propcache", "cryptography", "updater", "qfluentwidgets", "qframelesswindow", "darkdetect"):
     try:
-        hiddenimports += collect_submodules(package_name)
+        hiddenimports += [
+            module
+            for module in collect_submodules(package_name)
+            if not module.startswith(_SKIP_COLLECT_PREFIXES)
+        ]
     except Exception:
         pass
 
@@ -234,7 +244,52 @@ a = Analysis(
         "setuptools", "pip", "wheel", "pkg_resources",
         "distutils", "ensurepip",
 
-        # Unused Qt modules
+        # Unused Qt modules (PySide6 build: exclude PySide6 counterparts;
+        # measured imports are QtCore/QtGui/QtWidgets/QtSvg/QtSvgWidgets/QtXml)
+        "PySide6.Qt3DAnimation",
+        "PySide6.Qt3DCore",
+        "PySide6.Qt3DExtras",
+        "PySide6.Qt3DInput",
+        "PySide6.Qt3DLogic",
+        "PySide6.Qt3DRender",
+        "PySide6.QtBluetooth",
+        "PySide6.QtCharts",
+        "PySide6.QtDataVisualization",
+        "PySide6.QtDesigner",
+        "PySide6.QtGraphs",
+        "PySide6.QtHelp",
+        "PySide6.QtHttpServer",
+        "PySide6.QtLocation",
+        "PySide6.QtMultimedia",
+        "PySide6.QtMultimediaWidgets",
+        "PySide6.QtNetwork",
+        "PySide6.QtNetworkAuth",
+        "PySide6.QtNfc",
+        "PySide6.QtOpenGL",
+        "PySide6.QtOpenGLWidgets",
+        "PySide6.QtPdf",
+        "PySide6.QtPdfWidgets",
+        "PySide6.QtPositioning",
+        "PySide6.QtPrintSupport",
+        "PySide6.QtQml",
+        "PySide6.QtQuick",
+        "PySide6.QtQuickWidgets",
+        "PySide6.QtQuick3D",
+        "PySide6.QtRemoteObjects",
+        "PySide6.QtScxml",
+        "PySide6.QtSensors",
+        "PySide6.QtSerialBus",
+        "PySide6.QtSerialPort",
+        "PySide6.QtSpatialAudio",
+        "PySide6.QtSql",
+        "PySide6.QtStateMachine",
+        "PySide6.QtTest",
+        "PySide6.QtTextToSpeech",
+        "PySide6.QtWebChannel",
+        "PySide6.QtWebEngine",
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineWidgets",
+        "PySide6.QtWebSockets",
         "PyQt6.QtBluetooth",
         "PyQt6.QtDBus",
         "PyQt6.QtDesigner",
