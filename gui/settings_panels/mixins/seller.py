@@ -1,15 +1,21 @@
 from typing import TYPE_CHECKING
+
 """Settings dialog mixin: seller."""
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QFormLayout, QLineEdit, QSpinBox, QCheckBox, QLabel,
-    QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
-    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView,
-    QTextEdit, QApplication
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-
+from qfluentwidgets import (
+    CaptionLabel,
+    PushButton,
+)
 
 if TYPE_CHECKING:
     from gui.settings_panels.dialog import SettingsDialog
@@ -27,8 +33,7 @@ class SellerSettingsMixin(_HostBase_SellerSettingsMixin):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
 
-        desc = QLabel("🚫 차단된 판매자 목록 (이 판매자들의 상품은 알림이 오지 않습니다)")
-        desc.setStyleSheet("color: #89b4fa;")
+        desc = CaptionLabel("차단된 판매자 목록 (이 판매자들의 상품은 알림이 오지 않습니다)")
         layout.addWidget(desc)
 
         self.seller_table = QTableWidget()
@@ -44,7 +49,7 @@ class SellerSettingsMixin(_HostBase_SellerSettingsMixin):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
-        unblock_btn = QPushButton("🔓 차단 해제")
+        unblock_btn = PushButton("차단 해제")
         unblock_btn.setToolTip("선택한 판매자의 차단을 해제합니다")
         unblock_btn.clicked.connect(self.unblock_seller)
         btn_row.addWidget(unblock_btn)

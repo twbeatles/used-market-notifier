@@ -1,5 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtCore import Qt
+from qfluentwidgets import CaptionLabel, isDarkTheme
 from typing import Any
 import warnings
 
@@ -22,6 +23,25 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 
+def _chart_palette() -> dict:
+    """Theme-aware chart chrome colors (series colors stay fixed)."""
+    if isDarkTheme():
+        return {
+            "bg": "#1e1e2e",
+            "text": "#cdd6f4",
+            "muted": "#7982a9",
+            "edge": "#3b4261",
+            "legend_bg": "#24283b",
+        }
+    return {
+        "bg": "#ffffff",
+        "text": "#1e1e2e",
+        "muted": "#6c7086",
+        "edge": "#d0d0d0",
+        "legend_bg": "#f5f5f5",
+    }
+
+
 class PlatformChart(QWidget):
     """Platform distribution pie chart"""
     
@@ -34,15 +54,14 @@ class PlatformChart(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         if HAS_MATPLOTLIB and Figure is not None and FigureCanvas is not None:
-            self.figure = Figure(figsize=(4, 3), facecolor='#1e1e2e')
+            self.figure = Figure(figsize=(4, 3), facecolor=_chart_palette()["bg"])
             self.canvas = FigureCanvas(self.figure)
-            self.canvas.setStyleSheet("background-color: transparent;")
             layout.addWidget(self.canvas)
             self._draw_empty()
         else:
-            label = QLabel("📊 matplotlib 필요\n\npip install matplotlib")
+            label = CaptionLabel("matplotlib 필요\n\npip install matplotlib")
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet("color: #565f89; font-size: 11pt;")
+            label.setWordWrap(True)
             layout.addWidget(label)
     
     def _draw_empty(self):
@@ -50,11 +69,12 @@ class PlatformChart(QWidget):
             return
         self.figure.clear()
         ax = self.figure.add_subplot(111)
+        pal = _chart_palette()
         ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
-                color='#565f89', fontsize=12)
-        ax.set_facecolor('#1e1e2e')
+                color=pal["muted"], fontsize=12)
+        ax.set_facecolor(_chart_palette()["bg"])
         ax.axis('off')
-        self.figure.patch.set_facecolor('#1e1e2e')
+        self.figure.patch.set_facecolor(_chart_palette()["bg"])
         self.canvas.draw()
     
     def update_chart(self, data: dict):
@@ -82,8 +102,8 @@ class PlatformChart(QWidget):
         pie_result = ax.pie(
             values, labels=labels, autopct='%1.1f%%',
             colors=colors, 
-            textprops={'color': '#c0caf5', 'fontsize': 10},
-            wedgeprops={'linewidth': 2, 'edgecolor': '#1e1e2e'}
+            textprops={'color': _chart_palette()["text"], 'fontsize': 10},
+            wedgeprops={'linewidth': 2, 'edgecolor': _chart_palette()["bg"]}
         )
         autotexts = pie_result[2] if len(pie_result) > 2 else []
         
@@ -91,7 +111,7 @@ class PlatformChart(QWidget):
             autotext.set_fontweight('bold')
         
         ax.axis('equal')
-        self.figure.patch.set_facecolor('#1e1e2e')
+        self.figure.patch.set_facecolor(_chart_palette()["bg"])
         
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -112,15 +132,13 @@ class DailyChart(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         if HAS_MATPLOTLIB and Figure is not None and FigureCanvas is not None:
-            self.figure = Figure(figsize=(6, 3), facecolor='#1e1e2e')
+            self.figure = Figure(figsize=(6, 3), facecolor=_chart_palette()["bg"])
             self.canvas = FigureCanvas(self.figure)
-            self.canvas.setStyleSheet("background-color: transparent;")
             layout.addWidget(self.canvas)
             self._draw_empty()
         else:
-            label = QLabel("📊 matplotlib 필요")
+            label = CaptionLabel("matplotlib 필요", self)
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet("color: #565f89;")
             layout.addWidget(label)
     
     def _draw_empty(self):
@@ -128,11 +146,12 @@ class DailyChart(QWidget):
             return
         self.figure.clear()
         ax = self.figure.add_subplot(111)
+        pal = _chart_palette()
         ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center', 
-                color='#565f89', fontsize=12)
-        ax.set_facecolor('#1e1e2e')
+                color=pal["muted"], fontsize=12)
+        ax.set_facecolor(_chart_palette()["bg"])
         ax.axis('off')
-        self.figure.patch.set_facecolor('#1e1e2e')
+        self.figure.patch.set_facecolor(_chart_palette()["bg"])
         self.canvas.draw()
     
     def update_chart(self, data: list):
@@ -157,17 +176,18 @@ class DailyChart(QWidget):
                        label='새 상품', color='#9ece6a', alpha=0.8)
         
         ax.set_xticks(x)
-        ax.set_xticklabels(dates, color='#7982a9', fontsize=9)
-        ax.tick_params(axis='y', colors='#7982a9')
-        ax.legend(facecolor='#24283b', labelcolor='#c0caf5', fontsize=9)
+        ax.set_xticklabels(dates, color=_chart_palette()["muted"], fontsize=9)
+        ax.tick_params(axis='y', colors=_chart_palette()["muted"])
+        pal = _chart_palette()
+        ax.legend(facecolor=pal["legend_bg"], labelcolor=pal["text"], fontsize=9)
         
-        ax.set_facecolor('#1e1e2e')
+        ax.set_facecolor(_chart_palette()["bg"])
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#3b4261')
-        ax.spines['bottom'].set_color('#3b4261')
+        ax.spines['left'].set_color(_chart_palette()["edge"])
+        ax.spines['bottom'].set_color(_chart_palette()["edge"])
         
-        self.figure.patch.set_facecolor('#1e1e2e')
+        self.figure.patch.set_facecolor(_chart_palette()["bg"])
         
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)

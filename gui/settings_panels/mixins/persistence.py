@@ -1,18 +1,13 @@
 from typing import TYPE_CHECKING
+
 """Settings dialog mixin: persistence."""
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QFormLayout, QLineEdit, QSpinBox, QCheckBox, QLabel,
-    QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
-    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView,
-    QTextEdit, QApplication
-)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from models import NotificationType, NotificationSchedule, TagRule, MessageTemplate
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMessageBox
+
 from auto_tagger import AutoTagger
 from message_templates import MessageTemplateManager
-
+from models import MessageTemplate, NotificationSchedule, NotificationType, TagRule
 
 if TYPE_CHECKING:
     from gui.settings_panels.dialog import SettingsDialog
@@ -141,7 +136,8 @@ class SettingsPersistenceMixin(_HostBase_SettingsPersistenceMixin):
             pass
 
 
-    def save_settings(self):
+    def persist_settings_form(self) -> None:
+        """폼 값을 설정에 기록하고 저장 (UI 피드백 없음, 페이지/다이얼로그 공용)."""
         s = self.settings.settings
 
         s.check_interval_seconds = self.interval_spin.value()
@@ -213,6 +209,9 @@ class SettingsPersistenceMixin(_HostBase_SettingsPersistenceMixin):
         s.message_templates = list(self._message_templates or [])
 
         self.settings.save()
+
+    def save_settings(self):
+        self.persist_settings_form()
         QMessageBox.information(
             self,
             "저장 완료",

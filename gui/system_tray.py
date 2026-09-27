@@ -1,9 +1,9 @@
 # gui/system_tray.py
 """System tray icon with context menu"""
 
-from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
-from PyQt6.QtCore import pyqtSignal, QObject
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
+from PySide6.QtCore import Signal, QObject
 
 
 def create_tray_icon() -> QIcon:
@@ -32,10 +32,10 @@ def create_tray_icon() -> QIcon:
 class SystemTrayIcon(QSystemTrayIcon):
     """System tray icon with quick actions"""
     
-    show_window_requested = pyqtSignal()
-    start_monitoring_requested = pyqtSignal()
-    stop_monitoring_requested = pyqtSignal()
-    quit_requested = pyqtSignal()
+    show_window_requested = Signal()
+    start_monitoring_requested = Signal()
+    stop_monitoring_requested = Signal()
+    quit_requested = Signal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,28 +53,28 @@ class SystemTrayIcon(QSystemTrayIcon):
         menu = QMenu()
         
         # Status indicator
-        self.status_action = menu.addAction("⏹️ 대기 중")
+        self.status_action = menu.addAction("대기 중")
         if self.status_action is not None:
             self.status_action.setEnabled(False)
         
         menu.addSeparator()
         
         # Show window
-        show_action = menu.addAction("📱 창 열기")
+        show_action = menu.addAction("창 열기")
         if show_action is not None:
             show_action.triggered.connect(self.show_window_requested.emit)
         
         menu.addSeparator()
         
         # Toggle monitoring
-        self.toggle_action = menu.addAction("▶️ 모니터링 시작")
+        self.toggle_action = menu.addAction("모니터링 시작")
         if self.toggle_action is not None:
             self.toggle_action.triggered.connect(self.toggle_monitoring)
         
         menu.addSeparator()
         
         # Quit
-        quit_action = menu.addAction("🚪 종료")
+        quit_action = menu.addAction("종료")
         if quit_action is not None:
             quit_action.triggered.connect(self.quit_requested.emit)
         
@@ -98,15 +98,15 @@ class SystemTrayIcon(QSystemTrayIcon):
         
         if is_running:
             if self.status_action is not None:
-                self.status_action.setText("🟢 모니터링 중")
+                self.status_action.setText("모니터링 중")
             if self.toggle_action is not None:
-                self.toggle_action.setText("⏹️ 모니터링 중지")
+                self.toggle_action.setText("모니터링 중지")
             self.setToolTip("중고거래 알리미 - 모니터링 중")
         else:
             if self.status_action is not None:
-                self.status_action.setText("⏹️ 대기 중")
+                self.status_action.setText("대기 중")
             if self.toggle_action is not None:
-                self.toggle_action.setText("▶️ 모니터링 시작")
+                self.toggle_action.setText("모니터링 시작")
             self.setToolTip("중고거래 알리미 - 대기 중")
     
     def show_notification(self, title: str, message: str, icon=None):

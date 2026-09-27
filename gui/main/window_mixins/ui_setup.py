@@ -1,231 +1,136 @@
 # pyright: reportAttributeAccessIssue=false
-"""Main-window UI construction (central widget, tabs, header)."""
+"""Fluent navigation construction (MSFluentWindow + addSubInterface)."""
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QStatusBar,
-    QTabWidget, QVBoxLayout, QWidget,
+import contextlib
+
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QWidget
+from qfluentwidgets import FluentIcon as FIF
+from qfluentwidgets import NavigationItemPosition, setThemeColor
+
+from gui.design_tokens import (
+    SCREEN_MARGIN,
+    WINDOW_DEFAULT_HEIGHT,
+    WINDOW_DEFAULT_WIDTH,
+    WINDOW_MIN_HEIGHT,
+    WINDOW_MIN_WIDTH,
 )
-
 from gui.favorites_widget import FavoritesWidget
+from gui.fluent_theme import apply_native_widget_style, configure_fluent_window
+from gui.icon import get_app_icon
 from gui.keyword_manager import KeywordManagerWidget
 from gui.listings_widget import ListingsWidget
 from gui.log_widget import LogWidget
 from gui.notification_history import NotificationHistoryWidget
+from gui.pages import HostPage, MonitorPage, SettingsPage, UpdatePage
 from gui.stats_widget import StatsWidget
 from version import __version__
 
 
+def preferred_window_size(avail_width: int, avail_height: int) -> tuple[int, int]:
+    width = min(WINDOW_DEFAULT_WIDTH, max(WINDOW_MIN_WIDTH, avail_width - SCREEN_MARGIN))
+    height = min(WINDOW_DEFAULT_HEIGHT, max(WINDOW_MIN_HEIGHT, avail_height - SCREEN_MARGIN))
+    return width, height
+
+
 class UiSetupMixin(QWidget):
-    """Builds the main window layout and header (needs widget attributes)."""
+    """Builds Fluent navigation pages (needs settings/engine attributes)."""
 
     def setup_ui(self):
-        self.setWindowTitle(f"🥕 중고거래 알리미 v{__version__}")
-        self.setMinimumSize(950, 700)
-        self.resize(1050, 750)
+        configure_fluent_window(self)
+        setThemeColor("#0078D4")
 
-        # Apply stylesheet
-        # Apply stylesheet
-        self.apply_theme()
+        self.create_header()
 
-        central = QWidget()
-        central.setStyleSheet("background-color: #1e1e2e;")
-        self.setCentralWidget(central)
+        screen = QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen is not None else None
+        width, height = preferred_window_size(
+            avail.width() if avail is not None else WINDOW_DEFAULT_WIDTH,
+            avail.height() if avail is not None else WINDOW_DEFAULT_HEIGHT,
+        )
+        self.resize(width, height)
+        self.setMinimumSize(
+            min(WINDOW_MIN_WIDTH, width),
+            min(WINDOW_MIN_HEIGHT, height),
+        )
 
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        # Header
-        header = self.create_header()
-        layout.addWidget(header)
-
-        # Content area
-        content = QWidget()
-        content.setStyleSheet("background-color: #1e1e2e;")
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(16, 16, 16, 16)
-        content_layout.setSpacing(0)
-
-        # Tab widget
-        self.tabs = QTabWidget()
+        self.monitor_page = MonitorPage(self)
+        self.monitor_page.start_btn.clicked.connect(self.toggle_monitoring)
 
         self.keyword_widget = KeywordManagerWidget(self.settings_manager)
-        self.tabs.addTab(self.keyword_widget, "🔍 키워드")
+        self.keyword_page = HostPage(self.keyword_widget, "keywordInterface", self)
 
         self.listings_widget = ListingsWidget(self.engine)
-        self.tabs.addTab(self.listings_widget, "📋 전체 매물")
-
-        self.stats_widget = StatsWidget(self.engine)
-        self.tabs.addTab(self.stats_widget, "📊 통계")
+        self.listings_page = HostPage(self.listings_widget, "listingsInterface", self)
 
         self.favorites_widget = FavoritesWidget(self.engine)
-        self.tabs.addTab(self.favorites_widget, "⭐ 즐겨찾기")
+        self.favorites_page = HostPage(self.favorites_widget, "favoritesInterface", self)
+
+        self.stats_widget = StatsWidget(self.engine)
+        self.stats_page = HostPage(self.stats_widget, "statsInterface", self)
 
         self.history_widget = NotificationHistoryWidget(self.engine)
-        self.tabs.addTab(self.history_widget, "📢 알림 내역")
+        self.history_page = HostPage(self.history_widget, "historyInterface", self)
 
         self.log_widget = LogWidget()
         self.log_widget.setup_logging()
-        self.tabs.addTab(self.log_widget, "📋 로그")
-        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self.log_page = HostPage(self.log_widget, "logInterface", self)
 
-        content_layout.addWidget(self.tabs)
-        layout.addWidget(content)
+        self.settings_page = SettingsPage(self.settings_manager, self)
+        self.update_page = UpdatePage(self)
 
-        # Status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("준비됨")
+        self.addSubInterface(self.monitor_page, FIF.HOME, "모니터링")
+        self.addSubInterface(self.keyword_page, FIF.TAG, "키워드")
+        self.addSubInterface(self.listings_page, FIF.SHOPPING_CART, "전체 매물")
+        self.addSubInterface(self.favorites_page, FIF.HEART, "즐겨찾기")
+        self.addSubInterface(self.stats_page, FIF.PIE_SINGLE, "통계")
+        self.addSubInterface(self.history_page, FIF.HISTORY, "알림 내역")
+        self.addSubInterface(self.log_page, FIF.COMMAND_PROMPT, "로그")
+        self.addSubInterface(
+            self.settings_page,
+            FIF.SETTING,
+            "설정",
+            position=NavigationItemPosition.BOTTOM,
+        )
+        self.addSubInterface(
+            self.update_page,
+            FIF.UPDATE,
+            "업데이트",
+            position=NavigationItemPosition.BOTTOM,
+        )
 
-    def create_header(self) -> QWidget:
-        """Create the header with gradient background, logo, title, and enhanced controls"""
-        from gui.components import PulsingDot
+        self._nav_pages = [
+            self.monitor_page,
+            self.keyword_page,
+            self.listings_page,
+            self.favorites_page,
+            self.stats_page,
+            self.history_page,
+            self.log_page,
+        ]
 
-        header = QFrame()
-        header.setObjectName("header")
-        header.setStyleSheet("""
-            QFrame#header {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #181825, stop:0.5 #1e1e2e, stop:1 #181825);
-                border-bottom: 1px solid rgba(137, 180, 250, 0.3);
-            }
-        """)
-        header.setFixedHeight(80)
+        self.stackedWidget.currentChanged.connect(self._on_nav_changed)
+        self.update_page.attach_to_window()
 
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(24, 12, 24, 12)
-        layout.setSpacing(16)
+        apply_native_widget_style(self)
+        with contextlib.suppress(Exception):
+            from qfluentwidgets import qconfig
 
-        # Logo with subtle glow effect
-        logo = QLabel("🥕")
-        logo.setStyleSheet("""
-            font-size: 36pt;
-            background: transparent;
-            padding: 4px;
-        """)
-        layout.addWidget(logo)
+            qconfig.themeChanged.connect(lambda: apply_native_widget_style(self))
 
-        # Title section
-        title_widget = QWidget()
-        title_widget.setStyleSheet("background: transparent;")
-        title_layout = QVBoxLayout(title_widget)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(4)
+    def create_header(self):
+        """Fluent 타이틀바 정체성 (제목 + 아이콘). 커스텀 헤더 위젯은 두지 않는다."""
+        self.setWindowTitle(f"중고거래 알리미 v{__version__}")
+        self.setWindowIcon(get_app_icon())
 
-        title = QLabel("중고거래 알리미")
-        title.setStyleSheet("""
-            font-size: 20pt;
-            font-weight: bold;
-            color: #cdd6f4;
-            background: transparent;
-        """)
-        title_layout.addWidget(title)
+    def _on_nav_changed(self, _index: int):
+        self._flush_live_data_refresh(force=False)
 
-        subtitle = QLabel("🥕 당근마켓  ·  ⚡ 번개장터  ·  🛒 중고나라")
-        subtitle.setStyleSheet("""
-            font-size: 10pt;
-            color: #6c7086;
-            background: transparent;
-        """)
-        title_layout.addWidget(subtitle)
-
-        layout.addWidget(title_widget)
-        layout.addStretch()
-
-        # Last search time indicator
-        self.last_search_label = QLabel("마지막 검색: -")
-        self.last_search_label.setStyleSheet("""
-            color: #6c7086;
-            font-size: 9pt;
-            background: transparent;
-            padding: 4px 8px;
-        """)
-        layout.addWidget(self.last_search_label)
-
-        # Status indicator with glass effect
-        self.status_frame = QFrame()
-        self.status_frame.setObjectName("statusIndicator")
-        self.status_frame.setStyleSheet("""
-            QFrame#statusIndicator {
-                background-color: rgba(49, 50, 68, 0.8);
-                border: 1px solid rgba(69, 71, 90, 0.5);
-                border-radius: 18px;
-            }
-        """)
-        status_layout = QHBoxLayout(self.status_frame)
-        status_layout.setContentsMargins(14, 6, 14, 6)
-        status_layout.setSpacing(8)
-
-        # Use PulsingDot component
-        self.status_dot = PulsingDot("#6c7086")
-        status_layout.addWidget(self.status_dot)
-
-        self.status_text = QLabel("대기 중")
-        self.status_text.setStyleSheet("""
-            color: #a6adc8;
-            font-size: 10pt;
-            background: transparent;
-        """)
-        status_layout.addWidget(self.status_text)
-
-        layout.addWidget(self.status_frame)
-
-        # Start button with gradient
-        self.start_btn = QPushButton("▶️ 시작")
-        self.start_btn.setObjectName("success")
-        self.start_btn.setMinimumWidth(110)
-        self.start_btn.setMinimumHeight(40)
-        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.start_btn.setToolTip("모니터링 시작/중지 (Ctrl+S)")
-        self.start_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #a6e3a1, stop:1 #94e2d5);
-                color: #1e1e2e;
-                border: none;
-                padding: 10px 24px;
-                border-radius: 10px;
-                font-weight: bold;
-                font-size: 11pt;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #94e2d5, stop:1 #89dceb);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #89dceb, stop:1 #74c7ec);
-            }
-        """)
-        self.start_btn.clicked.connect(self.toggle_monitoring)
-        layout.addWidget(self.start_btn)
-
-        # Settings button with glass effect
-        settings_btn = QPushButton("⚙️ 설정")
-        settings_btn.setMinimumHeight(40)
-        settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        settings_btn.setToolTip("알림, 테마, 스케줄 설정 (Ctrl+,)")
-        settings_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #45475a, stop:1 #313244);
-                color: #cdd6f4;
-                border: 1px solid rgba(69, 71, 90, 0.5);
-                padding: 10px 20px;
-                border-radius: 10px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #585b70, stop:1 #45475a);
-                border: 1px solid rgba(137, 180, 250, 0.4);
-            }
-        """)
-        settings_btn.clicked.connect(self.open_settings)
-        layout.addWidget(settings_btn)
-
-        return header
+    def publish_status(self, text: str) -> None:
+        monitor_page = getattr(self, "monitor_page", None)
+        set_status = getattr(monitor_page, "set_status", None)
+        if callable(set_status):
+            set_status(text)
 
 
-__all__ = ["UiSetupMixin"]
+__all__ = ["UiSetupMixin", "preferred_window_size"]

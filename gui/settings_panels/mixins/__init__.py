@@ -1,14 +1,14 @@
 """Settings dialog tab mixins."""
 
+from .auto_tagging import AutoTaggingSettingsMixin
 from .general import GeneralSettingsMixin
+from .maintenance import MaintenanceSettingsMixin
+from .message_templates import MessageTemplatesSettingsMixin
 from .notifications import NotificationSettingsMixin
+from .persistence import SettingsPersistenceMixin
 from .schedule import ScheduleSettingsMixin
 from .seller import SellerSettingsMixin
-from .maintenance import MaintenanceSettingsMixin
 from .updater import UpdateSettingsMixin
-from .auto_tagging import AutoTaggingSettingsMixin
-from .message_templates import MessageTemplatesSettingsMixin
-from .persistence import SettingsPersistenceMixin
 
 __all__ = [
     "GeneralSettingsMixin",

@@ -1,25 +1,23 @@
 # gui/export_dialog.py
 """Enhanced export dialog with filtering options"""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QCheckBox, QComboBox, QDateEdit, QRadioButton,
     QButtonGroup, QFileDialog, QMessageBox, QProgressBar
 )
-from PyQt6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate
 from datetime import datetime
 from typing import Mapping
 
 from .mixins import (
     ExportUiMixin,
     ExportActionsMixin,
-    ExportStylesMixin,
 )
 
 class ExportDialog(
     ExportUiMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     ExportActionsMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
-    ExportStylesMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     QDialog,
 ):
     """ExportDialog dialog."""

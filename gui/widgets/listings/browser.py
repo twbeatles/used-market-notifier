@@ -1,13 +1,13 @@
 # gui/listings_widget.py
 """All listings browser widget - Shows all scraped items"""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
     QLineEdit, QMessageBox, QMenu, QCheckBox
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QShortcut, QKeySequence
 from typing import Optional
 
 from ...link_utils import open_external_url

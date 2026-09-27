@@ -26,6 +26,7 @@ test-results/
 build/
 dist/
 .tmp/
+*.egg-info/
 
 # IDE / OS
 .vscode/

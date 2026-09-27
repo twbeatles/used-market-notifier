@@ -1,7 +1,7 @@
 # pyright: reportAttributeAccessIssue=false
 """System-tray wiring for the main window."""
 
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget
 
 from gui.system_tray import SystemTrayIcon
 

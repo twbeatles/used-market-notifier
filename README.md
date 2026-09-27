@@ -7,11 +7,11 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/PyQt6-6.4+-41CD52?style=flat-square&logo=qt&logoColor=white" alt="PyQt6">
+  <img src="https://img.shields.io/badge/PySide6-6.6+-41CD52?style=flat-square&logo=qt&logoColor=white" alt="PySide6">
   <img src="https://img.shields.io/badge/Playwright-1.50+-2EAD33?style=flat-square&logo=playwright&logoColor=white" alt="Playwright">
   <img src="https://img.shields.io/badge/Selenium-4.x-43B02A?style=flat-square&logo=selenium&logoColor=white" alt="Selenium">
   <img src="https://img.shields.io/badge/SQLite3-WAL_Mode-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite3">
-  <img src="https://img.shields.io/badge/Tests-91%20Passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-156%20Passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License">
 </p>
 
@@ -106,7 +106,7 @@
 
 1. [GitHub Releases](https://github.com/twbeatles/used-market-notifier/releases)에서 최신 버전의 `UsedMarketNotifier.exe`를 다운로드합니다.
 2. 다운로드한 파일을 원하는 폴더로 이동 후 실행합니다.
-3. 앱이 실행되면 상단 **설정 (⚙️)**에서 알림 채널(텔레그램, 디스코드 등)을 연결하고, **키워드**를 등록한 뒤 **▶ 모니터링 시작**을 누르면 끝납니다.
+3. 앱이 실행되면 좌측 하단 **설정**에서 알림 채널(텔레그램, 디스코드 등)을 연결하고, **키워드**를 등록한 뒤 **모니터링** 페이지에서 **모니터링 시작**을 누르면 끝납니다.
 
 ---
 
@@ -117,12 +117,12 @@
 git clone https://github.com/twbeatles/used-market-notifier.git
 cd used-market-notifier
 
-# 가상환경 생성 및 활성화
-python -m venv venv
+# 가상환경 생성 및 활성화 (프로젝트 내부 .venv 사용)
+python -m venv .venv
 # Windows:
-venv\Scripts\activate
+.venv\Scripts\activate
 # macOS/Linux:
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
 #### 2. 패키지 및 브라우저 드라이버 설치
@@ -386,13 +386,15 @@ used-market-notifier/
 │   ├── favorites.py            # 즐겨찾기, 목표가 및 메모 관리
 │   └── maintenance.py          # 오래된 데이터 정리 및 백업 보조
 │
-├── gui/                        # PyQt6 GUI 컴포넌트 패키지
-│   ├── main/                   # MainWindow 조립 + 스레드 + window_mixins (UI/트레이/단축키 등 9종)
-│   ├── settings_panels/        # 설정 다이얼로그 (일반/알림/스케줄/유지보수 등)
-│   ├── widgets/                # 키워드, 매물, 통계, 즐겨찾기, 로그 위젯
-│   ├── components/             # 커스텀 UI 카드, 뱃지, 토스트 알림
-│   ├── compare/                # 매물 다중 비교 다이얼로그
-│   └── theme/                  # 다크/라이트 테마 팔레트 (dark_sections 8분할 포함)
+├── gui/                        # PySide6 + Fluent GUI 패키지 (MSFluentWindow 쉘)
+│   ├── app.py / qt_binding.py  # 진입점, HiDPI/테마 초기화, Qt 바인딩 검증
+│   ├── fluent_theme.py          # OS 테마 연동 + 네이티브 위젯 보정
+│   ├── pages/                  # 모니터링/설정(Pivot)/업데이트 등 Navigation 페이지
+│   ├── main/                   # MainWindow 조립 + 스레드 + window_mixins 10종
+│   ├── settings_panels/        # 설정 탭 빌더 (일반/알림/스케줄/유지보수 등)
+│   ├── widgets/                # 키워드, 매물, 통계, 즐겨찾기 위젯
+│   ├── compare/ / export/      # 매물 비교·내보내기 다이얼로그
+│   └── components/             # 레거시 호환 컴포넌트 (신규 화면 미사용)
 │
 └── notifiers/                  # 알림 발송 패키지 (Telegram, Discord, Slack)
 ```

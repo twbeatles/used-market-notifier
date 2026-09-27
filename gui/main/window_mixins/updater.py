@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PyQt6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QMessageBox, QWidget
 
 from gui.update_workers import UpdateCheckThread, UpdateDownloadThread
 from updater.manifest import ReleaseManifest
@@ -229,10 +229,9 @@ class UpdaterMixin(QWidget):
             setter(checking, downloading)
 
     def _log_update(self, message: str, level: str) -> None:
-        status_bar = getattr(self, "status_bar", None)
-        show_message = getattr(status_bar, "showMessage", None)
-        if callable(show_message):
-            show_message(message)
+        publish_status = getattr(self, "publish_status", None)
+        if callable(publish_status):
+            publish_status(message)
         log_widget = getattr(self, "log_widget", None)
         append_log = getattr(log_widget, "append_log", None)
         if callable(append_log):

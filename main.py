@@ -67,12 +67,8 @@ def run_cli(settings_manager=None):
 
 
 def run_gui(settings_manager=None):
-    """Run in GUI mode."""
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import QApplication, QMessageBox
-
-    from gui.main_window import MainWindow
-    from settings_manager import SettingsManager
+    """Run in GUI mode (PySide6 + Fluent shell, see gui/app.py)."""
+    from PySide6.QtWidgets import QMessageBox
 
     def exception_hook(exc_type, exc_value, exc_tb):
         import traceback
@@ -87,17 +83,12 @@ def run_gui(settings_manager=None):
 
     sys.excepthook = exception_hook
 
-    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-
-    app = QApplication(sys.argv)
-    app.setApplicationName("Used Market Notifier")
-    app.setOrganizationName("UsedMarketNotifier")
-    app.setStyle("Fusion")
-
     try:
-        window = MainWindow(settings_manager=settings_manager or SettingsManager())
-        window.show()
-        sys.exit(app.exec())
+        from gui.app import main as gui_main
+
+        gui_main(settings_manager=settings_manager)
+    except SystemExit:
+        raise
     except Exception as e:
         logging.getLogger("Main").error(f"Failed to start GUI: {e}")
         import traceback

@@ -1,18 +1,32 @@
 from typing import TYPE_CHECKING
+
 """Settings dialog mixin: maintenance."""
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QFormLayout, QLineEdit, QSpinBox, QCheckBox, QLabel,
-    QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
-    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView,
-    QTextEdit, QApplication
-)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
 import os
-from db import DatabaseManager
-from ..workers import CleanupWorker
 
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QApplication,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+from qfluentwidgets import (
+    CaptionLabel,
+    CheckBox,
+    PushButton,
+    SpinBox,
+)
+
+from ..workers import CleanupWorker
 
 if TYPE_CHECKING:
     from gui.settings_panels.dialog import SettingsDialog
@@ -42,23 +56,23 @@ class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
             add_update_group(layout)
 
         # Backup group
-        backup_group = QGroupBox("💾 백업 / 복원")
+        backup_group = QGroupBox("백업 / 복원")
         backup_layout = QVBoxLayout(backup_group)
         backup_layout.setSpacing(12)
 
-        self.auto_backup_enabled_check = QCheckBox("자동 백업 사용")
+        self.auto_backup_enabled_check = CheckBox("자동 백업 사용")
         backup_layout.addWidget(self.auto_backup_enabled_check)
 
         backup_form = QFormLayout()
         backup_form.setSpacing(12)
 
-        self.auto_backup_interval_spin = QSpinBox()
+        self.auto_backup_interval_spin = SpinBox()
         self.auto_backup_interval_spin.setRange(1, 365)
         self.auto_backup_interval_spin.setSuffix(" 일")
         self.auto_backup_interval_spin.setMinimumHeight(34)
         backup_form.addRow("백업 주기", self.auto_backup_interval_spin)
 
-        self.backup_keep_count_spin = QSpinBox()
+        self.backup_keep_count_spin = SpinBox()
         self.backup_keep_count_spin.setRange(1, 100)
         self.backup_keep_count_spin.setSuffix(" 개")
         self.backup_keep_count_spin.setMinimumHeight(34)
@@ -79,52 +93,51 @@ class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
         backup_btns = QHBoxLayout()
         backup_btns.addStretch()
 
-        create_btn = QPushButton("지금 백업 생성")
+        create_btn = PushButton("지금 백업 생성")
         create_btn.clicked.connect(self.create_backup_now)
         backup_btns.addWidget(create_btn)
 
-        open_btn = QPushButton("백업 폴더 열기")
+        open_btn = PushButton("백업 폴더 열기")
         open_btn.clicked.connect(self.open_backup_folder)
         backup_btns.addWidget(open_btn)
 
-        restore_btn = QPushButton("선택 백업 복원")
+        restore_btn = PushButton("선택 백업 복원")
         restore_btn.clicked.connect(self.restore_selected_backup)
         backup_btns.addWidget(restore_btn)
 
         backup_layout.addLayout(backup_btns)
 
         # Cleanup group
-        cleanup_group = QGroupBox("🧹 자동 클린업")
+        cleanup_group = QGroupBox("자동 클린업")
         cleanup_layout = QVBoxLayout(cleanup_group)
         cleanup_layout.setSpacing(12)
 
-        self.auto_cleanup_enabled_check = QCheckBox("앱 시작 시 1회 오래된 매물 정리 실행")
+        self.auto_cleanup_enabled_check = CheckBox("앱 시작 시 1회 오래된 매물 정리 실행")
         cleanup_layout.addWidget(self.auto_cleanup_enabled_check)
 
         cleanup_form = QFormLayout()
         cleanup_form.setSpacing(12)
 
-        self.cleanup_days_spin = QSpinBox()
+        self.cleanup_days_spin = SpinBox()
         self.cleanup_days_spin.setRange(1, 3650)
         self.cleanup_days_spin.setSuffix(" 일 이전")
         self.cleanup_days_spin.setMinimumHeight(34)
         cleanup_form.addRow("삭제 기준", self.cleanup_days_spin)
 
-        self.cleanup_exclude_favorites_check = QCheckBox("즐겨찾기 제외")
+        self.cleanup_exclude_favorites_check = CheckBox("즐겨찾기 제외")
         cleanup_form.addRow("", self.cleanup_exclude_favorites_check)
 
-        self.cleanup_exclude_noted_check = QCheckBox("사용자 메모/상태가 있는 항목 제외")
+        self.cleanup_exclude_noted_check = CheckBox("사용자 메모/상태가 있는 항목 제외")
         cleanup_form.addRow("", self.cleanup_exclude_noted_check)
 
         cleanup_layout.addLayout(cleanup_form)
 
         preview_row = QHBoxLayout()
-        self.cleanup_preview_label = QLabel("미리보기: -")
-        self.cleanup_preview_label.setStyleSheet("color: #a6e3a1;")
+        self.cleanup_preview_label = CaptionLabel("미리보기: -")
         preview_row.addWidget(self.cleanup_preview_label)
         preview_row.addStretch()
 
-        refresh_preview_btn = QPushButton("미리보기 새로고침")
+        refresh_preview_btn = PushButton("미리보기 새로고침")
         refresh_preview_btn.clicked.connect(self.refresh_cleanup_preview)
         preview_row.addWidget(refresh_preview_btn)
 
@@ -133,7 +146,7 @@ class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
         cleanup_btns = QHBoxLayout()
         cleanup_btns.addStretch()
 
-        self.run_cleanup_btn = QPushButton("지금 정리 실행")
+        self.run_cleanup_btn = PushButton("지금 정리 실행")
         self.run_cleanup_btn.clicked.connect(self.run_cleanup_now)
         cleanup_btns.addWidget(self.run_cleanup_btn)
 

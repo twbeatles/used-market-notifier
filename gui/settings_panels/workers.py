@@ -2,7 +2,7 @@
 
 import asyncio
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from models import NotificationType
 from notifiers import DiscordNotifier, SlackNotifier, TelegramNotifier
@@ -11,8 +11,8 @@ from notifiers import DiscordNotifier, SlackNotifier, TelegramNotifier
 class CleanupWorker(QThread):
     """Run DB cleanup in a background thread."""
 
-    completed = pyqtSignal(int)
-    failed = pyqtSignal(str)
+    completed = Signal(int)
+    failed = Signal(str)
 
     def __init__(self, db_path: str, days: int, exclude_favorites: bool, exclude_noted: bool):
         super().__init__()
@@ -43,7 +43,7 @@ class CleanupWorker(QThread):
 
 class NotificationTestThread(QThread):
     """Thread for testing notifications asynchronously"""
-    finished = pyqtSignal(bool, str)
+    finished = Signal(bool, str)
 
     def __init__(self, notifier_type, **kwargs):
         super().__init__()

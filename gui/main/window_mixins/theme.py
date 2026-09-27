@@ -1,66 +1,21 @@
 # pyright: reportAttributeAccessIssue=false
-"""Theme application with Windows system-theme detection."""
+"""Fluent theme application (구 Catppuccin QSS 테마 대체)."""
 
-from PyQt6.QtWidgets import QFrame, QWidget
+from PySide6.QtWidgets import QWidget
 
-from gui.styles import DARK_STYLE, LIGHT_STYLE
-from models import ThemeMode
+from gui.fluent_theme import apply_theme_mode, is_system_dark_mode
 
 
 class ThemeMixin(QWidget):
-    """Applies the configured (or system) theme to the window."""
+    """설정의 테마 모드를 Fluent 테마에 반영한다."""
 
     def apply_theme(self):
-        """Apply current theme with system detection"""
-        mode = self.settings_manager.settings.theme_mode
-
-        # Detect system theme for ThemeMode.SYSTEM
-        if mode == ThemeMode.SYSTEM:
-            is_dark = self._detect_system_dark_mode()
-        else:
-            is_dark = mode == ThemeMode.DARK
-
-        style = DARK_STYLE if is_dark else LIGHT_STYLE
-        self.setStyleSheet(style)
-
-        # Update specific elements
-        header_bg = "#181825" if is_dark else "#ffffff"
-        header_border = "#313244" if is_dark else "#d1d1d6"
-
-        header = self.findChild(QFrame, "header")
-        if header:
-             header.setStyleSheet(f"""
-                QFrame#header {{
-                    background-color: {header_bg};
-                    border-bottom: 1px solid {header_border};
-                }}
-             """)
-
-        central = self.centralWidget()
-        if central:
-             central.setStyleSheet(f"background-color: {'#1e1e2e' if is_dark else '#f2f2f7'};")
-
-        # Optional: Update StatsWidget if method exists
-        update_theme = getattr(getattr(self, "stats_widget", None), "update_theme", None)
-        if callable(update_theme):
-            update_theme(is_dark)
+        """Apply current theme mode (dark/light/system)."""
+        apply_theme_mode(self.settings_manager.settings.theme_mode)
 
     def _detect_system_dark_mode(self) -> bool:
-        """Detect Windows system dark mode setting"""
-        try:
-            import sys
-            if sys.platform == 'win32':
-                import winreg
-                key = winreg.OpenKey(
-                    winreg.HKEY_CURRENT_USER,
-                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-                )
-                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                winreg.CloseKey(key)
-                return value == 0  # 0 = dark mode, 1 = light mode
-        except Exception:
-            pass
-        return True  # Default to dark mode
+        """Windows 시스템 다크모드 여부 (네이티브 보정용 폴백 경로)."""
+        return is_system_dark_mode()
 
 
 __all__ = ["ThemeMixin"]

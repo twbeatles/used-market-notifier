@@ -889,6 +889,50 @@ Use this section as the latest implementation baseline for March 25, 2026.
 - in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available
 
+## 2026-09 Fluent Shell Update (PySide6 + KTrain Profile)
+
+- GUI binding is now PySide6-only: `PySide6>=6.6,<7`,
+  `PySide6-Fluent-Widgets>=1.6,<2`, `darkdetect>=0.8,<1` (see
+  `requirements.txt`). `PyQt6` is no longer a dependency.
+- Canonical GUI entry is `gui/app.py` (`python main.py` delegates to it);
+  `gui/main/window.py` is an `MSFluentWindow` with `addSubInterface`
+  navigation (top: Monitoring/Keywords/Listings/Favorites/Stats/History/Log,
+  bottom: Settings/Update).
+- New foundation modules: `gui/qt_binding.py` (binding validation),
+  `gui/fluent_theme.py` (OS theme sync, Mica off, native-widget correction),
+  `gui/icon.py`, `gui/design_tokens.py` (KTrain layout SSOT),
+  `gui/pages/` (`monitor_page`, `settings_page` Pivot, `update_page`, `host_page`).
+- Legacy `gui/theme/` (Catppuccin QSS) and `gui/styles.py` stay importable for
+  backward compatibility but are no longer applied to the shell.
+- Window construction requires the PySide6 `qfluentwidgets` binding and raises
+  an explicit `ImportError` otherwise (see `gui/qt_binding.py`). Canonical test
+  env is the project `.venv`; a system interpreter with both Fluent
+  distributions installed is a documented conflict state (resolved 2026-09:
+  system interpreter cleaned to PySide6-only, suite passes on both).
+- Release flow: bump `version.py`, commit to `main`, tag `vX.Y.Z` (must match),
+  push tag → `.github/workflows/release.yml` builds/signs/publishes the exe
+  and `updates/latest.json`.
+- Verification: `python -m unittest discover -s tests -q` (151 tests, OK),
+  `tests/test_fluent_foundation.py`, offscreen GUI smoke via
+  `USED_NOTIFIER_GUI_SMOKE=1 python -m gui.app`.
+
+## 2026-09 Fluent Follow-up Completion (Widgets + Packaging)
+
+- `pyproject.toml` added: `[project.optional-dependencies]` `gui`/`dev`/`build`,
+  setuptools flat-layout packaging (tests/legacy excluded), dynamic version
+  from `version.py`, `pip install -e ".[gui]"` verified in `.venv`.
+- Widget chrome migrated to Fluent components (titles/labels/buttons/inputs)
+  across keyword/listings/favorites/stats/compare/export/message/note/log/
+  history/charts/settings forms; page-level QSS removed and asserted by
+  `FluentChromeContractTest` in `tests/test_fluent_foundation.py`.
+- `EmptyStateWidget` accepts `FluentIcon` (renders via `IconWidget`);
+  matplotlib figures use a theme-aware palette helper.
+- Intentional keeps (documented in test allowlist): compare price-bar
+  visualization, log console document style + level semantics, legacy-dialog
+  update-status colors, channel/platform identity colors.
+- `qfluentwidgets.ComboBox.addItem` quirk: `(text, userData)` must use the
+  `userData=` keyword (2nd positional is `icon`).
+
 <!-- SPECKIT-AGENT-GUIDE:START -->
 
 ## Spec Kit / Spec-Driven Development (AI 에이전트 필독)

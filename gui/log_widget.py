@@ -1,12 +1,12 @@
 # gui/log_widget.py
 """Enhanced real-time log viewer with modern styling"""
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit,
-    QPushButton, QLabel, QComboBox, QFrame
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit
 )
-from PyQt6.QtCore import Qt, pyqtSlot
-from PyQt6.QtGui import QTextCursor, QColor, QTextCharFormat, QFont
+from qfluentwidgets import BodyLabel, CaptionLabel, ComboBox, PushButton, SubtitleLabel
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QTextCursor, QColor, QTextCharFormat, QFont
 import logging
 
 
@@ -62,46 +62,27 @@ class LogWidget(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(8)
         
         # Header
         header_layout = QHBoxLayout()
         
-        title = QLabel("📋 실시간 로그")
-        title.setObjectName("title")
-        header_layout.addWidget(title)
+        header_layout.addWidget(SubtitleLabel("실시간 로그", self))
         
         header_layout.addStretch()
         
         # Log level filter
-        level_frame = QFrame()
-        level_frame.setStyleSheet("""
-            QFrame {
-                background-color: #313244;
-                border-radius: 8px;
-                padding: 4px;
-            }
-        """)
-        level_layout = QHBoxLayout(level_frame)
-        level_layout.setContentsMargins(8, 4, 8, 4)
-        level_layout.setSpacing(8)
+        header_layout.addWidget(BodyLabel("레벨:", self))
         
-        level_label = QLabel("레벨:")
-        level_label.setStyleSheet("color: #7982a9;")
-        level_layout.addWidget(level_label)
-        
-        self.level_combo = QComboBox()
+        self.level_combo = ComboBox(self)
         self.level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
         self.level_combo.setCurrentText("INFO")
         self.level_combo.setMinimumWidth(100)
         self.level_combo.currentTextChanged.connect(self.change_log_level)
-        level_layout.addWidget(self.level_combo)
+        header_layout.addWidget(self.level_combo)
         
-        header_layout.addWidget(level_frame)
-        
-        clear_btn = QPushButton("🗑️ 지우기")
-        clear_btn.setObjectName("secondary")
+        clear_btn = PushButton("지우기", self)
         clear_btn.clicked.connect(self.clear_logs)
         header_layout.addWidget(clear_btn)
         
@@ -128,14 +109,12 @@ class LogWidget(QWidget):
         # Footer with stats
         footer = QHBoxLayout()
         
-        self.line_count = QLabel("0 줄")
-        self.line_count.setStyleSheet("color: #565f89; font-size: 9pt;")
+        self.line_count = CaptionLabel("0 줄", self)
         footer.addWidget(self.line_count)
         
         footer.addStretch()
         
-        auto_scroll_hint = QLabel("💡 자동 스크롤 활성화됨")
-        auto_scroll_hint.setStyleSheet("color: #565f89; font-size: 9pt;")
+        auto_scroll_hint = CaptionLabel("자동 스크롤 활성화됨", self)
         footer.addWidget(auto_scroll_hint)
         
         layout.addLayout(footer)

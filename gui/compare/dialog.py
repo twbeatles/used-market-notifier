@@ -1,13 +1,13 @@
 # gui/compare_dialog.py
 """Enhanced dialog for comparing multiple listings side by side"""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
     QTextEdit, QMessageBox, QFileDialog, QApplication
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 
 from ..link_utils import open_external_url
 

@@ -3,13 +3,13 @@
 # gui/listings_widget.py
 """All listings browser widget - Shows all scraped items"""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
     QLineEdit, QMessageBox, QMenu, QCheckBox
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QShortcut, QKeySequence
 from typing import Optional, TYPE_CHECKING
 
 from ....link_utils import open_external_url
@@ -98,11 +98,11 @@ class ListingsTableMixin(_HostBase_ListingsTableMixin):
                 # Platform - colorful icon display
                 platform = item.get('platform', '')
                 platform_icons = {
-                    'danggeun': '🥕 당근',
-                    'bunjang': '⚡ 번개',
-                    'joonggonara': '🛒 중고'
+                    'danggeun': '당근',
+                    'bunjang': '번개',
+                    'joonggonara': '중고'
                 }
-                platform_item = QTableWidgetItem(platform_icons.get(platform, platform))
+                platform_item = QTableWidgetItem(str(platform_icons.get(platform, platform) or ""))
                 platform_item.setData(Qt.ItemDataRole.UserRole, item)  # Store full item data
                 platform_item.setData(Qt.ItemDataRole.UserRole + 1, item.get('id'))
                 self.table.setItem(i, 0, platform_item)

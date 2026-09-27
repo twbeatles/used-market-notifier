@@ -2,16 +2,19 @@
 """설정 창의 소프트웨어 업데이트 카드."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
-from PyQt6.QtWidgets import (
-    QCheckBox,
+from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QPushButton,
     QVBoxLayout,
+)
+from qfluentwidgets import (
+    CheckBox,
+    PushButton,
 )
 
 from gui.link_utils import open_external_url
@@ -37,24 +40,23 @@ class UpdateSettingsMixin(_HostBase_UpdateSettingsMixin):
     """유지보수 탭에 업데이트 확인 UI를 붙입니다."""
 
     def _add_update_group(self, layout: QVBoxLayout) -> None:
-        group = QGroupBox("🔄 소프트웨어 업데이트")
+        group = QGroupBox("소프트웨어 업데이트")
         inner = QVBoxLayout(group)
         inner.setSpacing(10)
 
         version_row = QHBoxLayout()
         version_label = QLabel("현재 버전")
         self.current_version_label = QLabel(f"v{__version__}")
-        self.current_version_label.setStyleSheet("color: #89b4fa; font-weight: bold;")
         version_row.addWidget(version_label)
         version_row.addWidget(self.current_version_label)
         version_row.addStretch()
 
-        self.check_update_btn = QPushButton("업데이트 확인")
+        self.check_update_btn = PushButton("업데이트 확인")
         self.check_update_btn.setMinimumHeight(34)
         self.check_update_btn.clicked.connect(self._on_check_update_clicked)
         version_row.addWidget(self.check_update_btn)
 
-        self.cancel_download_btn = QPushButton("취소")
+        self.cancel_download_btn = PushButton("취소")
         self.cancel_download_btn.setMinimumHeight(34)
         self.cancel_download_btn.setVisible(False)
         self.cancel_download_btn.clicked.connect(self._on_cancel_download_clicked)
@@ -62,13 +64,12 @@ class UpdateSettingsMixin(_HostBase_UpdateSettingsMixin):
         inner.addLayout(version_row)
 
         option_row = QHBoxLayout()
-        self.auto_check_update_check = QCheckBox("시작할 때 업데이트 확인")
+        self.auto_check_update_check = CheckBox("시작할 때 업데이트 확인")
         self.auto_check_update_check.toggled.connect(self._save_auto_check_update)
         option_row.addWidget(self.auto_check_update_check)
         option_row.addStretch()
 
-        releases_btn = QPushButton("릴리즈 노트")
-        releases_btn.setObjectName("secondary")
+        releases_btn = PushButton("릴리즈 노트")
         releases_btn.clicked.connect(self._open_update_releases)
         option_row.addWidget(releases_btn)
         inner.addLayout(option_row)

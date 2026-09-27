@@ -1,7 +1,8 @@
 """Background worker threads for the main window."""
 
 import asyncio
-from PyQt6.QtCore import QThread, pyqtSignal
+
+from PySide6.QtCore import QThread, Signal
 
 from monitor_engine import MonitorEngine
 
@@ -9,10 +10,10 @@ from monitor_engine import MonitorEngine
 class MonitorThread(QThread):
     """Thread for running the async monitor loop"""
     
-    status_update = pyqtSignal(str)
-    new_item = pyqtSignal(object)
-    price_change = pyqtSignal(object, str, str)
-    error = pyqtSignal(str)
+    status_update = Signal(str)
+    new_item = Signal(object)
+    price_change = Signal(object, str, str)
+    error = Signal(str)
     
     def __init__(self, engine: MonitorEngine):
         super().__init__()
@@ -41,7 +42,7 @@ class MonitorThread(QThread):
         except Exception as e:
             if not self._stop_requested:  # Only report errors if not intentionally stopped
                 import traceback
-                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                error_msg = f"{e!s}\n{traceback.format_exc()}"
                 print(f"MonitorThread error: {error_msg}")
                 self.error.emit(str(e))
         finally:
@@ -84,8 +85,8 @@ class MonitorThread(QThread):
 class MaintenanceCleanupThread(QThread):
     """Run one-off maintenance tasks (cleanup) without blocking the UI."""
 
-    completed = pyqtSignal(int)
-    failed = pyqtSignal(str)
+    completed = Signal(int)
+    failed = Signal(str)
 
     def __init__(self, db_path: str, days: int, exclude_favorites: bool, exclude_noted: bool):
         super().__init__()

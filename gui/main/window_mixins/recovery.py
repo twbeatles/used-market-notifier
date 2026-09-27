@@ -1,7 +1,8 @@
 # pyright: reportAttributeAccessIssue=false
-"""Settings-recovery notice shown once at startup."""
+"""Settings-recovery notice shown once at startup (InfoBar)."""
 
-from PyQt6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QWidget
+from qfluentwidgets import InfoBar, InfoBarPosition
 
 
 class RecoveryMixin(QWidget):
@@ -26,7 +27,13 @@ class RecoveryMixin(QWidget):
         if error_text:
             lines.append(f"원인: {error_text}")
 
-        QMessageBox.information(self, "설정 복구 안내", "\n".join(lines))
+        InfoBar.warning(
+            "설정 복구 안내",
+            " ".join(lines),
+            parent=self.window(),
+            position=InfoBarPosition.TOP,
+            duration=-1,
+        )
 
 
 __all__ = ["RecoveryMixin"]

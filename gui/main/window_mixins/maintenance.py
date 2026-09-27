@@ -1,8 +1,8 @@
 # pyright: reportAttributeAccessIssue=false
 """Startup maintenance: auto-cleanup thread and auto-backup check."""
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QWidget
 
 from gui.main.threads import MaintenanceCleanupThread
 
@@ -19,7 +19,7 @@ class MaintenanceMixin(QWidget):
                 # Prevent racing with monitoring start/clicks.
                 if hasattr(self, "start_btn") and self.start_btn:
                     self.start_btn.setEnabled(False)
-                self.status_bar.showMessage("🧹 오래된 매물 정리 중...")
+                self.publish_status("오래된 매물 정리 중...")
                 if hasattr(self, "log_widget") and self.log_widget:
                     self.log_widget.append_log("자동 클린업을 시작합니다...", "INFO")
 
@@ -41,8 +41,8 @@ class MaintenanceMixin(QWidget):
             QTimer.singleShot(1000, self.start_monitoring)
 
     def _on_startup_cleanup_done(self, deleted_count: int):
-        msg = f"🧹 클린업 완료: {deleted_count:,}개 삭제"
-        self.status_bar.showMessage(msg)
+        msg = f"클린업 완료: {deleted_count:,}개 삭제"
+        self.publish_status(msg)
         if hasattr(self, "log_widget") and self.log_widget:
             self.log_widget.append_log(msg, "INFO")
 
@@ -69,8 +69,8 @@ class MaintenanceMixin(QWidget):
             QTimer.singleShot(500, self.start_monitoring)
 
     def _on_startup_cleanup_failed(self, error: str):
-        msg = f"⚠️ 자동 클린업 실패: {error}"
-        self.status_bar.showMessage(msg)
+        msg = f"자동 클린업 실패: {error}"
+        self.publish_status(msg)
         if hasattr(self, "log_widget") and self.log_widget:
             self.log_widget.append_log(msg, "WARNING")
         if hasattr(self, "start_btn") and self.start_btn:

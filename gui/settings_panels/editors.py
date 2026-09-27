@@ -1,10 +1,19 @@
 """Settings dialog editor classes."""
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QCheckBox, QLabel,
-    QPushButton, QComboBox, QMessageBox, QTextEdit
+from PySide6.QtWidgets import (
+    QDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QMessageBox,
+    QVBoxLayout,
 )
-from PyQt6.QtCore import Qt
+from qfluentwidgets import (
+    CheckBox,
+    ComboBox,
+    LineEdit,
+    PushButton,
+    TextEdit,
+)
 
 from models import MessageTemplate, TagRule
 
@@ -28,21 +37,21 @@ class TagRuleEditDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(12)
 
-        self.enabled_check = QCheckBox("사용")
+        self.enabled_check = CheckBox("사용")
         form.addRow("", self.enabled_check)
 
-        self.tag_name_edit = QLineEdit()
+        self.tag_name_edit = LineEdit()
         form.addRow("태그 이름*", self.tag_name_edit)
 
-        self.icon_edit = QLineEdit()
-        self.icon_edit.setPlaceholderText("예: 🏷️")
+        self.icon_edit = LineEdit()
+        self.icon_edit.setPlaceholderText("예:")
         form.addRow("아이콘", self.icon_edit)
 
-        self.color_edit = QLineEdit()
+        self.color_edit = LineEdit()
         self.color_edit.setPlaceholderText("예: #89b4fa")
         form.addRow("색상", self.color_edit)
 
-        self.keywords_edit = QTextEdit()
+        self.keywords_edit = TextEdit()
         self.keywords_edit.setPlaceholderText("키워드들을 줄바꿈 또는 콤마로 구분해서 입력하세요")
         self.keywords_edit.setMinimumHeight(140)
         form.addRow("키워드*", self.keywords_edit)
@@ -52,11 +61,11 @@ class TagRuleEditDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch()
 
-        cancel = QPushButton("취소")
+        cancel = PushButton("취소")
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
 
-        ok = QPushButton("확인")
+        ok = PushButton("확인")
         ok.clicked.connect(self._on_ok)
         btns.addWidget(ok)
 
@@ -118,17 +127,17 @@ class MessageTemplateEditDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(12)
 
-        self.name_edit = QLineEdit()
+        self.name_edit = LineEdit()
         form.addRow("이름*", self.name_edit)
 
-        self.platform_combo = QComboBox()
-        self.platform_combo.addItem("all", "all")
-        self.platform_combo.addItem("danggeun", "danggeun")
-        self.platform_combo.addItem("bunjang", "bunjang")
-        self.platform_combo.addItem("joonggonara", "joonggonara")
+        self.platform_combo = ComboBox()
+        self.platform_combo.addItem("all", userData="all")
+        self.platform_combo.addItem("danggeun", userData="danggeun")
+        self.platform_combo.addItem("bunjang", userData="bunjang")
+        self.platform_combo.addItem("joonggonara", userData="joonggonara")
         form.addRow("플랫폼", self.platform_combo)
 
-        self.content_edit = QTextEdit()
+        self.content_edit = TextEdit()
         self.content_edit.setPlaceholderText("변수: {title}, {price}, {seller}, {location}, {target_price}")
         self.content_edit.setMinimumHeight(180)
         form.addRow("내용*", self.content_edit)
@@ -138,11 +147,11 @@ class MessageTemplateEditDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch()
 
-        cancel = QPushButton("취소")
+        cancel = PushButton("취소")
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
 
-        ok = QPushButton("확인")
+        ok = PushButton("확인")
         ok.clicked.connect(self._on_ok)
         btns.addWidget(ok)
 
@@ -169,7 +178,7 @@ class MessageTemplateEditDialog(QDialog):
         self._result = MessageTemplate(
             name=name,
             content=content,
-            platform=self.platform_combo.currentData(),
+            platform=str(self.platform_combo.currentData() or "all"),
         )
         self.accept()
 

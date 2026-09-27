@@ -3,13 +3,13 @@ from typing import TYPE_CHECKING
 
 """Enhanced dialog for comparing multiple listings side by side."""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
     QTextEdit, QMessageBox, QFileDialog, QApplication
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 
 from gui.link_utils import open_external_url
 
@@ -71,7 +71,7 @@ class CompareActionsMixin(_HostBase_CompareActionsMixin):
             QMessageBox.warning(self, "오류", "클립보드를 사용할 수 없습니다.")
             return
         clipboard.setText(text)
-        QMessageBox.information(self, "복사 완료", "📋 비교 내용이 클립보드에 복사되었습니다.")
+        QMessageBox.information(self,"복사 완료","비교 내용이 클립보드에 복사되었습니다.")
 
 
     def _export_comparison(self):
@@ -91,6 +91,6 @@ class CompareActionsMixin(_HostBase_CompareActionsMixin):
                 text = self._generate_comparison_text()
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(text)
-                QMessageBox.information(self, "저장 완료", f"📥 비교 결과가 저장되었습니다.\n\n{file_path}")
+                QMessageBox.information(self,"저장 완료", f"비교 결과가 저장되었습니다.\n\n{file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "오류", f"저장 중 오류가 발생했습니다:\n{str(e)}")

@@ -4,13 +4,13 @@ from typing import TYPE_CHECKING
 # gui/favorites_widget.py
 """Favorites management widget"""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QPushButton, QLabel, QMessageBox, QMenu, QDialog,
     QFormLayout, QLineEdit, QSpinBox, QTextEdit, QFrame
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction, QColor, QFont
 from db import DatabaseManager
 from ....link_utils import open_external_url
 from ..edit_dialog import FavoritesEditDialog
@@ -45,9 +45,9 @@ class FavoritesActionsMixin(_HostBase_FavoritesActionsMixin):
             return
 
         menu = QMenu(self)
-        open_action = menu.addAction("🔗 링크 열기")
-        edit_action = menu.addAction("✏️ 수정 (메모/목표가)")
-        delete_action = menu.addAction("🗑️ 삭제")
+        open_action = menu.addAction("링크 열기")
+        edit_action = menu.addAction("수정 (메모/목표가)")
+        delete_action = menu.addAction("삭제")
 
         viewport = self.table.viewport()
         if viewport is None:

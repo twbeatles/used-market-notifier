@@ -3,15 +3,14 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtWidgets import (
+    QLabel,
     QFileDialog,
     QHeaderView,
-    QLabel,
     QMenu,
     QMessageBox,
-    QPushButton,
-    QScrollArea,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -20,12 +19,12 @@ from PyQt6.QtWidgets import (
     QWidget,
     QHBoxLayout,
 )
+from qfluentwidgets import CaptionLabel, PushButton, ScrollArea, SubtitleLabel
 
 from export_manager import ExportManager
 from models import Item
 
 from ....charts import DailyChart, PlatformChart
-from ....components import StatCard
 from ....link_utils import open_external_url
 
 
@@ -35,6 +34,37 @@ if TYPE_CHECKING:
 else:
     _HostBase_StatsUiMixin = object
 
+class _SummaryCard(QWidget):
+    """Fluent summary card: identity dot + title + value (QSS-free)."""
+
+    def __init__(self, title: str, value: str, unit: str, accent: str, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(4)
+
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        dot = QPixmap(12, 12)
+        dot.fill(QColor(accent))
+        dot_label = QLabel()
+        dot_label.setPixmap(dot)
+        dot_label.setFixedSize(12, 12)
+        head.addWidget(dot_label)
+        head.addWidget(CaptionLabel(title, self), 1)
+        layout.addLayout(head)
+
+        value_row = QHBoxLayout()
+        value_row.setSpacing(4)
+        self.value_label = SubtitleLabel(value, self)
+        value_row.addWidget(self.value_label)
+        value_row.addWidget(CaptionLabel(unit, self), 1)
+        layout.addLayout(value_row)
+
+    def set_value(self, value: str) -> None:
+        self.value_label.setText(value)
+
+
 class StatsUiMixin(_HostBase_StatsUiMixin):
     """Ui behavior."""
 
@@ -43,49 +73,34 @@ class StatsUiMixin(_HostBase_StatsUiMixin):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        scroll = QScrollArea()
+        scroll = ScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(
-            """
-            QScrollArea {
-                border: none;
-                background: transparent;
-            }
-            QScrollArea > QWidget > QWidget {
-                background: transparent;
-            }
-            """
-        )
 
         content_widget = QWidget()
         layout = QVBoxLayout(content_widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(8)
 
         header_layout = QHBoxLayout()
-        title = QLabel("통계 대시보드")
-        title.setObjectName("title")
-        header_layout.addWidget(title)
+        header_layout.addWidget(SubtitleLabel("통계 대시보드", self))
         header_layout.addStretch()
 
-        export_btn = QPushButton("내보내기")
-        export_btn.setObjectName("secondary")
+        export_btn = PushButton("내보내기", self)
         export_btn.clicked.connect(self.show_export_menu)
         header_layout.addWidget(export_btn)
 
-        refresh_btn = QPushButton("새로고침")
-        refresh_btn.setObjectName("secondary")
+        refresh_btn = PushButton("새로고침", self)
         refresh_btn.clicked.connect(lambda: self.refresh_stats(force=True))
         header_layout.addWidget(refresh_btn)
         layout.addLayout(header_layout)
 
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(16)
-        self.total_card = StatCard("전체 상품", "0", "건", "#7aa2f7")
-        self.danggeun_card = StatCard("당근마켓", "0", "건", "#ff9e64")
-        self.bunjang_card = StatCard("번개장터", "0", "건", "#bb9af7")
-        self.joonggonara_card = StatCard("중고나라", "0", "건", "#9ece6a")
+        self.total_card = _SummaryCard("전체 상품", "0", "건", "#7aa2f7")
+        self.danggeun_card = _SummaryCard("당근마켓", "0", "건", "#ff9e64")
+        self.bunjang_card = _SummaryCard("번개장터", "0", "건", "#bb9af7")
+        self.joonggonara_card = _SummaryCard("중고나라", "0", "건", "#9ece6a")
         cards_layout.addWidget(self.total_card)
         cards_layout.addWidget(self.danggeun_card)
         cards_layout.addWidget(self.bunjang_card)
@@ -171,35 +186,7 @@ class StatsUiMixin(_HostBase_StatsUiMixin):
         v_header = table.verticalHeader()
         if v_header is not None:
             v_header.setVisible(False)
-        table.setStyleSheet(
-            """
-            QTableWidget {
-                background-color: #1e1e2e;
-                alternate-background-color: #313244;
-                gridline-color: #45475a;
-                border: none;
-                border-radius: 8px;
-            }
-            QTableWidget::item {
-                padding: 8px;
-            }
-            QTableWidget::item:hover {
-                background-color: #45475a;
-            }
-            QTableWidget::item:selected {
-                background-color: #89b4fa;
-                color: #1e1e2e;
-            }
-            QHeaderView::section {
-                background-color: #181825;
-                color: #a6adc8;
-                padding: 8px;
-                border: none;
-                border-bottom: 2px solid #45475a;
-                font-weight: bold;
-            }
-            """
-        )
+            v_header.setDefaultSectionSize(40)
         return table
 
 

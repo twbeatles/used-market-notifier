@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import (
-    QComboBox,
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QMessageBox,
-    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
+from qfluentwidgets import BodyLabel, ComboBox, PushButton, SubtitleLabel
 
 from .link_utils import open_external_url
 
@@ -31,7 +29,7 @@ class NotificationHistoryWidget(QWidget):
         super().__init__(parent)
         self.engine = engine
         self.db = engine.db
-        self.health_labels: dict[str, QLabel] = {}
+        self.health_labels: dict[str, BodyLabel] = {}
         self.setup_ui()
 
     def set_engine(self, engine):
@@ -42,40 +40,34 @@ class NotificationHistoryWidget(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(8)
 
         header_layout = QHBoxLayout()
-        title = QLabel("알림 이력")
-        title.setObjectName("title")
-        header_layout.addWidget(title)
+        header_layout.addWidget(SubtitleLabel("알림 이력", self))
         header_layout.addStretch()
 
-        self.type_filter = QComboBox()
-        self.type_filter.addItem("전체 알림", "all")
-        self.type_filter.addItem("Telegram", "telegram")
-        self.type_filter.addItem("Discord", "discord")
-        self.type_filter.addItem("Slack", "slack")
+        self.type_filter = ComboBox(self)
+        self.type_filter.addItem("전체 알림", userData="all")
+        self.type_filter.addItem("Telegram", userData="telegram")
+        self.type_filter.addItem("Discord", userData="discord")
+        self.type_filter.addItem("Slack", userData="slack")
         self.type_filter.currentTextChanged.connect(self.refresh_list)
         header_layout.addWidget(self.type_filter)
 
-        refresh_btn = QPushButton("새로고침")
+        refresh_btn = PushButton("새로고침", self)
         refresh_btn.clicked.connect(self.refresh_list)
         header_layout.addWidget(refresh_btn)
         layout.addLayout(header_layout)
 
-        health_group = QGroupBox("채널 헬스 요약 (최근 7일)")
+        health_group = QGroupBox("채널 헬스 요약 (최근 7일)", self)
         health_layout = QGridLayout(health_group)
         health_layout.setHorizontalSpacing(16)
         health_layout.setVerticalSpacing(12)
 
         for index, channel in enumerate(self.CHANNEL_NAMES):
-            label = QLabel()
+            label = BodyLabel(self)
             label.setWordWrap(True)
-            label.setStyleSheet(
-                "QLabel { background-color: #181825; border: 1px solid #313244; "
-                "border-radius: 8px; padding: 10px; }"
-            )
             self.health_labels[channel] = label
             health_layout.addWidget(label, 0, index)
 
@@ -97,34 +89,7 @@ class NotificationHistoryWidget(QWidget):
         v_header = self.table.verticalHeader()
         if v_header is not None:
             v_header.setVisible(False)
-        self.table.setStyleSheet(
-            """
-            QTableWidget {
-                background-color: #1e1e2e;
-                alternate-background-color: #313244;
-                gridline-color: #45475a;
-                border: none;
-                border-radius: 8px;
-            }
-            QTableWidget::item {
-                padding: 8px;
-            }
-            QTableWidget::item:hover {
-                background-color: #45475a;
-            }
-            QTableWidget::item:selected {
-                background-color: #89b4fa;
-                color: #1e1e2e;
-            }
-            QHeaderView::section {
-                background-color: #181825;
-                color: #a6adc8;
-                padding: 8px;
-                border: none;
-                border-bottom: 2px solid #45475a;
-            }
-            """
-        )
+            v_header.setDefaultSectionSize(40)
         self.table.cellDoubleClicked.connect(self.on_double_click)
         layout.addWidget(self.table)
 

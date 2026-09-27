@@ -1,21 +1,25 @@
 # gui/main_window.py
-"""Main application window - Fixed visibility issues.
+"""Fluent main window (MSFluentWindow + Navigation).
 
 Canonical behaviors live in :mod:`gui.main.window_mixins` (one mixin per
-responsibility: UI setup, tray, shortcuts, maintenance, recovery, live
-refresh, monitoring, theme, lifecycle). This module only composes them
-into ``MainWindow`` and owns construction.
+responsibility). This module only composes them into ``MainWindow`` and
+owns construction.
 """
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QMainWindow
-import sys
-import os
+from __future__ import annotations
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from typing import TYPE_CHECKING
 
-from settings_manager import SettingsManager
-from monitor_engine import MonitorEngine
+from PySide6.QtCore import QTimer
+
+if TYPE_CHECKING:
+    from qfluentwidgets import FluentWindow as MSFluentWindow
+else:
+    try:
+        from qfluentwidgets import MSFluentWindow
+    except ImportError:
+        from qfluentwidgets import FluentWindow as MSFluentWindow
+
 from backup_manager import BackupManager
 from db import DatabaseManager
 from gui.main.window_mixins import (
@@ -30,11 +34,20 @@ from gui.main.window_mixins import (
     UiSetupMixin,
     UpdaterMixin,
 )
+from gui.qt_binding import (
+    format_gui_qt_binding_error,
+    inspect_gui_qt_bindings,
+    is_pyside6_binding,
+)
+from monitor_engine import MonitorEngine
+from settings_manager import SettingsManager
+
+_binding_report = inspect_gui_qt_bindings(check_conflicting_dists=False)
+if not _binding_report.ok or not is_pyside6_binding(_binding_report.fluent_binding or ""):
+    raise ImportError(format_gui_qt_binding_error(_binding_report))
 
 
 class MainWindow(  # pyright: ignore[reportIncompatibleMethodOverride]
-    # Multiple QWidget-fragment bases re-expose identical Qt event
-    # handlers whose stubs only differ in parameter names (a0/event).
     UiSetupMixin,
     TrayMixin,
     ShortcutsMixin,
@@ -45,9 +58,9 @@ class MainWindow(  # pyright: ignore[reportIncompatibleMethodOverride]
     ThemeMixin,
     UpdaterMixin,
     LifecycleMixin,
-    QMainWindow,
+    MSFluentWindow,
 ):
-    """Main application window"""
+    """Fluent main application window."""
 
     def __init__(self, settings_manager: SettingsManager | None = None):
         super().__init__()
@@ -82,3 +95,4 @@ class MainWindow(  # pyright: ignore[reportIncompatibleMethodOverride]
         QTimer.singleShot(0, self._run_startup_maintenance)
         QTimer.singleShot(800, self._show_last_update_result)
         QTimer.singleShot(1500, self._start_auto_update_check_if_enabled)
+

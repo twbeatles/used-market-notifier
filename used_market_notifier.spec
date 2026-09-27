@@ -58,9 +58,13 @@ Notes:
 - `scripts/live_smoke.py` is an opt-in development diagnostic for live site
   structure checks. It is not imported by the app entrypoint and is intentionally
   not bundled into the onefile executable.
-- Build environments that have both `PyQt6` and `PyQt5` installed must exclude
-  the older Qt bindings explicitly so PyInstaller does not abort on mixed-hook
-  collection.
+- The Fluent shell is PySide6-only: `PySide6`, `PySide6-Fluent-Widgets`,
+  `darkdetect` are collected and the `PyQt6`/`PyQt5` bindings are excluded so
+  PyInstaller does not abort on mixed-hook collection. Build environments must
+  not have `PyQt6-Fluent-Widgets` installed (see `gui/qt_binding.py`).
+- New Fluent foundation modules (`gui/app.py`, `gui/qt_binding.py`,
+  `gui/fluent_theme.py`, `gui/icon.py`, `gui/design_tokens.py`, `gui/pages/`) are
+  collected with the other local split packages below.
 - Static typing / encoding hygiene updates (2026-03) are source-level changes only
   and do not require PyInstaller hidden import adjustments.
 - The updater (Ed25519 manifest, staged exe replace, --smoke rollback) lives in
@@ -90,11 +94,14 @@ except Exception:
     pass
 
 hiddenimports = [
-    # PyQt6 core
-    "PyQt6.sip",
-    "PyQt6.QtCore",
-    "PyQt6.QtGui",
-    "PyQt6.QtWidgets",
+    # PySide6 core (Fluent shell)
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "shiboken6",
+    "qfluentwidgets",
+    "qframelesswindow",
+    "darkdetect",
 
     # Selenium
     "selenium",
@@ -165,7 +172,7 @@ except Exception:
     pass
 
 # aiohttp and its helper packages may resolve parts of the stack lazily.
-for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", "propcache", "cryptography", "updater"):
+for package_name in ("aiohttp", "aiosignal", "frozenlist", "multidict", "yarl", "propcache", "cryptography", "updater", "qfluentwidgets", "qframelesswindow", "darkdetect"):
     try:
         hiddenimports += collect_submodules(package_name)
     except Exception:
@@ -186,6 +193,7 @@ for package_name in (
     "storage",
     "storage.stats_sections",
     "scrapers.parsers",
+    "gui.pages",
     "gui.settings_panels",
     "gui.settings_panels.mixins",
     "gui.widgets",
@@ -277,10 +285,15 @@ a = Analysis(
         "torch",
         "sklearn",
 
-        # Other GUI toolkits
+        # Conflicting Qt bindings (this build is PySide6-only)
         "tkinter",
         "wx",
-        "PySide6",
+        "PyQt6",
+        "PyQt6.sip",
+        "PyQt6.QtCore",
+        "PyQt6.QtGui",
+        "PyQt6.QtWidgets",
+        "PyQt5",
         "PySide2",
 
         # Dev/debug tools

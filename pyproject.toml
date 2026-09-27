@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "used-market-notifier"
+description = "Korean secondhand-market monitor with desktop alerts"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT License" }
+dynamic = ["version"]
+dependencies = [
+    "selenium>=4.10.0",
+    "webdriver-manager>=4.0.0",
+    "aiohttp>=3.8.0",
+    "matplotlib>=3.7.0",
+    "openpyxl>=3.1.0",
+    "playwright>=1.50.0",
+    "cryptography>=42.0.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PySide6>=6.6,<7",
+    "PySide6-Fluent-Widgets>=1.6,<2",
+    "darkdetect>=0.8,<1",
+]
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.4",
+    "pytest-timeout>=2.3",
+]
+build = [
+    "pyinstaller>=6.3",
+]
+
+[project.scripts]
+used-market-notifier = "main:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["*"]
+exclude = ["tests*", "legacy*", "scripts*"]
+
+[tool.setuptools]
+py-modules = [
+    "backup_manager",
+    "constants",
+    "db",
+    "export_manager",
+    "main",
+    "monitor_engine",
+    "price_utils",
+    "settings_manager",
+    "version",
+]

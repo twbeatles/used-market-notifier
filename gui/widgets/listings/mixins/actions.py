@@ -3,13 +3,13 @@
 # gui/listings_widget.py
 """All listings browser widget - Shows all scraped items"""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
     QLineEdit, QMessageBox, QMenu, QCheckBox
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QShortcut, QKeySequence
 from typing import Optional, TYPE_CHECKING
 
 from ....link_utils import open_external_url
@@ -46,10 +46,10 @@ class ListingsActionsMixin(_HostBase_ListingsActionsMixin):
             return
 
         menu = QMenu(self)
-        open_action = menu.addAction("🔗 링크 열기")
-        fav_action = menu.addAction("⭐ 즐겨찾기 추가")
-        note_action = menu.addAction("📝 메모 추가/편집")
-        message_action = menu.addAction("📨 판매자에게 메시지")
+        open_action = menu.addAction("링크 열기")
+        fav_action = menu.addAction("즐겨찾기 추가")
+        note_action = menu.addAction("메모 추가/편집")
+        message_action = menu.addAction("판매자에게 메시지")
 
         viewport = self.table.viewport()
         if viewport is None:

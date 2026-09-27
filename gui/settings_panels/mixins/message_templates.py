@@ -1,18 +1,26 @@
 from typing import TYPE_CHECKING
+
 """Settings dialog mixin: message_templates."""
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QFormLayout, QLineEdit, QSpinBox, QCheckBox, QLabel,
-    QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
-    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView,
-    QTextEdit, QApplication
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from models import MessageTemplate
-from message_templates import MessageTemplateManager
-from ..editors import MessageTemplateEditDialog
+from qfluentwidgets import (
+    CaptionLabel,
+    PushButton,
+)
 
+from message_templates import MessageTemplateManager
+from models import MessageTemplate
+
+from ..editors import MessageTemplateEditDialog
 
 if TYPE_CHECKING:
     from gui.settings_panels.dialog import SettingsDialog
@@ -29,8 +37,7 @@ class MessageTemplatesSettingsMixin(_HostBase_MessageTemplatesSettingsMixin):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
 
-        desc = QLabel("💬 판매자에게 보낼 메시지 템플릿을 관리합니다.")
-        desc.setStyleSheet("color: #89b4fa;")
+        desc = CaptionLabel("판매자에게 보낼 메시지 템플릿을 관리합니다.")
         layout.addWidget(desc)
 
         self.templates_table = QTableWidget()
@@ -46,19 +53,19 @@ class MessageTemplatesSettingsMixin(_HostBase_MessageTemplatesSettingsMixin):
         btns = QHBoxLayout()
         btns.addStretch()
 
-        add_btn = QPushButton("추가")
+        add_btn = PushButton("추가")
         add_btn.clicked.connect(self.add_template)
         btns.addWidget(add_btn)
 
-        edit_btn = QPushButton("편집")
+        edit_btn = PushButton("편집")
         edit_btn.clicked.connect(self.edit_template)
         btns.addWidget(edit_btn)
 
-        del_btn = QPushButton("삭제")
+        del_btn = PushButton("삭제")
         del_btn.clicked.connect(self.delete_template)
         btns.addWidget(del_btn)
 
-        reset_btn = QPushButton("기본값으로 초기화")
+        reset_btn = PushButton("기본값으로 초기화")
         reset_btn.clicked.connect(self.reset_templates_default)
         btns.addWidget(reset_btn)
 

@@ -3,15 +3,15 @@
 Reusable modern UI components with animations and effects.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QFrame, QPushButton, QLabel, QWidget,
     QVBoxLayout, QHBoxLayout, QGraphicsDropShadowEffect
 )
-from PyQt6.QtCore import (
+from PySide6.QtCore import (
     Qt, QPropertyAnimation, QEasingCurve, 
     QTimer
 )
-from PyQt6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont
 
 class GlassCard(QFrame):
     """

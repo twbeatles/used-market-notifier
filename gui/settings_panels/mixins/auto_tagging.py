@@ -1,18 +1,28 @@
 from typing import TYPE_CHECKING
+
 """Settings dialog mixin: auto_tagging."""
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QFormLayout, QLineEdit, QSpinBox, QCheckBox, QLabel,
-    QGroupBox, QPushButton, QComboBox, QMessageBox, QFrame,
-    QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView,
-    QTextEdit, QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from models import TagRule
-from auto_tagger import AutoTagger
-from ..editors import TagRuleEditDialog
+from qfluentwidgets import (
+    CaptionLabel,
+    CheckBox,
+    PushButton,
+)
 
+from auto_tagger import AutoTagger
+from models import TagRule
+
+from ..editors import TagRuleEditDialog
 
 if TYPE_CHECKING:
     from gui.settings_panels.dialog import SettingsDialog
@@ -29,13 +39,12 @@ class AutoTaggingSettingsMixin(_HostBase_AutoTaggingSettingsMixin):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
 
-        self.auto_tagging_enabled_check = QCheckBox("자동 태깅 사용")
+        self.auto_tagging_enabled_check = CheckBox("자동 태깅 사용")
         self.auto_tagging_enabled_check.setToolTip("끄면 자동 태그 생성/저장이 동작하지 않습니다.")
         self.auto_tagging_enabled_check.toggled.connect(self._on_auto_tagging_toggled)
         layout.addWidget(self.auto_tagging_enabled_check)
 
-        desc = QLabel("🏷️ 제목 키워드에 따라 자동으로 태그를 부여합니다. (모니터링 재시작 시 적용)")
-        desc.setStyleSheet("color: #89b4fa;")
+        desc = CaptionLabel("제목 키워드에 따라 자동으로 태그를 부여합니다. (모니터링 재시작 시 적용)")
         layout.addWidget(desc)
 
         self.tag_rules_table = QTableWidget()
@@ -51,19 +60,19 @@ class AutoTaggingSettingsMixin(_HostBase_AutoTaggingSettingsMixin):
         btns = QHBoxLayout()
         btns.addStretch()
 
-        self.tag_add_btn = QPushButton("추가")
+        self.tag_add_btn = PushButton("추가")
         self.tag_add_btn.clicked.connect(self.add_tag_rule)
         btns.addWidget(self.tag_add_btn)
 
-        self.tag_edit_btn = QPushButton("편집")
+        self.tag_edit_btn = PushButton("편집")
         self.tag_edit_btn.clicked.connect(self.edit_tag_rule)
         btns.addWidget(self.tag_edit_btn)
 
-        self.tag_del_btn = QPushButton("삭제")
+        self.tag_del_btn = PushButton("삭제")
         self.tag_del_btn.clicked.connect(self.delete_tag_rule)
         btns.addWidget(self.tag_del_btn)
 
-        self.tag_reset_btn = QPushButton("기본값으로 초기화")
+        self.tag_reset_btn = PushButton("기본값으로 초기화")
         self.tag_reset_btn.clicked.connect(self.reset_tag_rules_default)
         btns.addWidget(self.tag_reset_btn)
 

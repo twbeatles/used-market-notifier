@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from updater.installer import UpdateCancelledError
 from updater.manifest import ReleaseManifest
@@ -14,9 +14,9 @@ from updater.service import UpdateService
 class UpdateCheckThread(QThread):
     """원격 매니페스트를 확인하고 결과만 시그널로 전달합니다."""
 
-    found = pyqtSignal(object)
-    up_to_date = pyqtSignal()
-    failed = pyqtSignal(str)
+    found = Signal(object)
+    up_to_date = Signal()
+    failed = Signal(str)
 
     def run(self) -> None:
         try:
@@ -33,10 +33,10 @@ class UpdateCheckThread(QThread):
 class UpdateDownloadThread(QThread):
     """검증된 스테이징 파일을 만들 때까지 다운로드합니다."""
 
-    progress = pyqtSignal(int, int)
-    completed = pyqtSignal(str)
-    cancelled = pyqtSignal()
-    failed = pyqtSignal(str)
+    progress = Signal(int, int)
+    completed = Signal(str)
+    cancelled = Signal()
+    failed = Signal(str)
 
     def __init__(self, manifest: ReleaseManifest, service: UpdateService, parent=None):
         super().__init__(parent)

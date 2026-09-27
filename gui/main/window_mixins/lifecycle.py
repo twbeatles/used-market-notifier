@@ -1,9 +1,9 @@
 # pyright: reportAttributeAccessIssue=false
 """Window lifecycle: show, quit, and close-to-tray behavior."""
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QCloseEvent
-from PyQt6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QApplication, QWidget
 
 
 class LifecycleMixin(QWidget):

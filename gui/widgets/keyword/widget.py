@@ -8,7 +8,7 @@ from .dialog import KeywordEditDialog
 class KeywordManagerWidget(QWidget):
     """Modern card-based keyword manager"""
 
-    keywords_changed = pyqtSignal()
+    keywords_changed = Signal()
 
     def __init__(self, settings_manager, parent=None):
         super().__init__(parent)
@@ -20,89 +20,66 @@ class KeywordManagerWidget(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(8)
 
         # Header
         header_layout = QHBoxLayout()
 
-        title = QLabel("🔍 검색 키워드")
-        title.setObjectName("title")
-        header_layout.addWidget(title)
-
-        # Badge showing count
-        self.count_badge = QLabel("0")
-        self.count_badge.setStyleSheet("""
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7aa2f7, stop:1 #bb9af7);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-weight: bold;
-            font-size: 11pt;
-        """)
+        header_layout.addWidget(SubtitleLabel("검색 키워드", self))
+        self.count_badge = CaptionLabel("0", self)
         header_layout.addWidget(self.count_badge)
 
         header_layout.addStretch()
 
-        add_btn = QPushButton("+ 새 키워드")
-        add_btn.setObjectName("success")
+        add_btn = PrimaryPushButton("새 키워드", self)
         add_btn.setMinimumWidth(120)
         add_btn.setToolTip("새로운 검색 키워드를 추가합니다")
         add_btn.clicked.connect(self.add_keyword)
         header_layout.addWidget(add_btn)
 
         layout.addLayout(header_layout)
-
-        # Subtitle
-        subtitle = QLabel("모니터링할 검색어를 추가하고 필터를 설정하세요")
-        subtitle.setObjectName("muted")
-        layout.addWidget(subtitle)
+        layout.addWidget(CaptionLabel("모니터링할 검색어를 추가하고 필터를 설정하세요", self))
 
         # Scroll area for cards
-        scroll = QScrollArea()
+        scroll = ScrollArea(self)
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.cards_container = QWidget()
         self.cards_layout = QVBoxLayout(self.cards_container)
-        self.cards_layout.setSpacing(12)
+        self.cards_layout.setSpacing(8)
         self.cards_layout.setContentsMargins(0, 0, 8, 0)
         self.cards_layout.addStretch()
 
         scroll.setWidget(self.cards_container)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, 1)
 
         # Action buttons
         action_layout = QHBoxLayout()
-        action_layout.setSpacing(12)
+        action_layout.setSpacing(8)
 
-        edit_btn = QPushButton("✏️ 수정")
-        edit_btn.setObjectName("secondary")
+        edit_btn = PushButton("수정", self)
         edit_btn.setToolTip("선택한 키워드 설정을 수정합니다 (더블클릭으로도 가능)")
         edit_btn.clicked.connect(self.edit_keyword)
         action_layout.addWidget(edit_btn)
 
-        toggle_btn = QPushButton("⏯️ 활성화 토글")
-        toggle_btn.setObjectName("secondary")
+        toggle_btn = PushButton("활성화 토글", self)
         toggle_btn.setToolTip("키워드 모니터링 활성화/비활성화 전환")
         toggle_btn.clicked.connect(self.toggle_keyword)
         action_layout.addWidget(toggle_btn)
 
-        up_btn = QPushButton("⬆️ 위로")
-        up_btn.setObjectName("secondary")
+        up_btn = PushButton("위로", self)
         up_btn.setToolTip("키워드 순서를 위로 이동")
         up_btn.clicked.connect(self.move_keyword_up)
         action_layout.addWidget(up_btn)
 
-        down_btn = QPushButton("⬇️ 아래로")
-        down_btn.setObjectName("secondary")
+        down_btn = PushButton("아래로", self)
         down_btn.setToolTip("키워드 순서를 아래로 이동")
         down_btn.clicked.connect(self.move_keyword_down)
         action_layout.addWidget(down_btn)
 
-        delete_btn = QPushButton("🗑️ 삭제")
-        delete_btn.setObjectName("danger")
+        delete_btn = PushButton("삭제", self)
         delete_btn.setToolTip("선택한 키워드를 삭제합니다")
         delete_btn.clicked.connect(self.delete_keyword)
         action_layout.addWidget(delete_btn)
@@ -145,10 +122,12 @@ class KeywordManagerWidget(QWidget):
 
         # Add empty state if no keywords
         if not keywords:
-            empty_label = QLabel("🔍 아직 키워드가 없어요\n\n위의 '+ 새 키워드' 버튼을 눌러\n모니터링할 검색어를 추가하세요!")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("color: #6c7086; font-size: 12pt; padding: 40px; line-height: 1.6;")
-            self.cards_layout.addWidget(empty_label)
+            self.cards_layout.addWidget(EmptyStateWidget(
+                icon=FIF.TAG,
+                title="키워드가 없습니다",
+                message="새 키워드 버튼을 눌러 모니터링할 검색어를 추가하세요.",
+                parent=self.cards_container,
+            ))
 
         self.cards_layout.addStretch()
 
@@ -209,7 +188,12 @@ class KeywordManagerWidget(QWidget):
 
     def edit_keyword(self):
         if self.selected_index < 0:
-            QMessageBox.information(self, "알림", "수정할 키워드를 선택하세요.")
+            InfoBar.warning(
+            "키워드 선택",
+            "수정할 키워드를 먼저 선택하세요.",
+            parent=self.window(),
+            position=InfoBarPosition.TOP,
+        )
             return
 
         keyword = self.settings.settings.keywords[self.selected_index]
@@ -223,7 +207,12 @@ class KeywordManagerWidget(QWidget):
 
     def toggle_keyword(self):
         if self.selected_index < 0:
-            QMessageBox.information(self, "알림", "토글할 키워드를 선택하세요.")
+            InfoBar.warning(
+            "키워드 선택",
+            "토글할 키워드를 먼저 선택하세요.",
+            parent=self.window(),
+            position=InfoBarPosition.TOP,
+        )
             return
 
         keyword = self.settings.settings.keywords[self.selected_index]
@@ -234,7 +223,12 @@ class KeywordManagerWidget(QWidget):
 
     def delete_keyword(self):
         if self.selected_index < 0:
-            QMessageBox.information(self, "알림", "삭제할 키워드를 선택하세요.")
+            InfoBar.warning(
+            "키워드 선택",
+            "삭제할 키워드를 먼저 선택하세요.",
+            parent=self.window(),
+            position=InfoBarPosition.TOP,
+        )
             return
 
         keyword = self.settings.settings.keywords[self.selected_index]

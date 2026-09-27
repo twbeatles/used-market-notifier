@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QTableWidgetItem, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMessageBox, QTableWidgetItem
 
 from gui.link_utils import open_external_url
 from gui.listings_widget import ListingsWidget
