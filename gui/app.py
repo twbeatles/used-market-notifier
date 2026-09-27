@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -140,7 +141,9 @@ def main(settings_manager=None) -> None:
 
     window = MainWindow(settings_manager=manager)
     window.show()
+    logging.getLogger("Main").info("main window shown (visible=%s)", window.isVisible())
 
+    logging.getLogger("Main").info("entering event loop")
     sys.exit(app.exec())
 
 

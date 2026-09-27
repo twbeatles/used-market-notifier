@@ -46,6 +46,22 @@ def is_pyside6_binding(name: str) -> bool:
     return name == "PySide6"
 
 
+def fluent_binding_accepted(report: QtBindingReport) -> bool:
+    """MainWindow 진입 가드 판정.
+
+    frozen onefile(PYZ 아카이브)에서는 소스 파일 판독이 불가해 report가
+    ``ok=True, skipped=True, fluent_binding=None`` 으로 돌아온다. 이 경우
+    ``import qfluentwidgets`` 자체가 이미 성공한 상태이므로 허용한다.
+    (PyQt 바인딩 트리가 번들됐다면 import 단계에서 먼저 ImportError가 난다.)
+    소스 실행 환경에서는 fluent_binding이 반드시 판독되므로 PySide6만 허용.
+    """
+    if not report.ok:
+        return False
+    if report.fluent_binding is None:
+        return True
+    return is_pyside6_binding(report.fluent_binding)
+
+
 @dataclass(frozen=True)
 class QtBindingReport:
     ok: bool
@@ -198,6 +214,7 @@ __all__ = [
     "CONFLICTING_DIST_NAMES",
     "QtBindingReport",
     "binding_from_source",
+    "fluent_binding_accepted",
     "format_gui_qt_binding_error",
     "inspect_gui_qt_bindings",
     "installed_conflicting_dists",

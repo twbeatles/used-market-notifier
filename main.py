@@ -94,6 +94,17 @@ def run_gui(settings_manager=None):
         import traceback
 
         traceback.print_exc()
+        try:
+            from PySide6.QtWidgets import QApplication, QMessageBox
+
+            _app = QApplication.instance() or QApplication([])
+            QMessageBox.critical(
+                None,
+                "중고거래 알리미",
+                f"GUI 시작 실패:\n{e}\n\n자세한 내용은 notifier.log를 확인하세요.",
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
         sys.exit(1)
 
 

@@ -21,7 +21,9 @@ from gui.design_tokens import (
     WORK_PAGE_MARGIN,
 )
 from gui.qt_binding import (
+    QtBindingReport,
     binding_from_source,
+    fluent_binding_accepted,
     inspect_gui_qt_bindings,
     is_pyside6_binding,
 )
@@ -51,6 +53,59 @@ class BindingDetectionTest(unittest.TestCase):
         report = inspect_gui_qt_bindings(check_conflicting_dists=False)
         self.assertIsInstance(report.ok, bool)
         self.assertIsInstance(report.errors, tuple)
+
+
+def _binding_report(
+    *,
+    ok: bool,
+    fluent_binding: str | None,
+    errors: tuple[str, ...] = (),
+) -> QtBindingReport:
+    return QtBindingReport(
+        ok=ok,
+        skipped=fluent_binding is None and ok,
+        errors=errors,
+        fluent_path=None,
+        fluent_binding=fluent_binding,
+        frameless_path=None,
+        frameless_binding=None,
+        conflicting_dists=(),
+    )
+
+
+class FluentBindingAcceptedTest(unittest.TestCase):
+    """frozen 번들에서는 fluent_binding=None이어도 진입 허용 (회귀).
+
+    PYZ 아카이브 안에서는 소스 판독이 불가해 skipped 리포트가 돌아오는데,
+    구 가드(``or not is_pyside6_binding(binding or "")``)는 이를 거부해
+    frozen GUI가 항상 무반응 종료했다.
+    """
+
+    def test_frozen_skipped_report_accepted(self):
+        self.assertTrue(
+            fluent_binding_accepted(_binding_report(ok=True, fluent_binding=None))
+        )
+
+    def test_pyside6_source_report_accepted(self):
+        self.assertTrue(
+            fluent_binding_accepted(_binding_report(ok=True, fluent_binding="PySide6"))
+        )
+
+    def test_failed_report_rejected(self):
+        self.assertFalse(
+            fluent_binding_accepted(
+                _binding_report(
+                    ok=False, fluent_binding=None, errors=("missing",)
+                )
+            )
+        )
+
+    def test_pyqt_binding_rejected(self):
+        self.assertFalse(
+            fluent_binding_accepted(
+                _binding_report(ok=True, fluent_binding="PyQt6")
+            )
+        )
 
 
 class DesignTokensTest(unittest.TestCase):

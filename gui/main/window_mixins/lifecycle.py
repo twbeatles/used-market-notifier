@@ -16,6 +16,9 @@ class LifecycleMixin(QWidget):
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
 
     def quit_app(self):
+        import logging
+
+        logging.getLogger("Main").info("quit_app called")
         self._is_quitting = True
         self.stop_monitoring()
         try:

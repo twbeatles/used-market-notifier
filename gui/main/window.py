@@ -35,15 +35,15 @@ from gui.main.window_mixins import (
     UpdaterMixin,
 )
 from gui.qt_binding import (
+    fluent_binding_accepted,
     format_gui_qt_binding_error,
     inspect_gui_qt_bindings,
-    is_pyside6_binding,
 )
 from monitor_engine import MonitorEngine
 from settings_manager import SettingsManager
 
 _binding_report = inspect_gui_qt_bindings(check_conflicting_dists=False)
-if not _binding_report.ok or not is_pyside6_binding(_binding_report.fluent_binding or ""):
+if not fluent_binding_accepted(_binding_report):
     raise ImportError(format_gui_qt_binding_error(_binding_report))
 
 
