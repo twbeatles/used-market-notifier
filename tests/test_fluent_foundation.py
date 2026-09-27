@@ -115,6 +115,53 @@ class PyprojectGuiExtraTest(unittest.TestCase):
         self.assertIn("darkdetect", blob)
 
 
+def _requirement_names(lines: list[str]) -> list[str]:
+    """요구사항 줄에서 패키지 이름만 추출한다 (주석/빈 줄/옵션 제외)."""
+    names: list[str] = []
+    for raw in lines:
+        line = raw.split("#", 1)[0].strip().strip("\"'")
+        if not line or line.startswith("-"):
+            continue
+        names.append(re.split(r"[=<>!;\s\[]", line, maxsplit=1)[0].strip())
+    return names
+
+
+def _pyproject_gui_extra_lines(root: Path) -> list[str]:
+    """tomllib 없이 [project.optional-dependencies] gui 블록을 추출한다."""
+    text = (root / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r"gui\s*=\s*\[(.*?)\]", text, re.DOTALL)
+    if match is None:
+        return []
+    return [line for line in match.group(1).splitlines() if line.strip()]
+
+
+class GuiDependencyHygieneTest(unittest.TestCase):
+    """PyQt-Fluent 오염 재발 방지: 선언 파일에 PyQt 계열이 없어야 한다.
+
+    빌드 환경에 PyQt6-Fluent-Widgets가 설치되면 PyInstaller가 PyQt
+    바인딩 트리를 번들에 넣어 ``No module named 'PyQt6'`` frozen 실패와
+    모달 대기(무반응 실행)를 유발한다. 선언이 깨끗하면
+    ``pip install -r requirements.txt`` / ``pip install -e ".[gui]"`` 로는
+    오염이 재발하지 않는다.
+    """
+
+    def test_requirements_txt_has_no_pyqt(self):
+        root = Path(__file__).resolve().parent.parent
+        names = _requirement_names(
+            (root / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        )
+        self.assertTrue(names)
+        offenders = [n for n in names if "pyqt" in n.lower()]
+        self.assertEqual(offenders, [])
+
+    def test_pyproject_gui_extra_has_no_pyqt(self):
+        root = Path(__file__).resolve().parent.parent
+        names = _requirement_names(_pyproject_gui_extra_lines(root))
+        self.assertIn("PySide6-Fluent-Widgets", names)
+        offenders = [n for n in names if "pyqt" in n.lower()]
+        self.assertEqual(offenders, [])
+
+
 _EMOJI_RX = re.compile(
     "[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\u23E9-\u23FF\u25B6\u25C0\u2139\uFE0F]"
 )

@@ -16,7 +16,7 @@ def copy_text_to_clipboard(text: str) -> bool:
             return False
         clipboard.setText(text)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001
         # Fallback for non-Qt environments
         try:
             import importlib

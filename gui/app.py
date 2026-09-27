@@ -14,6 +14,15 @@ from pathlib import Path
 
 def _fatal_gui_error(message: str) -> None:
     """GUI 시작 실패 메시지. frozen 빌드에서도 QMessageBox 우선."""
+    if (
+        os.environ.get("USED_NOTIFIER_GUI_SMOKE") == "1"
+        or "--smoke" in sys.argv
+        or os.environ.get("QT_QPA_PLATFORM") == "offscreen"
+    ):
+        # 헤드리스 스모크/offscreen에서는 모달을 띄우지 않는다.
+        # 모달은 응답할 사용자가 없어 프로세스가 영원히 대기한다.
+        print(message, file=sys.stderr)
+        raise SystemExit(1)
     try:
         from PySide6.QtWidgets import QApplication, QMessageBox
 
