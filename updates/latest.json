@@ -1,10 +1,10 @@
 {
   "payload": {
-    "artifact_url": "https://github.com/twbeatles/used-market-notifier/releases/download/v1.1.1/UsedMarketNotifier-v1.1.1.exe",
-    "expires_at": "2027-09-27T14:27:08Z",
-    "sha256": "8e3d3d0d87e1654248d7246ca08e8c6743cf0466441ac452a215a079e02979e1",
-    "size": 106185295,
-    "version": "1.1.1"
+    "artifact_url": "https://github.com/twbeatles/used-market-notifier/releases/download/v1.2.0/UsedMarketNotifier-v1.2.0.exe",
+    "expires_at": "2027-09-28T12:15:37Z",
+    "sha256": "d487b73acde6e26e02cf3ccef1a3ac7ebad1fa467791de1d2e02d27f7c9fa691",
+    "size": 106205737,
+    "version": "1.2.0"
   },
-  "signature": "PBB5dx2BI5GiG/lbkbCx/9H7SN/CJ5OS6W4pCETW7fF5d1JHl8udoawM+ctmVyP3q58p036rnnOIWQKHpAniCA=="
+  "signature": "tJy81OVvLS4AmgC4HM0ln3A1ZnGATs9ZJBmmV1ofZSRHWr8Gl3IQE7NoheVOt8ozb4UJBYLMClyKwgWJ7KYiAg=="
 }
