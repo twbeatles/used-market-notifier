@@ -201,12 +201,13 @@ class UpdaterMixin(QWidget):
 
     def _prepare_process_exit_for_update(self) -> None:
         self._is_quitting = True
+        stopped = True
         stop_monitoring = getattr(self, "stop_monitoring", None)
         if callable(stop_monitoring):
-            stop_monitoring()
+            stopped = bool(stop_monitoring(wait=True, timeout_ms=60000))
         database = getattr(self, "db", None)
         close = getattr(database, "close", None)
-        if callable(close):
+        if stopped and callable(close):
             close()
         tray = getattr(self, "tray_icon", None)
         hide = getattr(tray, "hide", None)

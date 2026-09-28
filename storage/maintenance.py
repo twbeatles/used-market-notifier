@@ -3,6 +3,11 @@
 
 from .common import *
 
+_LAST_SEEN_EXPR = (
+    "COALESCE((SELECT last_seen_at FROM listing_last_seen "
+    "WHERE listing_last_seen.listing_id = listings.id), listings.created_at)"
+)
+
 
 class MaintenanceMixin:
     def add_search_history(self, keyword: str):
@@ -46,9 +51,10 @@ class MaintenanceMixin:
         with self.lock:
             cursor = self.conn.cursor()
 
-            query = '''
+            # 정리 기준: 마지막으로 검색 결과에서 본 시각(없으면 최초 발견 시각)
+            query = f'''
                 SELECT COUNT(*) as count FROM listings
-                WHERE created_at < datetime('now', ?)
+                WHERE {_LAST_SEEN_EXPR} < datetime('now', ?)
             '''
             params = [f'-{days} days']
 
@@ -81,9 +87,11 @@ class MaintenanceMixin:
             cursor = self.conn.cursor()
 
             # First, delete related records
-            subquery = '''
+            # 정리 기준: 마지막으로 검색 결과에서 본 시각(없으면 최초 발견 시각).
+            # 여전히 검색되는 오래된 매물을 지우면 다음 사이클에 새 매물로 재등록된다.
+            subquery = f'''
                 SELECT id FROM listings
-                WHERE created_at < datetime('now', ?)
+                WHERE {_LAST_SEEN_EXPR} < datetime('now', ?)
             '''
             params = [f'-{days} days']
 
@@ -121,6 +129,10 @@ class MaintenanceMixin:
 
             cursor.execute(f'''
                 DELETE FROM favorites WHERE listing_id IN ({subquery})
+            ''', params)
+
+            cursor.execute(f'''
+                DELETE FROM listing_last_seen WHERE listing_id IN ({subquery})
             ''', params)
 
             # Delete the listings

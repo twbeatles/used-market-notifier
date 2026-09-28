@@ -156,6 +156,13 @@ hiddenimports = [
     "gui.settings_panels.mixins.updater",
     "gui.main.window_mixins.updater",
 
+    # App data root / single-instance guard (2026-09 audit remediation)
+    "app_paths",
+    "gui.single_instance",
+    "gui.settings_panels.host",
+    "storage.baselines",
+    "app_settings.secrets",
+
     # Utilities
     "difflib",
     "importlib",

@@ -2,6 +2,11 @@ from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """SearchFlowMixin for MonitorEngine."""
 
+import time
+from datetime import timezone
+
+from storage.baselines import keyword_search_signature
+
 from .common import *
 
 
@@ -90,6 +95,9 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
         blocked_set = blocked_set or set()
 
         platform_results: dict[str, list[Item]] = {}
+        platform_search_ok: dict[str, bool] = {}
+        signature = keyword_search_signature(keyword_config)
+        notify_enabled = bool(getattr(keyword_config, "notify_enabled", True))
         active_platforms: list[str] = []
         semaphore = asyncio.Semaphore(self.SCRAPER_CONCURRENCY)
 
@@ -101,10 +109,13 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                 self._cycle_platform_attempts[platform] = self._cycle_platform_attempts.get(platform, 0) + 1
 
             if self._platform_is_backed_off(platform):
-                return platform, [], 0, 0, False, "backoff"
+                return platform, [], 0, 0, False, "backoff", False
+
+            if self._stop_requested():
+                return platform, [], 0, 0, False, "stopped", False
 
             if not await self._ensure_scraper(platform, use_fallback=False):
-                return platform, [], 0, 0, False, "primary_unavailable"
+                return platform, [], 0, 0, False, "primary_unavailable", False
 
             primary_scraper = self.primary_scrapers.get(platform)
             primary_kind = self.primary_scraper_kind.get(platform, "unknown")
@@ -112,7 +123,7 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
             fallback_kind = self.fallback_scraper_kind.get(platform, "none")
 
             if primary_scraper is None:
-                return platform, [], 0, 0, False, "primary_unavailable"
+                return platform, [], 0, 0, False, "primary_unavailable", False
 
             async def run_scrape(scraper: ScraperProtocol, engine_kind: str):
                 started = perf_counter()
@@ -160,6 +171,7 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
             fallback_used = False
             fallback_reason = ""
             fallback_items: list[Item] = []
+            fallback_error: str | None = None
 
             if primary_error:
                 fallback_reason = "primary_malformed" if "parser_malformed" in primary_error else "primary_exception"
@@ -169,8 +181,10 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
             ):
                 fallback_reason = "primary_empty"
 
-            if fallback_reason:
-                if fallback_scraper is None:
+            if fallback_reason and self._stop_requested():
+                fallback_reason = f"{fallback_reason}_stopped"
+            elif fallback_reason:
+                if fallback_scraper is None and not self._has_fallback_option(platform):
                     fallback_reason = f"{fallback_reason}_no_fallback"
                 elif not self._fallback_budget_available(platform):
                     fallback_reason = f"{fallback_reason}_budget_exceeded"
@@ -203,7 +217,17 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                 f"fallback_reason={fallback_reason or '-'} merged_count={len(merged_items)} "
                 f"elapsed_ms={total_elapsed_ms:.1f}"
             )
-            return platform, merged_items, len(primary_items), len(fallback_items), fallback_used, fallback_reason
+            # 오류 없이 끝난 검색(0건 포함)만 알림 기준선을 확정할 수 있다.
+            search_ok = primary_error is None or (fallback_used and fallback_error is None)
+            return (
+                platform,
+                merged_items,
+                len(primary_items),
+                len(fallback_items),
+                fallback_used,
+                fallback_reason,
+                search_ok,
+            )
 
         scrape_tasks = []
         for platform in keyword_config.platforms:
@@ -218,7 +242,8 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                 if isinstance(result, BaseException):
                     self.logger.error(f"Unexpected scraping task failure: {result}")
                     continue
-                platform, items_raw, _, _, _, _ = result
+                platform, items_raw, _, _, _, _, search_ok = result
+                platform_search_ok[platform] = bool(search_ok)
                 if self._cycle_platform_raw_counts is not None:
                     self._cycle_platform_raw_counts[platform] = self._cycle_platform_raw_counts.get(platform, 0) + len(
                         items_raw
@@ -226,7 +251,13 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                 platform_results[platform] = items_raw
 
         for platform in active_platforms:
+            if self._stop_requested():
+                self.logger.info(f"Stop requested; skipping remaining platforms for '{keyword_config.keyword}'")
+                break
             items_raw = platform_results.get(platform) or []
+            search_ok = platform_search_ok.get(platform, False)
+            # 기준선이 없는 (검색 조건, 플랫폼)의 결과는 알림 없이 저장만 한다.
+            baseline_ready = self.db.has_search_baseline(signature, platform)
             raw_count = len(items_raw)
             metadata_enabled = bool(getattr(self.settings.settings, "metadata_enrichment_enabled", False))
             conditional_enabled = bool(
@@ -280,6 +311,10 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
             process_start = perf_counter()
             platform_new = 0
             db_ms_total = 0.0
+            notified = 0
+            overflow_new = 0
+            overflow_price = 0
+            seen_listing_ids: list[int] = []
 
             existing_ids = self.db.get_existing_article_ids(
                 platform, [str(it.article_id) for it in items if getattr(it, "article_id", None)]
@@ -296,10 +331,18 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                 db_started = perf_counter()
                 is_new, price_change, listing_id = self.db.add_listing(item)
                 db_ms_total += (perf_counter() - db_started) * 1000
+                if listing_id is not None:
+                    seen_listing_ids.append(int(listing_id))
 
                 if is_new:
                     platform_new += 1
                     self.logger.info(f"New item: {item.title}")
+
+                    wants_notify = baseline_ready and not self.is_first_run and notify_enabled
+                    if wants_notify and notified >= self.NOTIFICATION_BURST_LIMIT:
+                        overflow_new += 1
+                        wants_notify = False
+                    item.notification_suppressed = not wants_notify
 
                     if self.settings.settings.auto_tagging_enabled and listing_id:
                         tags = self.auto_tagger.analyze(item.title)
@@ -310,7 +353,8 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                     if self.on_new_item:
                         self.on_new_item(item)
 
-                    if not self.is_first_run and getattr(keyword_config, "notify_enabled", True):
+                    if wants_notify:
+                        notified += 1
                         await self.send_notifications(item, listing_id=listing_id)
 
                 elif price_change:
@@ -328,7 +372,10 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                     if self.on_price_change:
                         self.on_price_change(item, price_change["old_price"], price_change["new_price"])
 
-                    if not self.is_first_run and getattr(keyword_config, "notify_enabled", True):
+                    if not self.is_first_run and notify_enabled and notified >= self.NOTIFICATION_BURST_LIMIT:
+                        overflow_price += 1
+                    elif not self.is_first_run and notify_enabled:
+                        notified += 1
                         await self.send_notifications(
                             item,
                             is_price_change=True,
@@ -338,6 +385,18 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
                         )
 
             self.db.record_search_stats(keyword_config.keyword, platform, len(items), platform_new)
+            self.db.touch_listings_seen(seen_listing_ids)
+            if search_ok and not baseline_ready:
+                self.db.establish_search_baseline(signature, platform)
+                self.logger.info(
+                    f"Notification baseline established: keyword='{keyword_config.keyword}' platform={platform} "
+                    f"items={len(items)}"
+                )
+            if overflow_new or overflow_price:
+                await self._send_system_message(
+                    f"[{platform}] '{keyword_config.keyword}': 새 매물 {overflow_new}건, 가격 변동 {overflow_price}건이 "
+                    f"더 있습니다 (알림 상한 {self.NOTIFICATION_BURST_LIMIT}건 초과). 앱에서 확인하세요."
+                )
             new_count += platform_new
             elapsed_ms = (perf_counter() - process_start) * 1000
             self.logger.info(
@@ -348,6 +407,23 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
         total_ms = (perf_counter() - search_start) * 1000
         self.logger.info(f"[perf] keyword '{keyword_config.keyword}' total_elapsed_ms={total_ms:.1f}")
         return new_count
+
+    @staticmethod
+    def _keyword_interval_key(keyword_config: SearchKeyword) -> str:
+        platforms = ",".join(sorted(keyword_config.platforms or []))
+        return f"{keyword_search_signature(keyword_config)}|{platforms}"
+
+    def _minutes_since_keyword_run(self, keyword_config: SearchKeyword, interval_key: str) -> Optional[float]:
+        """마지막 검색 이후 경과 분. 이 엔진에서 검색한 적이 없으면 DB 기록(UTC)으로 판정한다."""
+        last_run = self._keyword_last_run.get(interval_key)
+        if last_run is not None:
+            return (time.monotonic() - last_run) / 60
+        last_time = self.db.get_last_search_time(keyword_config.keyword, platforms=keyword_config.platforms)
+        if last_time is None:
+            return None
+        # search_stats.checked_at 은 SQLite CURRENT_TIMESTAMP(UTC)이므로 UTC 기준으로 비교한다.
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        return max(0.0, (now_utc - last_time).total_seconds() / 60)
 
     async def run_cycle(self) -> int:
         """Run one complete monitoring cycle."""
@@ -366,29 +442,34 @@ class SearchFlowMixin(_HostBase_SearchFlowMixin):
         }
 
         try:
-            for kw in keywords:
+            for kw in list(keywords):
+                if self._stop_requested():
+                    self.logger.info("Stop requested; ending cycle early")
+                    break
                 if not kw.enabled:
                     continue
 
+                interval_key = self._keyword_interval_key(kw)
                 if kw.custom_interval:
-                    last_time = self.db.get_last_search_time(kw.keyword)
-                    if last_time:
-                        elapsed = (datetime.now() - last_time).total_seconds() / 60
-                        if elapsed < kw.custom_interval:
-                            self.logger.info(
-                                f"Skipping '{kw.keyword}': interval {kw.custom_interval}m not passed "
-                                f"(elapsed: {elapsed:.1f}m)"
-                            )
-                            continue
+                    elapsed = self._minutes_since_keyword_run(kw, interval_key)
+                    if elapsed is not None and elapsed < kw.custom_interval:
+                        self.logger.info(
+                            f"Skipping '{kw.keyword}': interval {kw.custom_interval}m not passed "
+                            f"(elapsed: {elapsed:.1f}m)"
+                        )
+                        continue
 
                 try:
                     total_new += await self.search_keyword(kw, blocked_set=self._cycle_blocked_set)
                 except Exception as e:
                     self.logger.error(f"Error processing keyword '{kw.keyword}': {e}")
+                self._keyword_last_run[interval_key] = time.monotonic()
 
                 await self._sleep_or_stop(2)
 
             for platform in ("danggeun", "bunjang", "joonggonara"):
+                if self._stop_requested():
+                    break
                 attempts = (self._cycle_platform_attempts or {}).get(platform, 0)
                 if attempts <= 0:
                     continue

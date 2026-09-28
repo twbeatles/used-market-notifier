@@ -64,3 +64,8 @@ mcps/
 
 debug_output/
 .updates/
+
+# Runtime artifacts added by the 2026-09 audit remediation
+.used_market_notifier.lock
+*.restore_tmp
+.settings.json.*.tmp

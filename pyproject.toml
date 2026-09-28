@@ -46,6 +46,7 @@ exclude = ["tests*", "legacy*", "scripts*"]
 
 [tool.setuptools]
 py-modules = [
+    "app_paths",
     "backup_manager",
     "constants",
     "db",

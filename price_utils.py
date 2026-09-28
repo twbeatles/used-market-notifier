@@ -111,3 +111,19 @@ def format_price_kr(amount: int) -> str:
     if n <= 0:
         return "가격문의"
     return f"{n:,}원"
+
+
+def is_unknown_price_text(text: str | None) -> bool:
+    """가격 정보가 없는 표기인지 판별합니다.
+
+    숫자도 무료 키워드도 없는 값("가격문의", "N/A", "-", 빈 값 등)은 가격 미상입니다.
+    "무료나눔", "0원" 같은 값은 실제 가격(0원)으로 봅니다.
+    """
+    if text is None:
+        return True
+    s = str(text).strip().replace(" ", "").lower()
+    if not s:
+        return True
+    if re.search(r"\d", s):
+        return False
+    return not any(k in s for k in _FREE_KEYWORDS)

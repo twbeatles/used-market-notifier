@@ -27,9 +27,24 @@ class RuntimeMixin(_HostBase_RuntimeMixin):
         except asyncio.TimeoutError:
             return
 
+    def _stop_requested(self) -> bool:
+        """True once stop() / request_stop() signalled the running loop."""
+        ev = self._stop_event
+        return ev is not None and ev.is_set()
+
+    def request_stop(self) -> None:
+        """Non-blocking stop signal. Must run on the engine's event loop thread."""
+        self.running = False
+        self._stop_pending = True
+        if self._stop_event is not None:
+            self._stop_event.set()
+
     async def start(self):
         """Start the monitoring loop."""
         if self.running:
+            return
+        if self._stop_pending:
+            # Stop was requested before the loop got going (e.g. immediate stop after start).
             return
 
         if self._executor is None:

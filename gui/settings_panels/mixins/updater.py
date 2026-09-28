@@ -20,6 +20,7 @@ from qfluentwidgets import (
 from gui.link_utils import open_external_url
 from updater.constants import UPDATE_RELEASES_URL
 from version import __version__
+from ..host import resolve_settings_host
 
 _UPDATE_COLORS = {
     "muted": "#a6adc8",
@@ -80,13 +81,13 @@ class UpdateSettingsMixin(_HostBase_UpdateSettingsMixin):
         inner.addWidget(self.update_status_label)
 
         layout.addWidget(group)
-        parent = self.parent()
+        parent = resolve_settings_host(self) or self.parent()
         attach = getattr(parent, "attach_update_ui", None)
         if callable(attach):
             attach(self)
 
     def done(self, a0: int) -> None:
-        parent = self.parent()
+        parent = resolve_settings_host(self) or self.parent()
         detach = getattr(parent, "detach_update_ui", None)
         if callable(detach):
             detach(self)
@@ -113,7 +114,7 @@ class UpdateSettingsMixin(_HostBase_UpdateSettingsMixin):
         self.settings.save()
 
     def _on_check_update_clicked(self) -> None:
-        parent = self.parent()
+        parent = resolve_settings_host(self) or self.parent()
         request = getattr(parent, "request_update_check", None)
         if not callable(request):
             QMessageBox.warning(self, "업데이트", "이 화면에서는 업데이트를 확인할 수 없습니다.")
@@ -121,13 +122,13 @@ class UpdateSettingsMixin(_HostBase_UpdateSettingsMixin):
         request(interactive=True)
 
     def _on_cancel_download_clicked(self) -> None:
-        parent = self.parent()
+        parent = resolve_settings_host(self) or self.parent()
         cancel = getattr(parent, "cancel_update_download", None)
         if callable(cancel):
             cancel()
 
     def _open_update_releases(self) -> None:
-        parent = self.parent()
+        parent = resolve_settings_host(self) or self.parent()
         engine = getattr(parent, "engine", None)
         open_external_url(self, engine, UPDATE_RELEASES_URL, "릴리즈 페이지")
 

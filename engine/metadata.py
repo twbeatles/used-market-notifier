@@ -91,6 +91,17 @@ class MetadataEnrichmentMixin(_HostBase_MetadataEnrichmentMixin):
 
         return False
 
+    @staticmethod
+    def _refresh_price_numeric(before: Item, after: Item) -> Item:
+        """보강으로 가격 텍스트가 바뀌었는데 숫자값이 이전 캐시 그대로면 다시 계산하게 한다."""
+        if (
+            after.price != before.price
+            and after.price_numeric is not None
+            and after.price_numeric == before.price_numeric
+        ):
+            after.price_numeric = None
+        return after
+
     async def _run_enrichment(self, scraper: ScraperProtocol, item: Item) -> Item:
         async_enrich = getattr(scraper, "enrich_item_async", None)
         if callable(async_enrich):
@@ -116,6 +127,9 @@ class MetadataEnrichmentMixin(_HostBase_MetadataEnrichmentMixin):
         for use_fallback in (False, True):
             if not self._needs_metadata_enrichment(current):
                 break
+            # 폴백이 없으면 건너뛴다. (_ensure_scraper가 primary를 재생성하지 않도록)
+            if use_fallback and not self._has_fallback_option(target_platform):
+                break
             if not await self._ensure_scraper(target_platform, use_fallback=use_fallback):
                 continue
 
@@ -128,7 +142,7 @@ class MetadataEnrichmentMixin(_HostBase_MetadataEnrichmentMixin):
             try:
                 enriched = await self._run_enrichment(scraper, current)
                 if isinstance(enriched, Item):
-                    current = enriched
+                    current = self._refresh_price_numeric(current, enriched)
             except Exception as e:
                 self.logger.warning(
                     f"Metadata enrichment failed: platform={target_platform} "
@@ -216,7 +230,7 @@ class MetadataEnrichmentMixin(_HostBase_MetadataEnrichmentMixin):
             try:
                 enriched = scraper.enrich_item(current)
                 if isinstance(enriched, Item):
-                    current = enriched
+                    current = self._refresh_price_numeric(current, enriched)
             except Exception as e:
                 self.logger.warning(f"One-shot metadata enrichment failed {target_platform}/{kind}: {e}")
             finally:

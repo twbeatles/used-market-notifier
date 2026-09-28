@@ -355,19 +355,21 @@ self.logger.info(f"새 매물 발견: {item.title}")
 self.logger.error(f"크롤링 실패: {e}")
 
 # ✅ 한글 주석 (복잡한 로직)
-# 퍼지 중복 검사: 최근 24시간 내 유사 제목 확인
+# 퍼지 중복 검사: 최근 3일 내 같은 가격 문자열의 매물 최대 20건과 제목 유사도 비교
 # difflib.SequenceMatcher 사용, threshold 0.9
 ```
 
-### PyQt6 패턴
+### PySide6 패턴
 
 ```python
-# ✅ 시그널로 UI 업데이트
+# ✅ 시그널로 UI 업데이트 (PySide6: Signal/Slot)
+from PySide6.QtCore import QThread, Signal, Slot
+
 class MonitorThread(QThread):
-    status_update = pyqtSignal(str)
-    new_item = pyqtSignal(object)
-    price_change = pyqtSignal(object, str, str)
-    error = pyqtSignal(str)
+    status_update = Signal(str)
+    new_item = Signal(object)
+    price_change = Signal(object, str, str)
+    error = Signal(str)
 
     def run(self):
         # 백그라운드 작업
@@ -375,9 +377,12 @@ class MonitorThread(QThread):
         self.new_item.emit(item)
 
 # ✅ 메인 스레드에서 UI 업데이트
-@pyqtSlot(str)
+@Slot(str)
 def on_status_update(self, status: str):
     self.status_label.setText(status)
+
+# ✅ QThread 수명: 실행 중인 QThread 참조를 버리지 말 것 (프로세스 비정상 종료).
+#    중지는 request_stop()(비블로킹) 후 finished 시그널에서 참조를 해제한다.
 
 # ✅ ObjectName 지정 (스타일시트 적용)
 button.setObjectName("primary")
@@ -387,19 +392,14 @@ card.setObjectName("glassCard")
 ### 비동기 패턴
 
 ```python
-# ✅ Windows에서 asyncio 정책 설정 (버전 호환)
-if sys.platform == "win32":
-    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
-    if selector_policy is not None:
-        asyncio.set_event_loop_policy(selector_policy())
+# ❌ asyncio.set_event_loop_policy / WindowsSelectorEventLoopPolicy 사용 금지
+#    - Windows Selector 루프는 subprocess를 지원하지 않아 Playwright가 기동하지 못한다.
+#    - 정책 API는 Python 3.14에서 deprecated.
+# ✅ CLI: 플랫폼 기본 루프(Windows = Proactor) 그대로 asyncio.run()
 
-# ✅ QThread 내 asyncio 실행
+# ✅ QThread 내 asyncio 실행 (gui/main/threads.py: new_engine_event_loop)
 def run(self):
-    if sys.platform == "win32":
-        proactor_policy = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
-        if proactor_policy is not None:
-            asyncio.set_event_loop_policy(proactor_policy())
-    self.loop = asyncio.new_event_loop()
+    self.loop = asyncio.ProactorEventLoop() if sys.platform == "win32" else asyncio.new_event_loop()
     asyncio.set_event_loop(self.loop)
     try:
         self.loop.run_until_complete(self.engine.start())
@@ -782,7 +782,8 @@ This section is the latest baseline and overrides older text in this document if
   - shutdown does not requeue failed notification retries.
 - GUI / packaging / repo hygiene:
   - Settings UI exposes scraper mode, empty-result fallback, and fallback budget.
-  - backup restore stops monitoring and exits after restore to avoid stale DB handles.
+  - backup restore stops monitoring and exits after restore to avoid stale DB handles
+    (2026-09: restore now uses the SQLite online backup API — see "2026-09 Audit Remediation").
   - `.gitignore` includes `*.pre_restore` restore snapshots.
   - `used_market_notifier.spec` documents async lifecycle and standard-library additions.
 
@@ -860,6 +861,7 @@ Use this section as the latest implementation baseline for March 25, 2026.
   - sale status is re-evaluated on every cycle
 - Notification policy:
   - first cycle skips both new-item and price-change notifications
+    (2026-09: only for the first engine of the process; new searches use a persistent baseline)
   - retry scope is channel-level only
   - `notification_log` is success-only
   - delivery failures and rate-limit events are read from `notification_delivery_log`
@@ -885,7 +887,7 @@ Use this section as the latest implementation baseline for March 25, 2026.
 
 ### Verification Baseline
 
-- `python -m unittest discover -s tests -q` -> `Ran 91 tests` / `OK`
+- `python -m unittest discover -s tests -q` -> `Ran 91 tests` / `OK` (2026-03 기준, 최신은 아래 2026-09 섹션)
 - in restricted/sandboxed shells, point `TEMP/TMP` to workspace-local `.tmp/` before running the suite
 - `pyright .` -> run as an optional type-check gate when available
 
@@ -915,7 +917,7 @@ Use this section as the latest implementation baseline for March 25, 2026.
   (fail-fast before build), then builds/signs/publishes the exe
   and `updates/latest.json`. Never tag a non-`main` commit; if a bad tag
   was pushed, delete the remote release/tag instead of moving the tag.
-- Verification: `python -m unittest discover -s tests -q` (151 tests, OK),
+- Verification: `python -m unittest discover -s tests -q` (151 tests at the time; 218 after 2026-09 remediation),
   `tests/test_fluent_foundation.py`, offscreen GUI smoke via
   `USED_NOTIFIER_GUI_SMOKE=1 python -m gui.app`.
 
@@ -937,6 +939,53 @@ Use this section as the latest implementation baseline for March 25, 2026.
   `userData=` keyword (2nd positional is `icon`).
 
 <!-- SPECKIT-AGENT-GUIDE:START -->
+
+## 2026-09 Audit Remediation (specs/001-audit-remediation)
+
+This section is the latest baseline and overrides older text in this document if any conflict exists.
+Source of truth: `PROJECT_AUDIT.md` (2026-09-28) and `specs/001-audit-remediation/`. Released as **v1.2.0**.
+
+- Backup restore (`backup/mixins/restorer.py`):
+  - uses the SQLite online backup API into `db_path` (never file-copies over a live WAL DB);
+    the backup DB is `integrity_check`-ed first and a failed restore leaves current data untouched.
+  - `listings.db.pre_restore` is a consistent backup-API snapshot (includes WAL-only rows).
+  - the settings UI stops monitoring with `stop_monitoring(wait=True)` first and refuses to restore otherwise.
+- Settings panel host (`gui/settings_panels/host.py`):
+  - `SettingsPage` is re-parented by `addSubInterface`; never use `self.parent()` in settings mixins.
+    Use `resolve_settings_host()` / `resolve_host_db()` / `stop_host_monitoring()`.
+- Notification baseline (`storage/baselines.py`, `engine/search_flow.py`):
+  - new table `search_baselines(signature, platform)`; signature = keyword|location|min|max|sorted excludes.
+  - results of a (signature, platform) without a baseline are stored silently; the first error-free
+    search (0 results included) establishes it. Adding/editing a keyword mid-session no longer floods alerts.
+  - only the first engine of the process suppresses its first cycle (`MonitorEngine(suppress_initial_notifications=...)`);
+    in-app restarts (settings save) notify from the first cycle.
+  - `NOTIFICATION_BURST_LIMIT = 15` per keyword/platform/cycle; the rest is one summary system message.
+  - `Item.notification_suppressed` tells the GUI tray whether the engine suppressed an item.
+- Listing write rules (`storage/listings.py`):
+  - unknown price text (`price_utils.is_unknown_price_text`: `가격문의`, empty, `N/A`, ...) never overwrites a known
+    price and is never a price change; unknown → known fills silently; `무료나눔`/`0원` are known prices.
+  - without explicit status or title evidence the existing sale status is kept (no `sold` → `for_sale` flip).
+  - enrichment that changes the price text resets a stale `price_numeric` (`MetadataEnrichmentMixin._refresh_price_numeric`).
+  - `PRICE_PARSE_VERSION = 3`: the numeric price migration uses a separate read cursor (the v2 run stopped after 500 rows).
+- Cleanup: new table `listing_last_seen`; cleanup/preview use `COALESCE(last_seen_at, created_at)`.
+- Monitor lifecycle:
+  - `MonitorThread.request_stop()` is non-blocking; `stop(timeout_ms)` waits. The window keeps stopping threads in
+    `_stopping_threads` until `finished`; starts requested meanwhile are deferred (`_pending_start`).
+  - `run_cycle` / `search_keyword` stop at keyword/platform boundaries once stop is requested.
+  - quit/update/restore/cleanup call `stop_monitoring(wait=True)` before closing or replacing the DB.
+- Scrapers: fallback engines are created lazily on first need with a 600s failure cooldown; an unhealthy fallback is
+  replaced alone. Enrichment skips the fallback pass when no fallback option exists (no primary re-creation).
+- Custom keyword interval: keyed by keyword signature + platforms; DB fallback compares `search_stats.checked_at` as UTC.
+- Runtime/environment:
+  - `main()` switches the working directory to `app_paths.app_root()` (exe folder / repo root) before anything else.
+  - `setup_logging()` falls back to console-only when `notifier.log` cannot be opened.
+  - single GUI instance via `gui/single_instance.py` (`QLockFile` in the app root; `USED_NOTIFIER_ALLOW_MULTI=1` bypasses).
+  - no `asyncio.set_event_loop_policy` anywhere (`tests/test_event_loop_policy.py` enforces it).
+- Settings: saved atomically (`app_settings/json_io.write_json_atomic`); on Windows notifier `token`/`webhook_url` are
+  stored as `dpapi:v1:<base64>` (`app_settings/secrets.py`). Plain values still load; undecryptable values are cleared,
+  listed in `load_recovery_state["secret_decrypt_failed"]` and shown as a startup notice.
+- Export: `export_manager.sanitize_cell()` prefixes `= + - @ \t \r` with `'`; xlsx text cells are forced to string type.
+- Verification: `python -m unittest discover -s tests -q` → `Ran 218 tests` / `OK`; `pyright .` → 0 errors.
 
 ## Spec Kit / Spec-Driven Development (AI 에이전트 필독)
 

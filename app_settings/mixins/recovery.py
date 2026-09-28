@@ -13,6 +13,7 @@ from models import (
     KeywordPreset, TagRule, MessageTemplate
 )
 from ..constants import SETTINGS_FILE
+from ..json_io import write_json_atomic
 
 
 if TYPE_CHECKING:
@@ -32,8 +33,18 @@ class SettingsRecoveryMixin(_HostBase_SettingsRecoveryMixin):
             "recovered_backup_path": None,
             "error": None,
             "normalized_fields": [],
+            "secret_decrypt_failed": [],
         }
         self.last_recovered_backup = None
+
+    def _mark_secret_failure(self, field: str) -> None:
+        """Record a notifier secret that could not be decrypted (value was cleared)."""
+        state = getattr(self, "load_recovery_state", None)
+        if not isinstance(state, dict):
+            return
+        failures = state.setdefault("secret_decrypt_failed", [])
+        if isinstance(failures, list) and field not in failures:
+            failures.append(field)
 
 
     def _create_default(self) -> AppSettings:
@@ -109,8 +120,7 @@ class SettingsRecoveryMixin(_HostBase_SettingsRecoveryMixin):
 
             try:
                 self.settings_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(self.settings_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                write_json_atomic(self.settings_path, data)
                 self.last_recovered_backup = str(archive_path)
                 return self._from_dict(data)
             except Exception:

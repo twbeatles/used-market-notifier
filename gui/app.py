@@ -115,6 +115,33 @@ def configure_high_dpi() -> None:
     )
 
 
+def _acquire_single_instance():
+    """Return the held guard, or None when another instance is already running.
+
+    Two instances would write the same DB and send every notification twice.
+    ``USED_NOTIFIER_ALLOW_MULTI=1`` disables the guard (development only).
+    """
+    if os.environ.get("USED_NOTIFIER_ALLOW_MULTI") == "1":
+        return object()
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app_paths import app_root
+
+    from .single_instance import LOCK_FILE_NAME, SingleInstanceGuard
+
+    guard = SingleInstanceGuard(app_root() / LOCK_FILE_NAME)
+    if guard.acquire():
+        return guard
+    logging.getLogger("Main").info("Another instance is already running; exiting")
+    QMessageBox.information(
+        None,
+        "중고거래 알리미",
+        "중고거래 알리미가 이미 실행 중입니다.\n시스템 트레이 아이콘을 확인하세요.",
+    )
+    return None
+
+
 def main(settings_manager=None) -> None:
     """GUI 메인 진입점."""
     if _run_gui_smoke_if_requested():
@@ -135,6 +162,10 @@ def main(settings_manager=None) -> None:
     app.setApplicationName("Used Market Notifier")
     app.setOrganizationName("UsedMarketNotifier")
     app.setWindowIcon(get_app_icon())
+
+    guard = _acquire_single_instance()
+    if guard is None:
+        sys.exit(0)
 
     manager = settings_manager or SettingsManager()
     setup_app_theme(app, manager.settings.theme_mode)

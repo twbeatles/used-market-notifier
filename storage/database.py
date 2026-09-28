@@ -1,6 +1,7 @@
 # db.py
 """Database manager composed from storage mixins."""
 
+from .baselines import ListingSeenMixin, SearchBaselineMixin
 from .common import *
 from .favorites import FavoritesNotesMixin
 from .filters import SellerFilterMixin
@@ -19,10 +20,13 @@ class DatabaseManager(
     NotificationLogMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     SellerFilterMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
     MaintenanceMixin,
+    SearchBaselineMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
+    ListingSeenMixin,  # pyright: ignore[reportGeneralTypeIssues]  # static-only cycle; runtime base is object
 ):
     """SQLite database manager with price history tracking - Thread Safe."""
 
-    PRICE_PARSE_VERSION = 2
+    # 3: v2 마이그레이션이 500행에서 멈춘 DB를 한 번 더 전부 재계산한다.
+    PRICE_PARSE_VERSION = 3
     SCHEMA_VERSION = 3
 
     def __init__(self, db_path: str = "listings.db"):

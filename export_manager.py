@@ -5,6 +5,20 @@ import csv
 import logging
 from typing import Any, Mapping, Sequence
 
+# 스프레드시트가 수식으로 해석하는 선행 문자 (OWASP CSV Injection)
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def sanitize_cell(value: Any) -> Any:
+    """Neutralize text that a spreadsheet would evaluate as a formula.
+
+    Listing titles, sellers and locations come from marketplace users, so a
+    value such as ``=HYPERLINK(...)`` must be exported as literal text.
+    """
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
 
 class ExportManager:
     """Manages data export to various formats"""
@@ -32,7 +46,7 @@ class ExportManager:
                 writer.writeheader()
                 for row in data:
                     # Filter row to only include requested fields
-                    filtered = {k: row.get(k) for k in field_names}
+                    filtered = {k: sanitize_cell(row.get(k)) for k in field_names}
                     writer.writerow(filtered)
             return True, f"{len(data):,}개 항목을 저장했습니다."
         except PermissionError:
@@ -85,8 +99,10 @@ class ExportManager:
             
             # Data
             for row in data:
-                values = [row.get(k) for k in field_names]
-                ws.append(values)
+                ws.append([sanitize_cell(row.get(k)) for k in field_names])
+                for cell in ws[ws.max_row]:
+                    if isinstance(cell.value, str):
+                        cell.data_type = "s"  # never store listing text as a formula
             
             # Auto-adjust column widths (approximate)
             for i, field in enumerate(field_names, 1):

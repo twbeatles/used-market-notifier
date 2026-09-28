@@ -63,6 +63,7 @@ class SellerSettingsMixin(_HostBase_SellerSettingsMixin):
         """Load blocked sellers from DB"""
         db = self._get_parent_db()
         if db is None:
+            self.seller_table.setRowCount(0)
             return
 
         try:
@@ -75,7 +76,9 @@ class SellerSettingsMixin(_HostBase_SellerSettingsMixin):
                 created_str = created_at[:10] if isinstance(created_at, str) else str(created_at)
                 self.seller_table.setItem(i, 2, QTableWidgetItem(created_str))
         except Exception as e:
-            print(f"Error loading sellers: {e}")
+            import logging
+
+            logging.getLogger("SettingsSeller").warning(f"Error loading sellers: {e}")
 
 
     def unblock_seller(self):

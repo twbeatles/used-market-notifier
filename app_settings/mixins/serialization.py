@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 """Mixin module: serialization."""
 
+from app_settings.secrets import protect_secret
 from models import (
     AppSettings, SearchKeyword, NotifierConfig,
     NotificationSchedule, NotificationType, ThemeMode, SellerFilter,
@@ -40,9 +41,9 @@ class SettingsSerializationMixin(_HostBase_SettingsSerializationMixin):
                 {
                     'type': n.type.value,
                     'enabled': n.enabled,
-                    'token': n.token,
+                    'token': protect_secret(n.token),
                     'chat_id': n.chat_id,
-                    'webhook_url': n.webhook_url,
+                    'webhook_url': protect_secret(n.webhook_url),
                 }
                 for n in settings.notifiers
             ],

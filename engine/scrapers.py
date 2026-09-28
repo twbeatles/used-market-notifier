@@ -186,8 +186,28 @@ class ScraperLifecycleMixin(_HostBase_ScraperLifecycleMixin):
             f"malformed={report.get('malformed_count')} reasons={report.get('reasons')}"
         )
 
+    async def _create_started_scraper(self, platform: str, kind: str, headless: bool) -> ScraperProtocol:
+        """Create one scraper (in the executor) and start it when it is async-lifecycle based."""
+        if self._executor is None:
+            raise RuntimeError("Executor is not initialized")
+        loop = asyncio.get_running_loop()
+        scraper: ScraperProtocol | None = None
+        try:
+            scraper = await loop.run_in_executor(self._executor, self._create_scraper, platform, headless, kind)
+            assert scraper is not None
+            if kind == "playwright":
+                await self._start_scraper(platform, scraper)
+            return scraper
+        except Exception:
+            if scraper is not None:
+                try:
+                    await self._close_scraper(platform, scraper)
+                except Exception:
+                    pass
+            raise
+
     async def initialize_scrapers(self, platforms: Optional[list[str]] = None):
-        """Initialize primary/fallback scrapers, optionally only for target platforms."""
+        """Initialize primary scrapers; fallback engines are created lazily when first needed."""
         headless = self.settings.settings.headless_mode
         targets = platforms or ["danggeun", "bunjang", "joonggonara"]
         self._update_status("스크래퍼 초기화 중...")
@@ -195,77 +215,112 @@ class ScraperLifecycleMixin(_HostBase_ScraperLifecycleMixin):
         if self._executor is None:
             raise RuntimeError("Executor is not initialized")
 
-        loop = asyncio.get_running_loop()
         engine_order = self._get_engine_order()
         for platform in targets:
             old_primary = self.primary_scrapers.pop(platform, None)
             old_fallback = self.fallback_scrapers.pop(platform, None)
             self.primary_scraper_kind.pop(platform, None)
             self.fallback_scraper_kind.pop(platform, None)
+            self._fallback_candidates.pop(platform, None)
+            self._fallback_retry_after.pop(platform, None)
+
             if old_primary is not None:
                 await self._close_scraper(platform, old_primary)
             if old_fallback is not None and old_fallback is not old_primary:
                 await self._close_scraper(platform, old_fallback)
 
-            resolved: list[tuple[str, ScraperProtocol]] = []
-            for kind in engine_order:
-                scraper: ScraperProtocol | None = None
+            for index, kind in enumerate(engine_order):
                 try:
-                    scraper = await loop.run_in_executor(self._executor, self._create_scraper, platform, headless, kind)
-                    assert scraper is not None
-                    if kind == "playwright":
-                        await self._start_scraper(platform, scraper)
-                    resolved.append((kind, scraper))
+                    scraper = await self._create_started_scraper(platform, kind, headless)
                 except ScraperDependencyUnavailable as e:
                     self.logger.info(f"Engine unavailable for {platform} ({kind}): {e}")
+                    continue
                 except Exception as e:
-                    try:
-                        if scraper is not None:
-                            await self._close_scraper(platform, scraper)
-                    except Exception:
-                        pass
                     self.logger.warning(f"Failed to initialize {platform} ({kind}): {e}")
+                    continue
+                self.primary_scrapers[platform] = scraper
+                self.primary_scraper_kind[platform] = kind
+                self._fallback_candidates[platform] = list(engine_order[index + 1:])
+                break
 
-            if not resolved:
+            if platform not in self.primary_scrapers:
                 self.logger.error(f"No scraper initialized for {platform}")
                 continue
 
-            primary_kind, primary_scraper = resolved[0]
-            self.primary_scrapers[platform] = primary_scraper
-            self.primary_scraper_kind[platform] = primary_kind
-
-            if len(resolved) > 1:
-                fallback_kind, fallback_scraper = resolved[1]
-                self.fallback_scrapers[platform] = fallback_scraper
-                self.fallback_scraper_kind[platform] = fallback_kind
-
             self.logger.info(
                 f"{platform} scraper initialized primary={self.primary_scraper_kind.get(platform)} "
-                f"fallback={self.fallback_scraper_kind.get(platform)}"
+                f"fallback_candidates={self._fallback_candidates.get(platform) or []} (lazy)"
             )
 
         active_count = len(self.primary_scrapers)
         self.logger.info(f"Initialized primary scraper(s)={active_count}: {list(self.primary_scrapers.keys())}")
         self._update_status(f"스크래퍼 {active_count}개 초기화 완료")
 
-    async def _ensure_scraper(self, platform: str, use_fallback: bool = False) -> bool:
-        """Ensure platform scraper exists and its health is acceptable."""
-        scraper_map = self.fallback_scrapers if use_fallback else self.primary_scrapers
-        scraper = scraper_map.get(platform)
-        if scraper is None:
-            await self.initialize_scrapers([platform])
-            scraper = scraper_map.get(platform)
-            if scraper is None:
-                return False
-
-        if self._executor is None:
+    def _has_fallback_option(self, platform: str) -> bool:
+        """A fallback scraper exists, or one can still be created lazily (not in cooldown)."""
+        if self.fallback_scrapers.get(platform) is not None:
+            return True
+        if not self._fallback_candidates.get(platform):
             return False
-        loop = asyncio.get_running_loop()
-        healthy = await loop.run_in_executor(self._executor, self._check_scraper_health, scraper)
-        if healthy:
+        return self._fallback_retry_after.get(platform, 0.0) <= perf_counter()
+
+    async def _create_fallback_scraper(self, platform: str) -> bool:
+        """Lazily create the fallback scraper for a platform, with a failure cooldown."""
+        if not self._has_fallback_option(platform):
+            return False
+        headless = self.settings.settings.headless_mode
+        for kind in list(self._fallback_candidates.get(platform) or []):
+            try:
+                scraper = await self._create_started_scraper(platform, kind, headless)
+            except ScraperDependencyUnavailable as e:
+                self.logger.info(f"Fallback engine unavailable for {platform} ({kind}): {e}")
+                continue
+            except Exception as e:
+                self.logger.warning(f"Failed to create fallback {platform} ({kind}): {e}")
+                continue
+            self.fallback_scrapers[platform] = scraper
+            self.fallback_scraper_kind[platform] = kind
+            self._fallback_retry_after.pop(platform, None)
+            self.logger.info(f"{platform} fallback scraper created lazily: {kind}")
             return True
 
-        scraper_label = "fallback" if use_fallback else "primary"
-        self.logger.warning(f"{scraper_label} scraper health check failed for {platform}; reinitializing")
+        self._fallback_retry_after[platform] = perf_counter() + float(self.FALLBACK_RETRY_COOLDOWN_SECONDS)
+        self.logger.warning(
+            f"No fallback scraper for {platform}; retry after {self.FALLBACK_RETRY_COOLDOWN_SECONDS:.0f}s"
+        )
+        return False
+
+    async def _ensure_scraper(self, platform: str, use_fallback: bool = False) -> bool:
+        """Ensure a platform scraper exists and is healthy.
+
+        The primary is (re)initialized on demand. A fallback is only ever created or
+        replaced on its own, so fallback problems never tear down the primary browser.
+        """
+        if self._executor is None:
+            return False
+
+        if use_fallback:
+            scraper = self.fallback_scrapers.get(platform)
+            if scraper is None:
+                return await self._create_fallback_scraper(platform)
+            loop = asyncio.get_running_loop()
+            if await loop.run_in_executor(self._executor, self._check_scraper_health, scraper):
+                return True
+            self.logger.warning(f"fallback scraper health check failed for {platform}; recreating fallback only")
+            self.fallback_scrapers.pop(platform, None)
+            self.fallback_scraper_kind.pop(platform, None)
+            await self._close_scraper(platform, scraper)
+            return await self._create_fallback_scraper(platform)
+
+        scraper = self.primary_scrapers.get(platform)
+        if scraper is None:
+            await self.initialize_scrapers([platform])
+            return self.primary_scrapers.get(platform) is not None
+
+        loop = asyncio.get_running_loop()
+        if await loop.run_in_executor(self._executor, self._check_scraper_health, scraper):
+            return True
+
+        self.logger.warning(f"primary scraper health check failed for {platform}; reinitializing")
         await self.initialize_scrapers([platform])
-        return platform in scraper_map
+        return platform in self.primary_scrapers

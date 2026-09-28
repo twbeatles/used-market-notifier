@@ -2,6 +2,8 @@ from typing import TYPE_CHECKING
 # pyright: reportAttributeAccessIssue=false
 """ListingPersistenceMixin for DatabaseManager."""
 
+from price_utils import is_unknown_price_text
+
 from .common import *
 
 
@@ -125,18 +127,27 @@ class ListingPersistenceMixin(_HostBase_ListingPersistenceMixin):
             existing = dict(row) if row else None
 
             price_numeric = item.parse_price()
+            # 명시 상태 > 제목 단서 > (기존 매물이면) 기존 상태 유지 / (신규면) for_sale
             explicit_status = self._normalize_sale_status(item.sale_status)
-            detected_status = explicit_status if explicit_status is not None else self.detect_sale_status(item.title)
+            incoming_status = explicit_status or self.detect_sale_status(item.title, default=None)
+            # "가격문의" 같은 미상 가격은 알려진 가격을 덮어쓰거나 가격 변동으로 기록하지 않는다.
+            incoming_price_unknown = is_unknown_price_text(item.price)
 
             if existing:
                 # Check for price change
                 old_price = existing['price']
                 old_price_numeric = existing['price_numeric'] or 0
                 old_status = existing.get('sale_status') or 'for_sale'
-                new_status = detected_status or old_status
+                new_status = incoming_status or old_status
+                old_price_unknown = is_unknown_price_text(old_price)
 
                 price_change_info: Optional[dict] = None
-                if old_price != item.price and old_price_numeric != price_numeric:
+                if (
+                    not incoming_price_unknown
+                    and not old_price_unknown
+                    and old_price != item.price
+                    and old_price_numeric != price_numeric
+                ):
                     # Price changed - record in history
                     cursor.execute('''
                         INSERT INTO price_history
@@ -157,11 +168,12 @@ class ListingPersistenceMixin(_HostBase_ListingPersistenceMixin):
                 updated_thumbnail = self._prefer_non_empty(item.thumbnail, existing.get('thumbnail'))
                 updated_seller = self._prefer_non_empty(item.seller, existing.get('seller'))
                 updated_location = self._prefer_non_empty(item.location, existing.get('location'))
-                updated_price = self._prefer_non_empty(item.price, existing.get('price'))
-                updated_price_numeric = (
-                    price_numeric if isinstance(updated_price, str) and updated_price == item.price
-                    else existing.get('price_numeric') or 0
-                )
+                if incoming_price_unknown and existing.get('price') is not None:
+                    updated_price = existing.get('price')
+                    updated_price_numeric = existing.get('price_numeric') or 0
+                else:
+                    updated_price = item.price
+                    updated_price_numeric = price_numeric
 
                 if new_status != old_status:
                     self._record_sale_status_change(cursor, existing['id'], old_status, new_status)
@@ -215,7 +227,7 @@ class ListingPersistenceMixin(_HostBase_ListingPersistenceMixin):
                 ''', (
                     item.platform, item.article_id, item.keyword, item.title,
                     item.price, price_numeric, item.link, normalized_url, item.thumbnail,
-                    item.seller, item.location, detected_status
+                    item.seller, item.location, incoming_status or "for_sale"
                 ))
                 new_id = cursor.lastrowid
                 self.conn.commit()
@@ -309,14 +321,14 @@ class ListingPersistenceMixin(_HostBase_ListingPersistenceMixin):
             self.conn.commit()
             self._invalidate_cache()
 
-    def detect_sale_status(self, title: str) -> str:
-        """Detect sale status from title text"""
+    def detect_sale_status(self, title: str, default: Optional[str] = "for_sale") -> Optional[str]:
+        """Detect sale status from title text; ``default`` when the title has no status hint."""
         title_lower = title.lower() if title else ""
         if any(keyword in title_lower for keyword in ["판매완료", "거래완료", "sold"]):
             return "sold"
         elif any(keyword in title_lower for keyword in ["예약중", "예약", "reserved"]):
             return "reserved"
-        return "for_sale"
+        return default
 
     @staticmethod
     def _normalize_sale_status(value: str | None) -> str | None:

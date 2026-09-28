@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 """Mixin module: serialization."""
 
+from app_settings.secrets import unprotect_secret
 from models import (
     AppSettings, SearchKeyword, NotifierConfig,
     NotificationSchedule, NotificationType, ThemeMode, SellerFilter,
@@ -30,7 +31,7 @@ class SettingsDeserializationMixin(_HostBase_SettingsDeserializationMixin):
         if not isinstance(raw_notifiers, list):
             self._mark_normalized("notifiers", raw_notifiers, [])
             raw_notifiers = []
-        for n in raw_notifiers:
+        for notifier_index, n in enumerate(raw_notifiers):
             try:
                 if not isinstance(n, dict):
                     self._mark_normalized("notifiers[]", n, None)
@@ -41,12 +42,18 @@ class SettingsDeserializationMixin(_HostBase_SettingsDeserializationMixin):
                 except Exception:
                     self._mark_normalized("notifiers[].type", raw_type, NotificationType.TELEGRAM.value)
                     notifier_type = NotificationType.TELEGRAM
+                token, token_ok = unprotect_secret(n.get('token', ''))
+                webhook_url, webhook_ok = unprotect_secret(n.get('webhook_url', ''))
+                if not token_ok:
+                    self._mark_secret_failure(f"notifiers[{notifier_index}].token ({notifier_type.value})")
+                if not webhook_ok:
+                    self._mark_secret_failure(f"notifiers[{notifier_index}].webhook_url ({notifier_type.value})")
                 notifiers.append(NotifierConfig(
                     type=notifier_type,
                     enabled=bool(n.get('enabled', False)),
-                    token=str(n.get('token', '') or ''),
+                    token=token,
                     chat_id=str(n.get('chat_id', '') or ''),
-                    webhook_url=str(n.get('webhook_url', '') or ''),
+                    webhook_url=webhook_url,
                 ))
             except Exception as e:
                 self._mark_normalized("notifiers[]", n, f"skipped: {e}")

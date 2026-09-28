@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import os
 import shutil
+import sqlite3
 import zipfile
 
 
@@ -12,6 +13,47 @@ if TYPE_CHECKING:
     _HostBase_RestorerMixin = BackupManager
 else:
     _HostBase_RestorerMixin = object
+
+def _sqlite_copy(src_path: str, dst_path: str) -> None:
+    """SQLite online backup API로 src 내용을 dst에 복사합니다.
+
+    대상 DB가 다른 연결에서 WAL 모드로 열려 있어도 일관되게 적용됩니다.
+    파일을 직접 덮어쓰면 남은 -wal 프레임이 재생되어 DB가 손상될 수 있습니다.
+    """
+    src = sqlite3.connect(src_path)
+    try:
+        dst = sqlite3.connect(dst_path, timeout=30)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+
+def _verify_sqlite_file(path: str) -> None:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        result = conn.execute("PRAGMA integrity_check").fetchone()
+        if not result or str(result[0]).lower() != "ok":
+            raise ValueError(f"Backup database failed integrity check: {result}")
+    finally:
+        conn.close()
+
+
+def _remove_sqlite_file(path: str) -> None:
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        try:
+            os.remove(path + suffix)
+        except FileNotFoundError:
+            pass
+
+
+def _replace_file_atomic(src: str, dst: str) -> None:
+    tmp = f"{dst}.restore_tmp"
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
 
 class RestorerMixin(_HostBase_RestorerMixin):
     """Backup-restore behavior (needs ``backup_dir``/``logger``)."""
@@ -61,13 +103,18 @@ class RestorerMixin(_HostBase_RestorerMixin):
                         with zf.open(member, "r") as src, open(target, "wb") as dst:
                             shutil.copyfileobj(src, dst)
 
-                    # Restore database
+                    # Validate everything before touching current data.
                     temp_db = temp_dir / os.path.basename(db_path)
                     if temp_db.exists():
-                        # Create backup of current before overwriting
+                        _verify_sqlite_file(str(temp_db))
+
+                    # Restore database (consistent snapshot of current data first)
+                    if temp_db.exists():
                         if os.path.exists(db_path):
-                            shutil.copy2(db_path, f"{db_path}.pre_restore")
-                        shutil.copy2(temp_db, db_path)
+                            pre_restore = f"{db_path}.pre_restore"
+                            _remove_sqlite_file(pre_restore)
+                            _sqlite_copy(db_path, pre_restore)
+                        _sqlite_copy(str(temp_db), db_path)
                         self.logger.info(f"Restored database: {db_path}")
 
                     # Restore settings
@@ -75,7 +122,7 @@ class RestorerMixin(_HostBase_RestorerMixin):
                     if temp_settings.exists():
                         if os.path.exists(settings_path):
                             shutil.copy2(settings_path, f"{settings_path}.pre_restore")
-                        shutil.copy2(temp_settings, settings_path)
+                        _replace_file_atomic(str(temp_settings), settings_path)
                         self.logger.info(f"Restored settings: {settings_path}")
 
                 finally:

@@ -59,11 +59,9 @@ class SettingsDialog(
 
 
     def _get_parent_db(self):
-        parent = self.parent()
-        if parent is None:
-            return None
-        engine = getattr(parent, "engine", None)
-        return getattr(engine, "db", None)
+        from gui.settings_panels.host import resolve_host_db, resolve_settings_host
+
+        return resolve_host_db(resolve_settings_host(self))
 
 
     def setup_ui(self):

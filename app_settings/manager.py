@@ -8,6 +8,7 @@ from typing import Optional
 from models import AppSettings
 
 from .constants import SETTINGS_FILE
+from .json_io import write_json_atomic
 from .mixins import (
     KeywordSettingsMixin,
     NotifierSettingsMixin,
@@ -42,6 +43,7 @@ class SettingsManager(
             "recovered_backup_path": None,
             "error": None,
             "normalized_fields": [],
+            "secret_decrypt_failed": [],
         }
         self.last_recovered_backup: Optional[str] = None
         self.settings = self.load()
@@ -67,10 +69,9 @@ class SettingsManager(
         """Save settings to JSON file"""
         try:
             data = self._to_dict(self.settings)
-            with open(self.settings_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            write_json_atomic(self.settings_path, data)
             return True
         except Exception as e:
-            print(f"Error saving settings: {e}")
+            self.logger.error(f"Error saving settings: {e}")
             return False
 

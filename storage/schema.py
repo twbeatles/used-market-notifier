@@ -194,6 +194,25 @@ class SchemaMixin(_HostBase_SchemaMixin):
                 )
             ''')
 
+            # 알림 기준선: (검색 조건 서명, 플랫폼)별 첫 성공 검색 시각
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS search_baselines (
+                    signature TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    established_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (signature, platform)
+                )
+            ''')
+
+            # 매물을 마지막으로 검색 결과에서 본 시각 (정리 기준)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS listing_last_seen (
+                    listing_id INTEGER PRIMARY KEY,
+                    last_seen_at TIMESTAMP NOT NULL,
+                    FOREIGN KEY (listing_id) REFERENCES listings(id)
+                )
+            ''')
+
             # Index for listing_notes (created after table exists)
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_listing_notes_listing ON listing_notes(listing_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_listing_auto_tags_listing ON listing_auto_tags(listing_id)')
@@ -341,41 +360,40 @@ class SchemaMixin(_HostBase_SchemaMixin):
             f"Recomputing numeric prices (version {current} -> {self.PRICE_PARSE_VERSION})..."
         )
 
+        # 읽기와 쓰기에 커서를 따로 쓴다. 같은 커서로 executemany를 실행하면
+        # 진행 중인 SELECT 결과가 버려져 첫 배치(500행) 이후가 누락된다.
+        read_cursor = self.conn.cursor()
+
         # listings.price_numeric
-        cursor.execute("SELECT id, price FROM listings")
-        batch = []
+        read_cursor.execute("SELECT id, price FROM listings")
         updated = 0
         while True:
-            rows = cursor.fetchmany(500)
+            rows = read_cursor.fetchmany(500)
             if not rows:
                 break
-            for row in rows:
-                batch.append((parse_price_kr(row["price"]), row["id"]))
+            batch = [(parse_price_kr(row["price"]), row["id"]) for row in rows]
             cursor.executemany("UPDATE listings SET price_numeric = ? WHERE id = ?", batch)
-            self.conn.commit()
             updated += len(batch)
-            batch.clear()
+        self.conn.commit()
 
         # price_history numeric columns (best effort; table may be empty)
         try:
-            cursor.execute("SELECT id, old_price, new_price FROM price_history")
-            ph_batch = []
+            read_cursor.execute("SELECT id, old_price, new_price FROM price_history")
             ph_updated = 0
             while True:
-                rows = cursor.fetchmany(500)
+                rows = read_cursor.fetchmany(500)
                 if not rows:
                     break
-                for row in rows:
-                    ph_batch.append(
-                        (parse_price_kr(row["old_price"]), parse_price_kr(row["new_price"]), row["id"])
-                    )
+                ph_batch = [
+                    (parse_price_kr(row["old_price"]), parse_price_kr(row["new_price"]), row["id"])
+                    for row in rows
+                ]
                 cursor.executemany(
                     "UPDATE price_history SET old_price_numeric = ?, new_price_numeric = ? WHERE id = ?",
                     ph_batch,
                 )
-                self.conn.commit()
                 ph_updated += len(ph_batch)
-                ph_batch.clear()
+            self.conn.commit()
         except Exception:
             # Older DBs might not have this table or the numeric columns even after ALTER attempts.
             ph_updated = 0

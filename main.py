@@ -11,24 +11,40 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 
-def setup_logging():
-    """Setup logging configuration with rotation."""
+def setup_logging(log_path: str = "notifier.log"):
+    """Setup logging configuration with rotation.
+
+    A log file that cannot be opened (read-only folder, locked file) must not
+    prevent the app from starting; it falls back to console-only logging.
+    """
     from logging.handlers import RotatingFileHandler
 
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handlers: list[logging.Handler] = []
 
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
+    if sys.stdout is not None:  # windowed (frozen) builds have no console
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        handlers.append(console_handler)
 
-    file_handler = RotatingFileHandler(
-        "notifier.log",
-        maxBytes=5 * 1024 * 1024,
-        backupCount=3,
-        encoding="utf-8",
-    )
-    file_handler.setFormatter(formatter)
+    file_error: Exception | None = None
+    try:
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        handlers.append(file_handler)
+    except OSError as exc:
+        file_error = exc
 
-    logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler])
+    if not handlers:
+        handlers.append(logging.NullHandler())
+    logging.basicConfig(level=logging.INFO, handlers=handlers, force=True)
+    if file_error is not None:
+        logging.getLogger("Main").warning(f"Log file unavailable, continuing without it: {file_error}")
 
     def handle_exception(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -54,10 +70,8 @@ def run_cli(settings_manager=None):
     engine.on_error = lambda error: logger.error(error)
 
     try:
-        if sys.platform.startswith("win"):
-            selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
-            if selector_policy is not None:
-                asyncio.set_event_loop_policy(selector_policy())
+        # Keep the platform default loop (Proactor on Windows): Playwright needs
+        # subprocess support, which the Windows Selector loop does not provide.
         asyncio.run(engine.start())
     except KeyboardInterrupt:
         logger.info("Stopping...")
@@ -136,7 +150,12 @@ def run_check_update() -> int:
 
 def main():
     """Main entry point."""
+    from app_paths import ensure_app_root_cwd
     from version import __version__
+
+    # Relative data paths (settings.json, listings.db, notifier.log, backup/) must not
+    # depend on where the app was launched from.
+    ensure_app_root_cwd()
 
     parser = argparse.ArgumentParser(description="Used Market Notifier")
     parser.add_argument("--cli", action="store_true", help="Run without the GUI")

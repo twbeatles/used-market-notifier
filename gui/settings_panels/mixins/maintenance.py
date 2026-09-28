@@ -26,6 +26,11 @@ from qfluentwidgets import (
     SpinBox,
 )
 
+from ..host import (
+    host_monitoring_active,
+    resolve_settings_host,
+    stop_host_monitoring,
+)
 from ..workers import CleanupWorker
 
 if TYPE_CHECKING:
@@ -219,20 +224,21 @@ class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
         ) != QMessageBox.StandardButton.Yes:
             return
 
-        # Stop monitoring if running and close DB connection for safety.
-        parent = self.parent()
-        try:
-            monitor_thread = getattr(parent, "monitor_thread", None) if parent is not None else None
-            is_running = getattr(monitor_thread, "isRunning", None)
-            if callable(is_running) and is_running():
-                stop_monitoring = getattr(parent, "stop_monitoring", None)
-                if callable(stop_monitoring):
-                    stop_monitoring()
-        except Exception:
-            pass
+        # The engine must be fully stopped before the database is replaced.
+        host = resolve_settings_host(self)
+        if host is None:
+            QMessageBox.warning(self, "오류", "메인 창을 찾을 수 없어 복원을 진행할 수 없습니다.")
+            return
+        if host_monitoring_active(host) and not stop_host_monitoring(host):
+            QMessageBox.warning(
+                self,
+                "복원 중단",
+                "모니터링을 중지하지 못해 복원을 취소했습니다.\n잠시 후 다시 시도하세요.",
+            )
+            return
 
-        # Do not forcibly close parent.engine.db here: the app is about to quit,
-        # and the engine may be using a shared UI DB connection.
+        # restore_backup() uses the SQLite backup API, so the shared UI connection
+        # may stay open; it sees the restored content and is closed on quit.
 
         s = self.settings.settings
         settings_path = str(getattr(self.settings, "settings_path", "settings.json"))
@@ -246,7 +252,11 @@ class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
             return
 
         QMessageBox.information(self, "완료", "복원이 완료되었습니다.\n데이터 일관성을 위해 앱을 종료합니다.")
-        QApplication.quit()
+        quit_app = getattr(host, "quit_app", None)
+        if callable(quit_app):
+            quit_app()
+        else:
+            QApplication.quit()
 
 
     def refresh_cleanup_preview(self):
@@ -274,23 +284,17 @@ class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
 
 
     def run_cleanup_now(self):
-        parent = self.parent()
-        try:
-            monitor_thread = getattr(parent, "monitor_thread", None) if parent is not None else None
-            is_running = getattr(monitor_thread, "isRunning", None)
-            if callable(is_running) and is_running():
-                if QMessageBox.question(
-                    self,
-                    "확인",
-                    "모니터링이 실행 중입니다.\n정리 작업을 위해 모니터링을 중지할까요?",
-                ) == QMessageBox.StandardButton.Yes:
-                    stop_monitoring = getattr(parent, "stop_monitoring", None)
-                    if callable(stop_monitoring):
-                        stop_monitoring()
-                else:
-                    return
-        except Exception:
-            pass
+        host = resolve_settings_host(self)
+        if host_monitoring_active(host):
+            if QMessageBox.question(
+                self,
+                "확인",
+                "모니터링이 실행 중입니다.\n정리 작업을 위해 모니터링을 중지할까요?",
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            if not stop_host_monitoring(host):
+                QMessageBox.warning(self, "정리 중단", "모니터링을 중지하지 못해 정리를 취소했습니다.")
+                return
 
         if QMessageBox.question(
             self,
@@ -320,10 +324,10 @@ class MaintenanceSettingsMixin(_HostBase_MaintenanceSettingsMixin):
         QMessageBox.information(self, "완료", f"정리가 완료되었습니다.\n삭제된 항목: {deleted_count:,}개")
 
         # Best-effort refresh in main UI if available.
-        parent = self.parent()
+        host = resolve_settings_host(self)
         try:
-            stats_widget = getattr(parent, "stats_widget", None) if parent is not None else None
-            listings_widget = getattr(parent, "listings_widget", None) if parent is not None else None
+            stats_widget = getattr(host, "stats_widget", None) if host is not None else None
+            listings_widget = getattr(host, "listings_widget", None) if host is not None else None
             refresh_stats = getattr(stats_widget, "refresh_stats", None)
             refresh_listings = getattr(listings_widget, "refresh_listings", None)
             if callable(refresh_stats):

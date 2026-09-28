@@ -10,6 +10,7 @@ class RecoveryMixin(QWidget):
 
     def _show_settings_recovery_notice(self):
         state = getattr(self.settings_manager, "load_recovery_state", {}) or {}
+        self._show_secret_decrypt_notice(state)
         if not state or not (state.get("broken_settings_path") or state.get("recovered_from_backup") or state.get("used_default")):
             return
 
@@ -30,6 +31,21 @@ class RecoveryMixin(QWidget):
         InfoBar.warning(
             "설정 복구 안내",
             " ".join(lines),
+            parent=self.window(),
+            position=InfoBarPosition.TOP,
+            duration=-1,
+        )
+
+
+    def _show_secret_decrypt_notice(self, state: dict) -> None:
+        failed = state.get("secret_decrypt_failed") if isinstance(state, dict) else None
+        if not failed:
+            return
+        InfoBar.warning(
+            "알림 설정 재입력 필요",
+            "저장된 알림 토큰/웹훅을 이 Windows 계정에서 복호화하지 못해 비워 두었습니다 "
+            "(다른 PC·계정의 설정 또는 백업일 수 있습니다). "
+            f"설정에서 다시 입력해주세요: {', '.join(str(f) for f in failed)}",
             parent=self.window(),
             position=InfoBarPosition.TOP,
             duration=-1,

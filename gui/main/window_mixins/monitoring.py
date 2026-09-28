@@ -1,6 +1,8 @@
 # pyright: reportAttributeAccessIssue=false
 """Monitor thread lifecycle and engine event slots (Fluent)."""
 
+import logging
+
 from PySide6.QtWidgets import QWidget
 from qfluentwidgets import InfoBar, InfoBarPosition
 
@@ -9,20 +11,45 @@ from monitor_engine import MonitorEngine
 
 
 class MonitoringMixin(QWidget):
-    """Owns the monitor thread lifecycle and engine event slots."""
+    """Owns the monitor thread lifecycle and engine event slots.
+
+    Stopping never blocks the UI thread unless the caller asks for ``wait=True``
+    (quit / restore / update). A stopping thread stays referenced in
+    ``_stopping_threads`` until its ``finished`` signal fires; a start request
+    made meanwhile is deferred via ``_pending_start`` so at most one engine runs.
+    """
+
+    def _monitor_state_init(self) -> None:
+        if not hasattr(self, "_stopping_threads"):
+            self._stopping_threads: list[MonitorThread] = []
+        if not hasattr(self, "_pending_start"):
+            self._pending_start = False
+        if not hasattr(self, "_engine_started_once"):
+            self._engine_started_once = False
+
+    def is_monitoring_active(self) -> bool:
+        """True while a monitor thread is running or still shutting down."""
+        self._monitor_state_init()
+        thread = self.monitor_thread
+        if thread is not None and thread.isRunning():
+            return True
+        return any(t.isRunning() for t in self._stopping_threads)
 
     def toggle_monitoring(self):
-        if self.monitor_thread and self.monitor_thread.isRunning():
-            self.stop_monitoring()
+        self._monitor_state_init()
+        if (self.monitor_thread and self.monitor_thread.isRunning()) or self._pending_start:
+            self.stop_monitoring()  # also cancels a start that is waiting for the old thread
         else:
             self.start_monitoring()
 
     def start_monitoring(self):
+        self._monitor_state_init()
         if self.monitor_thread and self.monitor_thread.isRunning():
             return
 
         # Check if there are keywords
         if not self.settings_manager.settings.keywords:
+            self._pending_start = False
             InfoBar.warning(
                 "키워드 없음",
                 "모니터링할 키워드가 없습니다. 키워드 페이지에서 먼저 추가해주세요.",
@@ -32,7 +59,23 @@ class MonitoringMixin(QWidget):
             self.switchTo(self.keyword_page)
             return
 
-        self.engine = MonitorEngine(self.settings_manager, db=self.db)
+        self._prune_stopping_threads()
+        if self._stopping_threads:
+            # Previous engine is still cleaning up; start as soon as it finishes.
+            self._pending_start = True
+            self.monitor_page.set_running(True)
+            self.monitor_page.set_status("이전 모니터링 정리 중... 완료 후 시작합니다")
+            return
+
+        self._pending_start = False
+        # Only the first engine of this process skips its first-cycle notifications;
+        # in-app restarts (e.g. after saving settings) must not drop new-item alerts.
+        self.engine = MonitorEngine(
+            self.settings_manager,
+            db=self.db,
+            suppress_initial_notifications=not self._engine_started_once,
+        )
+        self._engine_started_once = True
         self.stats_widget.set_engine(self.engine)
         self.listings_widget.set_engine(self.engine)
         if hasattr(self, "favorites_widget") and self.favorites_widget:
@@ -40,30 +83,79 @@ class MonitoringMixin(QWidget):
         if hasattr(self, "history_widget") and self.history_widget:
             self.history_widget.set_engine(self.engine)
 
-        self.monitor_thread = MonitorThread(self.engine)
-        self.monitor_thread.status_update.connect(self.on_status_update)
-        self.monitor_thread.new_item.connect(self.on_new_item)
-        self.monitor_thread.price_change.connect(self.on_price_change)
-        self.monitor_thread.error.connect(self.on_error)
-        # Handle thread termination to reset UI
-        self.monitor_thread.finished.connect(self.on_monitor_finished)
-        self.monitor_thread.start()
+        thread = MonitorThread(self.engine)
+        thread.status_update.connect(self.on_status_update)
+        thread.new_item.connect(self.on_new_item)
+        thread.price_change.connect(self.on_price_change)
+        thread.error.connect(self.on_error)
+        thread.finished.connect(lambda t=thread: self._on_monitor_thread_finished(t))
+        self.monitor_thread = thread
+        thread.start()
 
         self.update_ui_state(True)
 
-    def on_monitor_finished(self):
-        """Called when monitor thread finishes (unexpectedly or normally)"""
-        if self.monitor_thread and self.monitor_thread.isRunning():
-            # Thread ended unexpectedly
-            self.on_status_update("모니터링이 종료되었습니다. 다시 시작하려면 버튼을 눌러주세요.")
+    def _prune_stopping_threads(self) -> None:
+        self._stopping_threads = [t for t in self._stopping_threads if t.isRunning()]
 
-    def stop_monitoring(self):
-        if self.monitor_thread:
-            self.monitor_thread.stop()
-            self.monitor_thread.wait(5000)
+    def _on_monitor_thread_finished(self, thread: MonitorThread) -> None:
+        """Runs on the UI thread when a monitor thread has fully exited."""
+        self._monitor_state_init()
+        if thread in self._stopping_threads:
+            self._stopping_threads.remove(thread)
+        if thread is self.monitor_thread:
+            # Engine stopped on its own (no scrapers, too many errors, ...).
             self.monitor_thread = None
+            self.update_ui_state(False)
+            self.on_status_update("모니터링이 종료되었습니다. 다시 시작하려면 버튼을 눌러주세요.")
+        self._prune_stopping_threads()
+        if self._stopping_threads:
+            return
+        if self._pending_start:
+            self._pending_start = False
+            self.start_monitoring()
+        elif self.monitor_thread is None:
+            self.monitor_page.set_status("대기 중")
 
+    def on_monitor_finished(self):
+        """Backward-compatible slot (pre-2026-09 API): handle the current thread having exited."""
+        thread = self.monitor_thread
+        if thread is not None and not thread.isRunning():
+            self._on_monitor_thread_finished(thread)
+
+    def _wait_for_stopping_threads(self, timeout_ms: int) -> bool:
+        for thread in list(self._stopping_threads):
+            if not thread.wait(max(0, int(timeout_ms))):
+                logging.getLogger("Main").warning("Monitor thread did not stop within %sms", timeout_ms)
+                return False
+        self._prune_stopping_threads()
+        return True
+
+    def stop_monitoring(self, wait: bool = False, timeout_ms: int = 30000) -> bool:
+        """Stop monitoring. Returns False only if ``wait`` was requested and the thread outlived it."""
+        self._monitor_state_init()
+        self._pending_start = False
+        thread = self.monitor_thread
+        self.monitor_thread = None
+        if thread is not None and thread.isRunning():
+            thread.request_stop()
+            if thread not in self._stopping_threads:
+                self._stopping_threads.append(thread)
+
+        ok = self._wait_for_stopping_threads(timeout_ms) if wait else True
         self.update_ui_state(False)
+        self._prune_stopping_threads()
+        if self._stopping_threads:
+            self.monitor_page.set_status("중지 중...")
+        return ok
+
+    def restart_monitoring(self) -> None:
+        """Stop the current engine and start a fresh one once the old thread has exited."""
+        self.stop_monitoring()
+        self._pending_start = True
+        self._prune_stopping_threads()
+        if not self._stopping_threads:
+            self._pending_start = False
+            self.start_monitoring()
 
     def update_ui_state(self, is_running: bool):
         self.monitor_page.set_running(is_running)
@@ -86,10 +178,9 @@ class MonitoringMixin(QWidget):
             )
 
     def on_new_item(self, item):
-        # Skip NOTIFICATIONS during initial crawl, but still update UI
-        skip_notification = hasattr(self.engine, 'is_first_run') and self.engine.is_first_run
-
-        if not skip_notification:
+        # The engine marks items whose external notification was suppressed
+        # (first cycle, new-search baseline, burst limit); keep the tray consistent.
+        if not getattr(item, "notification_suppressed", False):
             self.tray_icon.show_notification(
                 f"새 상품 - {item.platform}",
                 f"{item.title}\n{item.price}"
@@ -127,10 +218,9 @@ class MonitoringMixin(QWidget):
         # Update keywords
         self.keyword_widget.refresh_list()
 
-        # Restart if running
+        # Restart if running (non-blocking; the new engine starts after the old thread exits)
         if self.monitor_thread and self.monitor_thread.isRunning():
-            self.stop_monitoring()
-            self.start_monitoring()
+            self.restart_monitoring()
 
 
 __all__ = ["MonitoringMixin"]

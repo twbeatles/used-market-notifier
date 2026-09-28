@@ -1,6 +1,8 @@
 # pyright: reportAttributeAccessIssue=false
 """Window lifecycle: show, quit, and close-to-tray behavior."""
 
+import logging
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication, QWidget
@@ -16,16 +18,18 @@ class LifecycleMixin(QWidget):
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
 
     def quit_app(self):
-        import logging
-
         logging.getLogger("Main").info("quit_app called")
         self._is_quitting = True
-        self.stop_monitoring()
-        try:
-            if hasattr(self, "db") and self.db:
-                self.db.close()
-        except Exception:
-            pass
+        # Wait for the engine thread before closing the shared DB it writes to.
+        stopped = self.stop_monitoring(wait=True, timeout_ms=60000)
+        if stopped:
+            try:
+                if hasattr(self, "db") and self.db:
+                    self.db.close()
+            except Exception:
+                pass
+        else:
+            logging.getLogger("Main").warning("Monitor thread still running at quit; leaving DB open")
         self.tray_icon.hide()
         QApplication.quit()
 
