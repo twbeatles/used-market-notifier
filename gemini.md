@@ -17,7 +17,7 @@
 | 카테고리 | 기술 |
 |----------|------|
 | **언어** | Python 3.10+ |
-| **GUI 프레임워크** | PyQt6 |
+| **GUI 프레임워크** | PySide6 |
 | **브라우저 자동화** | Playwright + Selenium (이중 엔진) |
 | **데이터베이스** | SQLite3 (스레드 안전) |
 | **알림** | Telegram Bot API, Discord Webhook, Slack Webhook |
@@ -68,7 +68,7 @@ used_market_notifier/
 │   ├── filters.py
 │   └── maintenance.py
 ├── app_settings/           # 설정 직렬화/복구/preset 구현
-├── gui/                    # PyQt6 UI 컴포넌트
+├── gui/                    # PySide6 UI 컴포넌트
 │   ├── main_window.py      # 호환 facade -> gui.main.window
 │   ├── styles.py           # 호환 facade -> gui.theme
 │   ├── keyword_manager.py  # 호환 facade -> gui.widgets.keyword
@@ -334,8 +334,8 @@ card.setObjectName("glassCard")
 
 # ✅ 시그널로 UI 업데이트
 class MonitorThread(QThread):
-    status_update = pyqtSignal(str)
-    new_item = pyqtSignal(object)
+    status_update = Signal(str)
+    new_item = Signal(object)
 ```
 
 ### 비동기 + QThread 패턴
@@ -469,7 +469,7 @@ class NewPlatformScraper(PlaywrightScraper):
 | 항목 | 설명 |
 |------|------|
 | **언어** | Python 3.10+ |
-| **GUI** | PyQt6 + Catppuccin Mocha 테마 |
+| **GUI** | PySide6 + Catppuccin Mocha 테마 |
 | **DB** | SQLite3 (스레드 세이프) |
 | **스크래핑** | `scraper_mode` 기반 이중 엔진 (Playwright/Selenium) |
 | **알림** | Telegram, Discord, Slack |
